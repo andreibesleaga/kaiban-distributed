@@ -1,0 +1,3 @@
+# PROJECT_STATE.md
+
+Phase: S00_INITIALIZED
