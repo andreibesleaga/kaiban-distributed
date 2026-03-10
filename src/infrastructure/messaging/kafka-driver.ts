@@ -1,17 +1,75 @@
-import { IMessagingDriver, MessagePayload } from "./interfaces";
+import { Kafka, Producer, Consumer } from 'kafkajs';
+import { context as otelContext } from "@opentelemetry/api";
+import { IMessagingDriver, MessagePayload } from './interfaces';
+import { injectTraceContext, extractTraceContext } from '../telemetry/TraceContext';
+
+export interface KafkaDriverConfig {
+  brokers: string[];
+  clientId: string;
+  groupId: string;
+}
 
 export class KafkaDriver implements IMessagingDriver {
-  constructor() {}
+  private producer: Producer;
+  private consumer: Consumer;
+  private producerConnected = false;
+  private consumerConnected = false;
 
-  async publish(queueName: string, payload: MessagePayload): Promise<void> {
-    console.log(`[Kafka] Publishing to ${queueName}:`, payload);
+  constructor(config: KafkaDriverConfig) {
+    const kafka = new Kafka({ brokers: config.brokers, clientId: config.clientId });
+    this.producer = kafka.producer();
+    this.consumer = kafka.consumer({ groupId: config.groupId });
   }
 
-  async subscribe(queueName: string): Promise<void> {
-    console.log(`[Kafka] Subscribed to ${queueName}`);
+  async publish(topic: string, payload: MessagePayload): Promise<void> {
+    if (!this.producerConnected) {
+      await this.producer.connect();
+      this.producerConnected = true;
+    }
+    const headers: Record<string, string> = {};
+    injectTraceContext(headers);
+    const enrichedPayload: MessagePayload = { ...payload, traceHeaders: headers };
+    await this.producer.send({
+      topic,
+      messages: [{ value: JSON.stringify(enrichedPayload) }],
+    });
+  }
+
+  async subscribe(
+    topic: string,
+    handler: (payload: MessagePayload) => Promise<void>,
+  ): Promise<void> {
+    if (!this.consumerConnected) {
+      await this.consumer.connect();
+      this.consumerConnected = true;
+    }
+    await this.consumer.subscribe({ topic, fromBeginning: false });
+    await this.consumer.run({
+      eachMessage: async ({ message }) => {
+        if (!message.value) return;
+        const parsed = JSON.parse(message.value.toString()) as MessagePayload;
+        const ctx = extractTraceContext(parsed.traceHeaders ?? {});
+        await otelContext.with(ctx, () => handler(parsed));
+      },
+    });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async unsubscribe(_topic: string): Promise<void> {
+    if (this.consumerConnected) {
+      await this.consumer.disconnect();
+      this.consumerConnected = false;
+    }
   }
 
   async disconnect(): Promise<void> {
-    console.log("[Kafka] Disconnected");
+    if (this.producerConnected) {
+      await this.producer.disconnect();
+      this.producerConnected = false;
+    }
+    if (this.consumerConnected) {
+      await this.consumer.disconnect();
+      this.consumerConnected = false;
+    }
   }
 }

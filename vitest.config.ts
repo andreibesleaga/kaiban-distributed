@@ -12,6 +12,7 @@ export default defineConfig({
       branches: 99,
       statements: 99
     },
-    include: ['tests/**/*.test.ts']
+    include: ['tests/unit/**/*.test.ts'],
+    exclude: ['tests/e2e/**']
   }
 });

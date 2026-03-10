@@ -3,6 +3,7 @@ export interface MessagePayload {
   agentId: string;
   data: Record<string, unknown>;
   timestamp: number;
+  traceHeaders?: Record<string, string>;
 }
 
 export interface IMessagingDriver {
@@ -11,5 +12,6 @@ export interface IMessagingDriver {
     queueName: string,
     handler: (payload: MessagePayload) => Promise<void>,
   ): Promise<void>;
+  unsubscribe(queueName: string): Promise<void>;
   disconnect(): Promise<void>;
 }

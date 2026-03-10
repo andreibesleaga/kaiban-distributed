@@ -1,0 +1,103 @@
+# Blog Team Multi-Node Demo
+#
+# Full distributed pipeline with three AI agent nodes + edge gateway:
+#
+#   Ava (researcher) ──> Kai (writer) ──> Morgan (editor) ──> Human (HITL)
+#
+# Prerequisites:
+#   1. Build image from repo root:   docker compose build
+#   2. Copy env file:                cp .env.example .env
+#   3. Edit .env:
+#        OPENAI_API_KEY=sk-...               (standard OpenAI)
+#        # OR for OpenRouter:
+#        OPENAI_API_KEY=sk-or-v1-...
+#        OPENAI_BASE_URL=https://openrouter.ai/api/v1
+#        LLM_MODEL=openai/gpt-4o-mini
+#
+# Start all services:
+#   docker compose -f examples/blog-team/docker-compose.yml --env-file .env up
+#
+# Run the orchestrator (separate terminal, from repo root):
+#   GATEWAY_URL=http://localhost:3000 TOPIC="AI Agents in 2025" \
+#     npx ts-node examples/blog-team/orchestrator.ts
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: bullmq
+      PORT: "3000"
+      SERVICE_NAME: kaiban-gateway
+      AGENT_IDS: gateway
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  researcher:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/researcher-node.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    restart: on-failure
+
+  writer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/writer-node.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    restart: on-failure
+
+  editor:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/editor-node.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    restart: on-failure

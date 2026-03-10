@@ -1,66 +1,207 @@
 # Technical Specifications (SPEC.md)
 
+> **Note:** This document reflects the actual implementation. See `docs/decisions/ADR-001` for the rationale behind the `IMessagingDriver` generalization from the original domain-specific interface names.
+
+---
+
 ## 1. Domain Models
 
 ### Agent State Schema
+
 ```typescript
+// src/domain/entities/DistributedAgentState.ts
+type AgentStatus = 'IDLE' | 'THINKING' | 'EXECUTING' | 'ERROR';
+
 interface DistributedAgentState {
   agentId: string;
-  status: 'IDLE' | 'THINKING' | 'EXECUTING' | 'ERROR';
+  status: AgentStatus;
   currentTaskId: string | null;
-  memory: Record<string, any>; // Ephemeral AI Context
-  version: string; // ETag for optimistic concurrency control
+  memory: Record<string, unknown>;
+  version: string;                   // ETag for optimistic concurrency
 }
 ```
 
 ### Task Workflow Schema
+
 ```typescript
+// src/domain/entities/DistributedTask.ts
+type TaskStatus = 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED';
+
+interface TaskLog {
+  timestamp: number;                 // Unix ms (number, not string)
+  level: string;
+  message: string;
+  traceId: string;
+}
+
+interface TaskPayload {
+  instruction: string;
+  expectedOutput: string;
+  context: string[];                 // Array of context strings
+}
+
 interface DistributedTask {
   taskId: string;
   assignedToAgentId: string | null;
-  status: 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED';
-  payload: {
-    instruction: string;
-    expectedOutput: string;
-    context: string[];
-  };
-  result: any | null;
-  logs: Array<{
-    timestamp: string;
-    level: string;
-    message: string;
-    traceId: string;
-  }>;
+  status: TaskStatus;
+  payload: TaskPayload;
+  result: unknown | null;
+  logs: TaskLog[];
 }
 ```
 
-## 2. API Definitions
+---
 
-### Messaging Abstraction Layer (MAL) Interface
+## 2. Messaging Abstraction Layer (MAL) Interface
+
 ```typescript
-interface MessagingDriver {
-  connect(config: any): Promise<void>;
-  publishTask(topic: string, task: DistributedTask): Promise<void>;
-  subscribeToTasks(queueName: string, handler: (task: DistributedTask) => Promise<void>): void;
-  publishStateDelta(topic: string, delta: Partial<DistributedAgentState>): Promise<void>;
-  subscribeToState(topic: string, handler: (delta: Partial<DistributedAgentState>) => void): void;
+// src/infrastructure/messaging/interfaces.ts
+
+interface MessagePayload {
+  taskId: string;
+  agentId: string;
+  data: Record<string, unknown>;
+  timestamp: number;
+  traceHeaders?: Record<string, string>;   // W3C traceparent/tracestate (ADR-005)
+}
+
+interface IMessagingDriver {
+  publish(queueName: string, payload: MessagePayload): Promise<void>;
+  subscribe(
+    queueName: string,
+    handler: (payload: MessagePayload) => Promise<void>,
+  ): Promise<void>;
+  unsubscribe(queueName: string): Promise<void>;
   disconnect(): Promise<void>;
 }
 ```
 
-### Federation: A2A Protocol Standard Endpoints
-- `GET /.well-known/agent-card.json`: Returns the capabilities of the Kaiban Distributed Node.
-- `POST /a2a/rpc`: Accepts JSON-RPC 2.0 requests from external agents.
+**Implementations:**
+| Class | Backend | Config |
+|-------|---------|--------|
+| `BullMQDriver` | Redis / BullMQ v5 | `REDIS_URL`, `MESSAGING_DRIVER=bullmq` |
+| `KafkaDriver` | Apache Kafka | `KAFKA_BROKERS`, `MESSAGING_DRIVER=kafka` |
 
-**Example AgentCard Request Response:**
-```json
-{
-  "name": "Kaiban Distributed Cluster",
-  "version": "1.0.0",
-  "description": "Enterprise-scale multi-agent distributed system",
-  "capabilities": ["Research", "Writing", "System Configuration"],
-  "endpoints": {
-    "rpc": "https://api.internal/a2a/rpc"
-  }
+**Queue naming convention:** dashes only — BullMQ v5 rejects colons (see ADR-002).
+
+---
+
+## 3. Federation: A2A Protocol Standard Endpoints
+
+### Agent Card
+
+```
+GET /.well-known/agent-card.json
+```
+
+```typescript
+interface AgentCard {
+  name: string;
+  version: string;
+  description: string;
+  capabilities: string[];       // e.g. ['tasks.create', 'tasks.get', 'agent.status']
+  endpoints: { rpc: string };   // e.g. '/a2a/rpc'
 }
 ```
+
+### JSON-RPC 2.0 Endpoint
+
+```
+POST /a2a/rpc
+Content-Type: application/json
+```
+
+**Request:**
+```typescript
+interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  id: string | number;
+  method: 'agent.status' | 'tasks.create' | 'tasks.get';
+  params?: Record<string, unknown>;
+}
+```
+
+**Response:**
+```typescript
+interface JsonRpcResponse {
+  jsonrpc: '2.0';
+  id: string | number;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+```
+
+**Supported methods:**
+
+| Method | Request `params` | Returns |
+|--------|-----------------|---------|
+| `agent.status` | `{}` | `{ status: AgentStatus, agentId: string }` |
+| `tasks.create` | `{ agentId, instruction, expectedOutput, inputs?, context? }` | `{ taskId, status: 'QUEUED', agentId }` |
+| `tasks.get` | `{ taskId }` | `{ taskId, status: TaskStatus }` |
+
+`tasks.create` publishes to `kaiban-agents-{agentId}` queue when `IMessagingDriver` is wired (see `src/infrastructure/federation/a2a-connector.ts`).
+
+---
+
+## 4. KaibanJS Integration
+
+### Agent Task Handler
+
+```typescript
+// src/infrastructure/kaibanjs/kaiban-agent-bridge.ts
+function createKaibanTaskHandler(
+  agentConfig: KaibanAgentConfig,    // IAgentParams from kaibanjs
+  driver: IMessagingDriver,
+): (payload: MessagePayload) => Promise<unknown>
+// Returns the LLM finalAnswer, included in kaiban-events-completed data.result
+```
+
+### Team State Bridge
+
+```typescript
+// src/infrastructure/kaibanjs/kaiban-team-bridge.ts
+class KaibanTeamBridge {
+  constructor(config: KaibanTeamConfig, driver: IMessagingDriver, stateChannel?: string)
+  getTeam(): Team
+  start(inputs?: Record<string, unknown>): Promise<WorkflowResult>
+  subscribeToChanges(listener, properties?): () => void
+}
+```
+
+---
+
+## 5. HTTP API (Edge Gateway)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/health` | None | Returns `{ data: { status: 'ok', timestamp } }` |
+| `GET` | `/.well-known/agent-card.json` | None | Agent capabilities |
+| `POST` | `/a2a/rpc` | None | JSON-RPC 2.0 (requires `Content-Type: application/json`) |
+
+All responses use the envelope: `{ data, meta, errors }`.
+Error responses: `{ data: null, errors: [{ message }] }`.
+
+---
+
+## 6. Real-Time State — Socket.io
+
+**Server:** Edge Gateway binds Socket.io to the HTTP server with Redis adapter for multi-node scaling.
+
+**Event emitted to clients:**
+```
+socket.emit('state:update', delta: Record<string, unknown>)
+```
+
+Delta fields follow KaibanJS `TeamStoreState` shape. PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped before publishing (see `DistributedStateMiddleware.sanitizeDelta`).
+
+---
+
+## 7. Acceptance Criteria (from tests/e2e/acceptance-criteria.md)
+
+| Feature | Test | Status |
+|---------|------|--------|
+| Distributed Task Execution | `tests/e2e/distributed-execution.test.ts` Scenario 1 | ✅ |
+| Fault Tolerance (retry + DLQ) | `tests/e2e/distributed-execution.test.ts` Scenario 2 | ✅ |
+| UI State Synchronization | `tests/e2e/distributed-execution.test.ts` Scenario 3 | ✅ |
+| A2A Protocol endpoints | `tests/e2e/a2a-protocol.test.ts` | ✅ |
+| Kafka publish/subscribe | `tests/e2e/kafka-driver.test.ts` | ✅ |

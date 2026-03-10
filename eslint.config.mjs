@@ -7,7 +7,8 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/explicit-function-return-type': 'warn'
+      '@typescript-eslint/explicit-function-return-type': 'warn',
+      'complexity': ['error', 10]
     }
   }
 );

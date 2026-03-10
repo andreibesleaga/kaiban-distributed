@@ -1,5 +1,7 @@
 import { Queue, Worker, QueueOptions } from "bullmq";
+import { context as otelContext } from "@opentelemetry/api";
 import { IMessagingDriver, MessagePayload } from "./interfaces";
+import { injectTraceContext, extractTraceContext } from "../telemetry/TraceContext";
 
 export class BullMQDriver implements IMessagingDriver {
   private queues: Map<string, Queue> = new Map();
@@ -15,7 +17,10 @@ export class BullMQDriver implements IMessagingDriver {
       this.queues.set(queueName, new Queue(queueName, this.config));
     }
     const queue = this.queues.get(queueName)!;
-    await queue.add(payload.taskId, payload);
+    const headers: Record<string, string> = {};
+    injectTraceContext(headers);
+    const enrichedPayload: MessagePayload = { ...payload, traceHeaders: headers };
+    await queue.add(payload.taskId, enrichedPayload);
   }
 
   async subscribe(
@@ -26,11 +31,20 @@ export class BullMQDriver implements IMessagingDriver {
       const worker = new Worker(
         queueName,
         async (job) => {
-          await handler(job.data);
+          const ctx = extractTraceContext(job.data.traceHeaders ?? {});
+          await otelContext.with(ctx, () => handler(job.data as MessagePayload));
         },
         this.config,
       );
       this.workers.set(queueName, worker);
+    }
+  }
+
+  async unsubscribe(queueName: string): Promise<void> {
+    const worker = this.workers.get(queueName);
+    if (worker) {
+      await worker.close();
+      this.workers.delete(queueName);
     }
   }
 

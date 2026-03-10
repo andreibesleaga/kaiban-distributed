@@ -7,7 +7,16 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "dev": "node dist/src/main/index.js",
+    "lint": "eslint src tests",
+    "format": "prettier --write src tests",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:kafka": "vitest run --config vitest.e2e.kafka.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint:arch": "madge --circular src/"
   },
   "repository": {
     "type": "git",
@@ -23,9 +32,14 @@
   "homepage": "https://github.com/andreibesleaga/kaiban-distributed#readme",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.3.5",
+    "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^10.0.3",
+    "madge": "^8.0.0",
+    "prettier": "^3.8.1",
+    "supertest": "^7.2.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"
@@ -33,11 +47,17 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentelemetry/auto-instrumentations-node": "^0.71.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
     "@opentelemetry/sdk-node": "^0.213.0",
+    "@opentelemetry/sdk-trace-node": "^2.6.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "bullmq": "^5.70.4",
+    "dotenv": "^16.6.1",
+    "express": "^5.2.1",
     "ioredis": "^5.10.0",
+    "kafkajs": "^2.2.4",
     "kaibanjs": "^0.23.1",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   }
 }
