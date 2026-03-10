@@ -2,7 +2,7 @@
 
 > Distributed, horizontally-scalable Actor-Model runtime for [KaibanJS](https://kaibanjs.com) — run AI agent teams across multiple Node.js processes with real-time Kanban board visibility.
 
-[![Tests](https://img.shields.io/badge/tests-110%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-123%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
 [![License](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
@@ -311,9 +311,11 @@ Options:
 | `GATEWAY_URL` | `http://localhost:3000` | Edge Gateway URL |
 | `REDIS_URL` | `redis://localhost:6379` | Redis for completion events |
 | `TOPIC` | `Latest developments in AI agents` | Blog topic |
-| `RESEARCH_WAIT_MS` | `45000` | Max wait for research (ms) |
-| `WRITE_WAIT_MS` | `60000` | Max wait for writing/revision (ms) |
-| `EDIT_WAIT_MS` | `45000` | Max wait for editorial review (ms) |
+| `RESEARCH_WAIT_MS` | `120000` | Max wait for research (ms) |
+| `WRITE_WAIT_MS` | `240000` | Max wait for writing/revision (ms) |
+| `EDIT_WAIT_MS` | `300000` | Max wait for editorial review (ms) |
+| `MESSAGING_DRIVER` | `bullmq` | `bullmq` or `kafka` — must match the workers |
+| `KAFKA_BROKERS` | `localhost:9092` | Kafka brokers (when `MESSAGING_DRIVER=kafka`) |
 
 ---
 
@@ -334,6 +336,20 @@ SocketGateway (running in Edge Gateway)
 ```
 
 kaiban-board connects to the Socket.io server at the gateway URL and receives `state:update` events with Zustand state deltas.
+
+> **Important — State merging:** Each worker node publishes only its own agent slice. Your board client must **merge by agentId/taskId** (not replace):
+> ```javascript
+> socket.on('state:update', (delta) => {
+>   if (delta.agents) {
+>     for (const a of delta.agents) agentMap.set(a.agentId, { ...agentMap.get(a.agentId), ...a });
+>   }
+>   if (delta.tasks) {
+>     for (const t of delta.tasks) taskMap.set(t.taskId, { ...taskMap.get(t.taskId), ...t });
+>   }
+> });
+> ```
+>
+> The bundled viewer at [`examples/blog-team/viewer/board.html`](examples/blog-team/viewer/board.html) already implements this correctly — open it directly in a browser, no build step needed.
 
 ### Option A: Connect kaiban-board via Socket.io client (recommended)
 
@@ -573,7 +589,10 @@ docker compose up --scale writer=3
 | `PORT` | `3000` | No | HTTP server port |
 | `SERVICE_NAME` | `kaiban-worker` | No | Service name for telemetry |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | No | OpenTelemetry OTLP endpoint URL |
-| `OPENAI_API_KEY` | — | For real agents | OpenAI API key for KaibanJS agents |
+| `OPENAI_API_KEY` | — | For real agents | Standard OpenAI API key |
+| `OPENROUTER_API_KEY` | — | For real agents | OpenRouter key (auto-sets base URL + uses `openai` provider) |
+| `OPENAI_BASE_URL` | — | Optional | Custom OpenAI-compatible endpoint (e.g. `https://openrouter.ai/api/v1`) |
+| `LLM_MODEL` | `gpt-4o-mini` | No | Model name; for OpenRouter use `openai/gpt-4o-mini` or `meta-llama/llama-3.1-8b-instruct:free` |
 
 ---
 
@@ -591,14 +610,42 @@ Services:
 - **kafka** — Confluent Kafka 7.6.0, port 9092
 - **kaiban-worker** — Built from Dockerfile, port 3000
 
-### Multi-Node Blog Team Demo
+### Multi-Node Blog Team Demo — BullMQ (default)
 
 ```bash
-cd examples/blog-team
-OPENAI_API_KEY=sk-... docker compose up
+# Start 5-service blog pipeline (Redis + gateway + researcher + writer + editor)
+docker compose \
+  -f examples/blog-team/docker-compose.yml \
+  --env-file .env \
+  up --build
+
+# Run orchestrator (separate terminal)
+GATEWAY_URL=http://localhost:3000 REDIS_URL=redis://localhost:6379 \
+TOPIC="AI Agents in 2025" \
+  npx ts-node examples/blog-team/orchestrator.ts
 ```
 
-Services: redis + gateway + researcher (Ava) + writer (Kai).
+### Multi-Node Blog Team Demo — Kafka
+
+```bash
+# Start Kafka-based pipeline (Zookeeper + Kafka + Redis + gateway + researcher + writer + editor)
+docker compose \
+  -f examples/blog-team/docker-compose.kafka.yml \
+  --env-file .env \
+  up --build
+
+# Run orchestrator using Kafka as the messaging layer
+GATEWAY_URL=http://localhost:3000 \
+REDIS_URL=redis://localhost:6379 \
+MESSAGING_DRIVER=kafka \
+KAFKA_BROKERS=localhost:9092 \
+TOPIC="AI Agents in 2025" \
+  npx ts-node examples/blog-team/orchestrator.ts
+```
+
+> **Architecture note (Kafka):** Task queues use Kafka topics (`kaiban-agents-*`, `kaiban-events-*`). State broadcast (`kaiban-state-events`) still uses Redis Pub/Sub because `SocketGateway` reads from it directly. Each worker/orchestrator component gets a unique Kafka consumer group suffix to prevent message routing conflicts.
+
+Services: redis + zookeeper + kafka + gateway + researcher (Ava) + writer (Kai) + editor (Morgan).
 
 ### Production Scaling
 
@@ -713,6 +760,59 @@ npm run test:e2e:kafka
 | Branches | 100% |
 | Functions | 100% |
 | Lines | 100% |
+
+
+---
+
+## Real-Time Monitor & Debugging
+
+A single command to stream all system activity in your terminal:
+
+```bash
+./scripts/monitor.sh
+```
+
+What it shows (all in real-time, colour-coded by source):
+
+| Stream | Colour | Description |
+|--------|--------|-------------|
+| `[workflow]` | Cyan | Workflow status transitions (INITIAL → RUNNING → FINISHED) |
+| `[agents  ]` | Cyan | Agent statuses: **IDLE** (dim), **EXECUTING** (bold green), **THINKING** (bold blue), **ERROR** (bold red) |
+| `[tasks   ]` | Cyan | Task statuses: **DOING** (bold blue), **DONE** (bold green), **BLOCKED** (bold red), **AWAITING_VALIDATION** (bold yellow) |
+| `[logs]` researcher | Blue | Ava's process logs: task received, LLM calls, retries, completions |
+| `[logs]` writer | Green | Kai's process logs |
+| `[logs]` editor | Magenta | Morgan's editorial review output |
+| `[logs]` gateway | Yellow | HTTP requests, A2A calls, Socket.io connections |
+| `[bull:event]` | Magenta | BullMQ internal events: job activated / completed / failed |
+| `[queue]` | Yellow | BullMQ queue depths polled every 5s (waiting / active / failed) |
+| `[!ERR]` | Red | Any error, exception, or BLOCKED state across all containers |
+
+**Configuration:**
+
+```bash
+REDIS_URL=redis://localhost:6379 \
+COMPOSE_FILE=examples/blog-team/docker-compose.yml \
+LOG_TAIL=200 \
+QUEUE_POLL_SEC=3 \
+  ./scripts/monitor.sh
+```
+
+**Requirements:** `docker` (and `docker compose`). `redis-cli` auto-detected — uses `docker exec` inside the Redis container if the native binary is not in `$PATH`.
+
+### Debugging LLM issues
+
+The monitor highlights all lines containing `LLM`, `executeThinking`, `finalAnswer`, `tokens`, or `model` in **bold** so you can spot LLM call behaviour without scrolling. Error lines (`KaibanJS execution error`, `401`, `404 MODEL_NOT_FOUND`) appear in red immediately.
+
+**Common issues:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `401 User not found` | Invalid OpenRouter API key | Get a valid key at https://openrouter.ai/keys |
+| `404 MODEL_NOT_FOUND` | Model name wrong or needs data policy | Use `meta-llama/llama-3.1-8b-instruct:free` or enable https://openrouter.ai/settings/privacy |
+| `LLM instance not initialized` | Agent not initialized before workOnTask | Already fixed — `initializeAgentLLM()` bootstraps without a Team |
+| `Queue name cannot contain :` | Colon in BullMQ queue name | Already fixed — all internal queues use dashes |
+| `Timeout waiting for research` | Task failed (DLQ) and orchestrator not notified | Already fixed — `CompletionRouter` subscribes to both `kaiban-events-completed` AND `kaiban-events-failed` |
+| Kafka: revision/edit tasks not received | Second `subscribe()` call after `consumer.run()` fails in KafkaJS | Fixed — orchestrator creates TWO separate KafkaDriver instances (different consumer groups) for completed vs failed queues |
 
 ---
 

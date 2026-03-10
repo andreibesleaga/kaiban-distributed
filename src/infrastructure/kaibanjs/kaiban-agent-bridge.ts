@@ -4,10 +4,21 @@ import type { MessagePayload, IMessagingDriver } from '../messaging/interfaces';
 
 export type KaibanAgentConfig = IAgentParams;
 
-type AgentLoopResult = { result?: { finalAnswer?: string } | string | null };
+/**
+ * KaibanJS AgentLoopResult shape.
+ * When LLM call fails, KaibanJS returns { error, metadata } with no `result` field.
+ * When LLM call succeeds, it returns { result: { finalAnswer } | string }.
+ */
+type AgentLoopResult =
+  | { result?: { finalAnswer?: string } | string | null; error?: never }
+  | { error: string; metadata: { iterations: number; maxAgentIterations: number }; result?: never };
 
 function extractFinalAnswer(loopResult: AgentLoopResult): unknown {
-  const r = loopResult?.result;
+  // KaibanJS error result — throw so AgentActor retries and eventually DLQs
+  if (loopResult && typeof loopResult === 'object' && 'error' in loopResult && loopResult.error) {
+    throw new Error(`KaibanJS execution error: ${loopResult.error}`);
+  }
+  const r = (loopResult as { result?: { finalAnswer?: string } | string | null }).result;
   if (!r) return loopResult;
   if (typeof r === 'object' && 'finalAnswer' in r) return r.finalAnswer;
   if (typeof r === 'string') return r;
@@ -47,6 +58,7 @@ function initializeAgentLLM(agent: Agent): void {
  * Creates an AgentActor-compatible task handler backed by a real KaibanJS Agent.
  *
  * Maps MessagePayload → KaibanJS Task → agent.workOnTask() → returns LLM finalAnswer.
+ * Throws on KaibanJS error results so AgentActor retries (max 3 times), then DLQs.
  * The result is included in kaiban-events-completed data.result for downstream chaining.
  */
 export function createKaibanTaskHandler(
@@ -58,7 +70,6 @@ export function createKaibanTaskHandler(
   initializeAgentLLM(agent);
 
   return async (payload: MessagePayload): Promise<unknown> => {
-    // Re-initialize on each call in case env changed (e.g. in tests)
     initializeAgentLLM(agent);
 
     const task = new Task({

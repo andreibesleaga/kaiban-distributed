@@ -1,17 +1,14 @@
 import 'dotenv/config';
-import { BullMQDriver } from '../../src/infrastructure/messaging/bullmq-driver';
 import { AgentActor } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
 import { researcherConfig, RESEARCHER_QUEUE } from './team-config';
+import { createDriver } from './driver-factory';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const redisUrl = new URL(REDIS_URL);
 
-const driver = new BullMQDriver({
-  connection: { host: redisUrl.hostname, port: parseInt(redisUrl.port || '6379', 10) },
-});
-
+// Each worker uses a unique consumer group suffix to avoid competing consumers
+const driver = createDriver('-researcher');
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
   agentId: 'researcher',
   name: 'Ava',

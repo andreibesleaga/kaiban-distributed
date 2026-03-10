@@ -52,12 +52,30 @@ export class AgentStatePublisher {
     );
   }
 
-  /** Call on node startup — board immediately shows the agent as IDLE */
-  publishIdle(): void {
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private currentStatus: string = 'IDLE';
+  private currentTaskId: string | null = null;
+
+  /**
+   * Call on node startup — board shows IDLE immediately.
+   * Starts a periodic heartbeat so late-connecting boards/monitors see current state
+   * within HEARTBEAT_INTERVAL_MS even if they missed the initial publish.
+   */
+  publishIdle(heartbeatIntervalMs = 15000): void {
+    this.currentStatus = 'IDLE';
+    this.currentTaskId = null;
     this.publish({
       agents: [{ ...this.agentInfo, status: 'IDLE', currentTaskId: null }],
       teamWorkflowStatus: 'RUNNING',
     });
+    // Start heartbeat so late-connecting board viewers see this agent within 15s
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      this.publish({
+        agents: [{ ...this.agentInfo, status: this.currentStatus as 'IDLE' | 'EXECUTING' | 'ERROR', currentTaskId: this.currentTaskId }],
+        teamWorkflowStatus: 'RUNNING',
+      });
+    }, heartbeatIntervalMs);
   }
 
   /**
@@ -74,6 +92,8 @@ export class AgentStatePublisher {
       const title = String(payload.data['instruction'] ?? payload.taskId).slice(0, 60);
 
       // → EXECUTING
+      this.currentStatus = 'EXECUTING';
+      this.currentTaskId = payload.taskId;
       pub({
         agents: [{ agentId, name, role, status: 'EXECUTING', currentTaskId: payload.taskId }],
         tasks: [{ taskId: payload.taskId, title, status: 'DOING', assignedToAgentId: agentId }],
@@ -84,6 +104,8 @@ export class AgentStatePublisher {
         const result = await handler(payload);
 
         // → DONE
+        this.currentStatus = 'IDLE';
+        this.currentTaskId = null;
         pub({
           agents: [{ agentId, name, role, status: 'IDLE', currentTaskId: null }],
           tasks: [{
@@ -98,6 +120,7 @@ export class AgentStatePublisher {
         return result;
       } catch (err) {
         // → ERROR
+        this.currentStatus = 'ERROR';
         pub({
           agents: [{ agentId, name, role, status: 'ERROR', currentTaskId: payload.taskId }],
           tasks: [{ taskId: payload.taskId, title, status: 'BLOCKED', assignedToAgentId: agentId }],
@@ -108,6 +131,7 @@ export class AgentStatePublisher {
   }
 
   async disconnect(): Promise<void> {
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
     await this.redis.quit();
   }
 }

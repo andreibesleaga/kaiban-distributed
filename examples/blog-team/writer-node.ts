@@ -1,17 +1,13 @@
 import 'dotenv/config';
-import { BullMQDriver } from '../../src/infrastructure/messaging/bullmq-driver';
 import { AgentActor } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
 import { writerConfig, WRITER_QUEUE } from './team-config';
+import { createDriver } from './driver-factory';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const redisUrl = new URL(REDIS_URL);
 
-const driver = new BullMQDriver({
-  connection: { host: redisUrl.hostname, port: parseInt(redisUrl.port || '6379', 10) },
-});
-
+const driver = createDriver('-writer');
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
   agentId: 'writer',
   name: 'Kai',

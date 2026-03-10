@@ -8,7 +8,6 @@
  *                                    ┌─────────▼──────────┐
  *                                    │  EDITORIAL REVIEW   │
  *                                    │  Accuracy: X.X/10   │
- *                                    │  Issues: [...]      │
  *                                    │  Recommendation:    │
  *                                    │  PUBLISH|REVISE|    │
  *                                    │  REJECT             │
@@ -16,37 +15,146 @@
  *                                              │
  *                                   ┌──────────▼───────────┐
  *                                   │  Human Decision (HITL) │
- *                                   │  a) Accept + PUBLISH   │
- *                                   │  b) Send back to REVISE │
- *                                   │  c) REJECT + discard   │
+ *                                   │  [1] PUBLISH           │
+ *                                   │  [2] REVISE            │
+ *                                   │  [3] REJECT            │
  *                                   └────────────────────────┘
  *
  * Usage:
- *   GATEWAY_URL=http://localhost:3000 TOPIC="AI Agents" ts-node orchestrator.ts
- *
- * Environment variables:
- *   GATEWAY_URL  — Edge Gateway URL (default: http://localhost:3000)
- *   TOPIC        — Blog post topic (default: "Latest developments in AI agents")
- *   RESEARCH_WAIT_MS — Time to wait for research (default: 45000)
- *   WRITE_WAIT_MS    — Time to wait for writing  (default: 60000)
- *   EDIT_WAIT_MS     — Time to wait for editing  (default: 45000)
+ *   GATEWAY_URL=http://localhost:3000 REDIS_URL=redis://localhost:6379 \
+ *   TOPIC="AI Agents in 2025" npx ts-node examples/blog-team/orchestrator.ts
  */
 import 'dotenv/config';
 import readline from 'readline';
 import { io, type Socket } from 'socket.io-client';
-import { BullMQDriver } from '../../src/infrastructure/messaging/bullmq-driver';
+import { Redis } from 'ioredis';
+import { createDriver, getDriverType } from './driver-factory';
 import { COMPLETED_QUEUE } from './team-config';
 
-const GATEWAY_URL      = process.env['GATEWAY_URL'] ?? 'http://localhost:3000';
-const REDIS_URL        = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const TOPIC            = process.env['TOPIC'] ?? 'Latest developments in AI agents';
-const RESEARCH_WAIT_MS = parseInt(process.env['RESEARCH_WAIT_MS'] ?? '45000', 10);
-const WRITE_WAIT_MS    = parseInt(process.env['WRITE_WAIT_MS'] ?? '60000', 10);
-const EDIT_WAIT_MS     = parseInt(process.env['EDIT_WAIT_MS'] ?? '45000', 10);
+const GATEWAY_URL      = process.env['GATEWAY_URL']      ?? 'http://localhost:3000';
+const REDIS_URL        = process.env['REDIS_URL']        ?? 'redis://localhost:6379';
+const TOPIC            = process.env['TOPIC']            ?? 'Latest developments in AI agents';
+const RESEARCH_WAIT_MS = parseInt(process.env['RESEARCH_WAIT_MS'] ?? '120000', 10);
+const WRITE_WAIT_MS    = parseInt(process.env['WRITE_WAIT_MS']    ?? '240000', 10);
+const EDIT_WAIT_MS     = parseInt(process.env['EDIT_WAIT_MS']     ?? '300000', 10);
 
-// ──────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// CompletionRouter — single BullMQ subscriber, dispatches by taskId
+// Fixes: BullMQDriver.subscribe() reuses the same worker for a queue,
+// so calling subscribe() twice for different handlers silently drops
+// the second handler. One router handles all completions.
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Publishes orchestration states directly to Redis Pub/Sub → SocketGateway → board.
+ * Enables the board to show AWAITING_VALIDATION during HITL and errors when tasks fail.
+ */
+class OrchestratorStatePublisher {
+  private redis: Redis;
+
+  constructor(redisUrl: string) {
+    this.redis = new Redis(redisUrl, { lazyConnect: false });
+  }
+
+  publish(delta: Record<string, unknown>): void {
+    this.redis.publish('kaiban-state-events', JSON.stringify(delta)).catch(() => {});
+  }
+
+  awaitingHITL(taskId: string, reviewTitle: string, recommendation: string, score: string): void {
+    this.publish({
+      teamWorkflowStatus: 'RUNNING',
+      tasks: [{
+        taskId,
+        title: `🔍 ${reviewTitle}`,
+        status: 'AWAITING_VALIDATION',
+        assignedToAgentId: 'editor',
+        result: `Recommendation: ${recommendation} | Score: ${score} — Waiting for human decision`,
+      }],
+    });
+  }
+
+  taskFailed(taskId: string, agentId: string, title: string, error: string): void {
+    this.publish({
+      agents: [{ agentId, name: agentId, role: agentId, status: 'ERROR', currentTaskId: taskId }],
+      tasks: [{ taskId, title: title.slice(0, 60), status: 'BLOCKED', assignedToAgentId: agentId, result: `ERROR: ${error.slice(0, 200)}` }],
+    });
+  }
+
+  workflowFinished(finalTaskId: string, title: string): void {
+    this.publish({
+      teamWorkflowStatus: 'FINISHED',
+      tasks: [{ taskId: finalTaskId, title: title.slice(0, 60), status: 'DONE', assignedToAgentId: 'writer', result: '✅ Published' }],
+    });
+  }
+
+  async disconnect(): Promise<void> { await this.redis.quit(); }
+}
+
+/**
+ * CompletionRouter — single subscription hub dispatching by taskId.
+ *
+ * For BullMQ: one driver handles both completed + failed queues (different queue names).
+ * For Kafka:  TWO separate drivers required (different consumer groups) because
+ *             KafkaJS doesn't support subscribing to new topics after consumer.run() starts.
+ *             Pass a separate failedDriver created with a different groupId suffix.
+ */
+class CompletionRouter {
+  private pendingResolve = new Map<string, (result: string) => void>();
+  private pendingReject  = new Map<string, (err: Error) => void>();
+  private timers         = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(
+    completedDriver: import('../../src/infrastructure/messaging/interfaces').IMessagingDriver,
+    failedDriver?: import('../../src/infrastructure/messaging/interfaces').IMessagingDriver,
+  ) {
+    const dlqDriver = failedDriver ?? completedDriver;
+
+    // Successful completions
+    void completedDriver.subscribe(COMPLETED_QUEUE, async (payload) => {
+      const resolve = this.pendingResolve.get(payload.taskId);
+      if (resolve) {
+        this.clearPending(payload.taskId);
+        const result = payload.data['result'];
+        resolve(typeof result === 'string' ? result : JSON.stringify(result ?? ''));
+      }
+    });
+
+    // Failed tasks (after 3 retries → DLQ) — surfaces real LLM error
+    void dlqDriver.subscribe('kaiban-events-failed', async (payload) => {
+      const reject = this.pendingReject.get(payload.taskId);
+      if (reject) {
+        this.clearPending(payload.taskId);
+        const errMsg = String(payload.data['error'] ?? 'Task failed after max retries');
+        reject(new Error(`Agent failed: ${errMsg}`));
+      }
+    });
+  }
+
+  private clearPending(taskId: string): void {
+    this.pendingResolve.delete(taskId);
+    this.pendingReject.delete(taskId);
+    const t = this.timers.get(taskId);
+    if (t) { clearTimeout(t); this.timers.delete(taskId); }
+  }
+
+  wait(taskId: string, timeoutMs: number, label: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.pendingResolve.set(taskId, resolve);
+      this.pendingReject.set(taskId, reject);
+      this.timers.set(taskId, setTimeout(() => {
+        if (this.pendingResolve.has(taskId)) {
+          this.clearPending(taskId);
+          reject(new Error(`[Orchestrator] Timeout waiting for ${label} (${timeoutMs / 1000}s)\n` +
+            'Tip: increase RESEARCH_WAIT_MS / WRITE_WAIT_MS / EDIT_WAIT_MS'));
+        }
+      }, timeoutMs));
+    });
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
 // Helpers
-// ──────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
 
 async function rpc(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
   const res = await fetch(`${GATEWAY_URL}/a2a/rpc`, {
@@ -64,7 +172,8 @@ function ask(rl: readline.Interface, question: string): Promise<string> {
 }
 
 function parseRecommendation(review: string): 'PUBLISH' | 'REVISE' | 'REJECT' | 'UNKNOWN' {
-  const match = /Recommendation:\s*(PUBLISH|REVISE|REJECT)/i.exec(review);
+  // Handle plain, bold (**Recommendation:**), and variations
+  const match = /\*{0,2}Recommendation:?\*{0,2}\s*\*{0,2}(PUBLISH|REVISE|REJECT)\*{0,2}/i.exec(review);
   if (!match) return 'UNKNOWN';
   return match[1].toUpperCase() as 'PUBLISH' | 'REVISE' | 'REJECT';
 }
@@ -74,57 +183,35 @@ function parseAccuracyScore(review: string): string {
   return match ? match[1] : 'N/A';
 }
 
-/**
- * Waits for a task to complete by polling kaiban-events-completed.
- * Returns the data.result field from the completion event.
- */
-async function waitForTaskResult(
-  driver: BullMQDriver,
-  taskId: string,
-  timeoutMs: number,
-  label: string,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let resolved = false;
-    const timer = setTimeout(() => {
-      if (!resolved) reject(new Error(`[Orchestrator] Timeout waiting for ${label} (${timeoutMs / 1000}s)`));
-    }, timeoutMs);
-
-    void driver.subscribe(COMPLETED_QUEUE, async (payload) => {
-      if (payload.taskId === taskId && !resolved) {
-        resolved = true;
-        clearTimeout(timer);
-        const result = payload.data['result'];
-        resolve(typeof result === 'string' ? result : JSON.stringify(result));
-      }
-    });
-  });
-}
-
-// ──────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
 // Main orchestration flow
-// ──────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const redisUrl = new URL(REDIS_URL);
+  // For BullMQ: one driver handles both completed + failed queues.
+  // For Kafka: separate consumer groups prevent the KafkaJS "can't subscribe after run()" issue.
+  const isKafka = getDriverType() === 'kafka';
+  const completedDriver = createDriver('-orchestrator-completed');
+  const failedDriver = isKafka ? createDriver('-orchestrator-failed') : completedDriver;
 
-  // BullMQ driver for receiving completion events
-  const driver = new BullMQDriver({
-    connection: { host: redisUrl.hostname, port: parseInt(redisUrl.port || '6379', 10) },
-  });
+  // Single shared router — must be created BEFORE any tasks are submitted
+  const completionRouter = new CompletionRouter(completedDriver, failedDriver);
 
-  // Socket.io for real-time state board updates
+  // Direct Redis Pub/Sub publisher for orchestration states (HITL, errors, finish)
+  const statePublisher = new OrchestratorStatePublisher(REDIS_URL);
+
   let socket: Socket | null = null;
 
   const cleanup = async (): Promise<void> => {
     socket?.disconnect();
-    await driver.disconnect();
+    await completedDriver.disconnect();
+    if (isKafka) await failedDriver.disconnect();
+    await statePublisher.disconnect();
     rl.close();
   };
 
   try {
-    // ── Gateway check ──────────────────────────────
     console.log(`\n${'═'.repeat(60)}`);
     console.log(' KAIBAN DISTRIBUTED — BLOG TEAM ORCHESTRATOR');
     console.log(`${'═'.repeat(60)}\n`);
@@ -137,7 +224,6 @@ async function main(): Promise<void> {
     };
     console.log(`✓ Agent:   ${card.name} — [${card.capabilities.join(', ')}]\n`);
 
-    // ── Socket.io board monitor ────────────────────
     socket = io(GATEWAY_URL, { transports: ['websocket'] });
     socket.on('state:update', (delta: Record<string, unknown>) => {
       const status = delta['teamWorkflowStatus'] ?? delta['status'];
@@ -146,40 +232,44 @@ async function main(): Promise<void> {
 
     console.log(`📋 Topic: "${TOPIC}"\n`);
 
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
     // STEP 1 — Research
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
     console.log('─'.repeat(60));
     console.log('STEP 1 — Ava (Researcher) is gathering information...');
     console.log('─'.repeat(60));
 
     const researchTask = await rpc('tasks.create', {
       agentId: 'researcher',
-      instruction: `Research the latest news, key developments, and verifiable facts on the topic: "${TOPIC}". Include specific data points, statistics, and source references where possible.`,
-      expectedOutput: 'A detailed research summary with key facts, trends, notable developments, and source references. Clearly distinguish confirmed facts from speculation.',
+      instruction: `Research the latest news, key developments, and verifiable facts on: "${TOPIC}". Include specific data points, statistics, and notable developments.`,
+      expectedOutput: 'A detailed research summary with key facts, trends, and developments. Distinguish confirmed facts from speculation.',
       inputs: { topic: TOPIC },
     });
     const researchTaskId = String(researchTask['taskId']);
     console.log(`  ↳ Task queued: ${researchTaskId}`);
     console.log(`  ↳ Waiting up to ${RESEARCH_WAIT_MS / 1000}s for research...\n`);
 
-    const researchSummary = await waitForTaskResult(driver, researchTaskId, RESEARCH_WAIT_MS, 'research');
+    const researchSummary = await completionRouter.wait(researchTaskId, RESEARCH_WAIT_MS, 'research')
+      .catch((err: Error) => {
+        statePublisher.taskFailed(researchTaskId, 'researcher', 'Research task', err.message);
+        throw err;
+      });
 
     console.log('\n✅ RESEARCH COMPLETE');
     console.log('─'.repeat(60));
     console.log(researchSummary.slice(0, 600) + (researchSummary.length > 600 ? '\n  [...truncated...]' : ''));
     console.log('─'.repeat(60) + '\n');
 
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
     // STEP 2 — Write
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
     console.log('STEP 2 — Kai (Writer) is drafting the blog post...');
     console.log('─'.repeat(60));
 
     const writeTask = await rpc('tasks.create', {
       agentId: 'writer',
-      instruction: `Write an engaging, well-structured blog post about: "${TOPIC}". Use the research provided in the context. Structure: compelling headline, introduction, 3-4 substantive sections, conclusion. Stick to the verified facts from research.`,
-      expectedOutput: 'A complete blog post in Markdown format, 500–800 words, with a headline, sections, and conclusion. Only include claims supported by the research.',
+      instruction: `Write an engaging blog post about: "${TOPIC}". Use the research provided in the context. Structure: headline, introduction, 3–4 sections, conclusion. Only include verified facts.`,
+      expectedOutput: 'A complete blog post in Markdown format, 500–800 words.',
       inputs: { topic: TOPIC },
       context: researchSummary,
     });
@@ -187,23 +277,27 @@ async function main(): Promise<void> {
     console.log(`  ↳ Task queued: ${writeTaskId}`);
     console.log(`  ↳ Waiting up to ${WRITE_WAIT_MS / 1000}s for draft...\n`);
 
-    const blogDraft = await waitForTaskResult(driver, writeTaskId, WRITE_WAIT_MS, 'writing');
+    const blogDraft = await completionRouter.wait(writeTaskId, WRITE_WAIT_MS, 'writing')
+      .catch((err: Error) => {
+        statePublisher.taskFailed(writeTaskId, 'writer', 'Writing task', err.message);
+        throw err;
+      });
 
     console.log('\n✅ DRAFT COMPLETE');
     console.log('─'.repeat(60));
-    console.log(blogDraft.slice(0, 800) + (blogDraft.length > 800 ? '\n  [...truncated — full draft sent to editor...]' : ''));
+    console.log(blogDraft.slice(0, 800) + (blogDraft.length > 800 ? '\n  [...full draft sent to editor...]' : ''));
     console.log('─'.repeat(60) + '\n');
 
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
     // STEP 3 — Editorial Review
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
     console.log('STEP 3 — Morgan (Editor) is reviewing for accuracy...');
     console.log('─'.repeat(60));
 
     const editTask = await rpc('tasks.create', {
       agentId: 'editor',
-      instruction: `You are reviewing a blog post draft for factual accuracy. Cross-reference every claim in the draft against the research summary provided. Identify unsupported claims, factual errors, misleading statements, and missing important context. Output your review using the structured format from your background instructions.`,
-      expectedOutput: 'A structured editorial review in the exact format specified in your background: accuracy score, issues list with severity, required changes, and PUBLISH/REVISE/REJECT recommendation.',
+      instruction: 'Review the blog post draft for factual accuracy. Cross-reference every claim against the research summary. Output your review in the exact structured format from your background instructions.',
+      expectedOutput: 'Structured editorial review: accuracy score, issues with severity, required changes, PUBLISH/REVISE/REJECT recommendation, rationale.',
       inputs: { topic: TOPIC },
       context: `--- RESEARCH SUMMARY ---\n${researchSummary}\n\n--- BLOG DRAFT ---\n${blogDraft}`,
     });
@@ -211,107 +305,89 @@ async function main(): Promise<void> {
     console.log(`  ↳ Task queued: ${editTaskId}`);
     console.log(`  ↳ Waiting up to ${EDIT_WAIT_MS / 1000}s for editorial review...\n`);
 
-    const editorialReview = await waitForTaskResult(driver, editTaskId, EDIT_WAIT_MS, 'editorial review');
+    const editorialReview = await completionRouter.wait(editTaskId, EDIT_WAIT_MS, 'editorial review')
+      .catch((err: Error) => {
+        statePublisher.taskFailed(editTaskId, 'editor', 'Editorial review', err.message);
+        throw err;
+      });
 
     const recommendation = parseRecommendation(editorialReview);
     const accuracyScore  = parseAccuracyScore(editorialReview);
 
     console.log('\n');
     console.log('╔' + '═'.repeat(58) + '╗');
-    console.log('║  📝 EDITORIAL REVIEW BY MORGAN                          ║');
+    console.log('║  📝 EDITORIAL REVIEW BY MORGAN' + ' '.repeat(27) + '║');
     console.log('╠' + '═'.repeat(58) + '╣');
-    console.log(editorialReview.split('\n').map((l) => `║  ${l.padEnd(56)}║`).join('\n'));
+    editorialReview.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
     console.log('╚' + '═'.repeat(58) + '╝');
-
     console.log(`\n  Accuracy Score:  ${accuracyScore}`);
     console.log(`  Recommendation:  ${recommendation}\n`);
 
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
     // STEP 4 — Human-in-the-Loop Decision
-    // ──────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────
+    // Broadcast AWAITING_VALIDATION so the board shows the paused state
+    statePublisher.awaitingHITL(editTaskId, 'Editorial Review — Human Decision Required', recommendation, accuracyScore);
+
     console.log('═'.repeat(60));
     console.log(' HUMAN REVIEW REQUIRED (HITL)');
     console.log('═'.repeat(60));
 
-    if (recommendation === 'PUBLISH') {
-      console.log(`\n🟢 Editor recommends PUBLISH (Accuracy: ${accuracyScore})\n`);
-    } else if (recommendation === 'REVISE') {
-      console.log(`\n🟡 Editor recommends REVISE (Accuracy: ${accuracyScore})\n`);
-    } else if (recommendation === 'REJECT') {
-      console.log(`\n🔴 Editor recommends REJECT (Accuracy: ${accuracyScore})\n`);
-    }
-
-    console.log('Options:');
-    console.log('  [1] PUBLISH — Accept the post as-is and publish');
-    console.log('  [2] REVISE  — Send back to writer with editor notes');
-    console.log('  [3] REJECT  — Discard this post entirely');
-    console.log('  [4] VIEW    — View full blog draft before deciding\n');
+    const icon = recommendation === 'PUBLISH' ? '🟢' : recommendation === 'REVISE' ? '🟡' : '🔴';
+    console.log(`\n${icon} Editor recommends ${recommendation} (Accuracy: ${accuracyScore})\n`);
+    console.log('Options:\n  [1] PUBLISH\n  [2] REVISE → send back to Kai with notes\n  [3] REJECT\n  [4] VIEW full draft\n');
 
     let decision = '';
     while (!['1', '2', '3'].includes(decision)) {
       decision = (await ask(rl, 'Your decision [1/2/3/4]: ')).trim();
       if (decision === '4') {
-        console.log('\n─── FULL BLOG DRAFT ───────────────────────────────────');
+        console.log('\n─── FULL BLOG DRAFT ──────────────────────────────────');
         console.log(blogDraft);
-        console.log('───────────────────────────────────────────────────────\n');
+        console.log('──────────────────────────────────────────────────────\n');
       }
     }
 
-    // ──────────────────────────────────────────────
-    // STEP 5 — Execute Decision
-    // ──────────────────────────────────────────────
     if (decision === '1') {
-      // ── PUBLISH ─────────────────────────────────
-      console.log('\n');
-      console.log('╔' + '═'.repeat(58) + '╗');
-      console.log('║  🚀 PUBLISHED — FINAL BLOG POST                        ║');
+      console.log('\n╔' + '═'.repeat(58) + '╗');
+      console.log('║  🚀 PUBLISHED — FINAL BLOG POST' + ' '.repeat(26) + '║');
       console.log('╠' + '═'.repeat(58) + '╣');
-      blogDraft.split('\n').forEach((l) => console.log(`║  ${l.padEnd(56)}║`));
+      blogDraft.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
       console.log('╚' + '═'.repeat(58) + '╝');
-      console.log(`\n✅ Blog post published. Accuracy score: ${accuracyScore}\n`);
+      console.log(`\n✅ Published. Accuracy: ${accuracyScore}\n`);
+      statePublisher.workflowFinished(writeTaskId, TOPIC);
 
     } else if (decision === '2') {
-      // ── REVISE ──────────────────────────────────
-      console.log('\n🔄 Sending back to writer with editorial notes...\n');
+      console.log('\n🔄 Sending back to Kai with editorial notes...\n');
 
       const revisionTask = await rpc('tasks.create', {
         agentId: 'writer',
-        instruction: `Revise your blog post about "${TOPIC}" based on the editorial feedback below. Address each issue listed and make the required changes. Maintain the same structure and length.`,
-        expectedOutput: 'A revised, fully corrected blog post in Markdown format addressing all editorial issues.',
+        instruction: `Revise your blog post about "${TOPIC}" addressing all editorial feedback below.`,
+        expectedOutput: 'A fully revised blog post in Markdown addressing all editorial issues.',
         inputs: { topic: TOPIC },
-        context: `--- ORIGINAL DRAFT ---\n${blogDraft}\n\n--- EDITORIAL FEEDBACK ---\n${editorialReview}\n\n--- ORIGINAL RESEARCH ---\n${researchSummary}`,
+        context: `--- ORIGINAL DRAFT ---\n${blogDraft}\n\n--- EDITORIAL FEEDBACK ---\n${editorialReview}\n\n--- RESEARCH ---\n${researchSummary}`,
       });
       const revisionTaskId = String(revisionTask['taskId']);
       console.log(`  ↳ Revision task queued: ${revisionTaskId}`);
-      console.log(`  ↳ Waiting up to ${WRITE_WAIT_MS / 1000}s for revised draft...\n`);
 
-      const revisedDraft = await waitForTaskResult(driver, revisionTaskId, WRITE_WAIT_MS, 'revision');
+      const revisedDraft = await completionRouter.wait(revisionTaskId, WRITE_WAIT_MS, 'revision');
 
       console.log('╔' + '═'.repeat(58) + '╗');
-      console.log('║  ✏️  REVISED DRAFT                                      ║');
+      console.log('║  ✏️  REVISED DRAFT' + ' '.repeat(40) + '║');
       console.log('╠' + '═'.repeat(58) + '╣');
-      revisedDraft.split('\n').forEach((l) => console.log(`║  ${l.padEnd(56)}║`));
+      revisedDraft.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
       console.log('╚' + '═'.repeat(58) + '╝');
 
-      const publishRevised = (await ask(rl, '\nPublish the revised draft? [y/n]: ')).trim().toLowerCase();
-      if (publishRevised === 'y') {
-        console.log('\n✅ Revised blog post published.\n');
-      } else {
-        console.log('\n⏸  Revised draft saved but not published. Review it and re-run if needed.\n');
-      }
+      const pub = (await ask(rl, '\nPublish the revised draft? [y/n]: ')).trim().toLowerCase();
+      console.log(pub === 'y' ? '\n✅ Revised draft published.\n' : '\n⏸  Draft saved. Run again to review further.\n');
 
     } else {
-      // ── REJECT ──────────────────────────────────
-      console.log('\n🗑  Post rejected and discarded.\n');
-      console.log('Reason from editorial review:');
+      console.log('\n🗑  Post rejected.\n');
       const rationaleMatch = /Rationale\s*\n([\s\S]+)$/i.exec(editorialReview);
       if (rationaleMatch) console.log(rationaleMatch[1].trim());
-      console.log('');
     }
 
     console.log('─'.repeat(60));
-    console.log('Orchestration complete. View full execution trace at:');
-    console.log(`  ${GATEWAY_URL}  (kaiban-board Socket.io: ws://${new URL(GATEWAY_URL).host})`);
+    console.log(`View full trace: ${GATEWAY_URL}  |  Board: examples/blog-team/viewer/board.html`);
     console.log('─'.repeat(60) + '\n');
 
   } finally {

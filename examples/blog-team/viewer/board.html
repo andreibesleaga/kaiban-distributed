@@ -59,8 +59,18 @@
     .task-card.todo    { border-left-color: #64748b; }
     .task-card.doing   { border-left-color: #3b82f6; background: #0c1a30; }
     .task-card.done    { border-left-color: #22c55e; }
-    .task-card.blocked { border-left-color: #ef4444; }
-    .task-card.awaiting_validation { border-left-color: #f97316; }
+    .task-card.blocked {
+      border-left-color: #ef4444; background: #130505;
+      box-shadow: 0 0 8px rgba(239,68,68,0.3);
+    }
+    .task-card.awaiting_validation {
+      border-left-color: #f97316; background: #1a1000;
+      box-shadow: 0 0 12px rgba(249,115,22,0.4); animation: awaiting-glow 2s ease-in-out infinite;
+    }
+    @keyframes awaiting-glow {
+      0%, 100% { box-shadow: 0 0 12px rgba(249,115,22,0.4); }
+      50% { box-shadow: 0 0 24px rgba(249,115,22,0.8); }
+    }
 
     .task-title { font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
     .task-agent { font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px; }
@@ -158,6 +168,18 @@
   <span id="workflow-badge" style="font-size:0.75rem; color:#475569"></span>
 </header>
 
+<!-- HITL / Error banners (shown dynamically) -->
+  <div id="banner-hitl" style="display:none;background:linear-gradient(90deg,#7c2d12,#431407);
+    border:1px solid #f97316;border-radius:10px;padding:14px 20px;margin-bottom:16px;
+    text-align:center;animation:awaiting-glow 2s ease-in-out infinite;">
+    <div style="font-size:1rem;font-weight:800;color:#fb923c">⏸ HUMAN DECISION REQUIRED</div>
+    <div id="banner-hitl-msg" style="font-size:0.8rem;color:#fed7aa;margin-top:4px"></div>
+  </div>
+  <div id="banner-error" style="display:none;background:#130505;border:1px solid #ef4444;
+    border-radius:10px;padding:14px 20px;margin-bottom:16px;text-align:center;">
+    <div style="font-size:0.95rem;font-weight:800;color:#f87171">⛔ TASK FAILED</div>
+    <div id="banner-error-msg" style="font-size:0.78rem;color:#fca5a5;margin-top:4px;white-space:pre-wrap"></div>
+  </div>
 <!-- Workflow status bar -->
 <div class="workflow-bar" id="workflow-bar">
   <span class="workflow-label">Workflow:</span>
@@ -267,12 +289,25 @@
       const s = (t.status || 'TODO').toUpperCase();
       if (cols[s]) cols[s].push(t);
     }
-    const makeCard = (t) => `
-      <div class="task-card ${t.status.toLowerCase()}">
-        <div class="task-title">${t.title || t.description?.slice(0,40) || t.taskId || 'Task'}</div>
-        <div class="task-agent">${t.agent?.name || t.assignedToAgentId || '—'}</div>
-        ${t.result ? `<div class="task-result">${String(t.result).slice(0,300)}${String(t.result).length > 300 ? '…' : ''}</div>` : ''}
+    const makeCard = (t) => {
+      const statusUpper = (t.status||'TODO').toUpperCase();
+      const isAwaiting = statusUpper === 'AWAITING_VALIDATION';
+      const isBlocked  = statusUpper === 'BLOCKED';
+      const badge = isAwaiting
+        ? '<span style="background:#7c2d12;color:#fb923c;font-size:0.65rem;padding:2px 8px;border-radius:10px;font-weight:700;margin-left:6px">⏸ HUMAN DECISION</span>'
+        : isBlocked
+        ? '<span style="background:#450a0a;color:#f87171;font-size:0.65rem;padding:2px 8px;border-radius:10px;font-weight:700;margin-left:6px">⛔ ERROR</span>'
+        : '';
+      const resultHtml = t.result
+        ? `<div class="task-result" style="${isBlocked?'border-left:2px solid #ef4444;color:#fca5a5;':isAwaiting?'border-left:2px solid #f97316;color:#fed7aa;':''}">${
+            String(t.result).slice(0,500)}${String(t.result).length>500?'…':''}</div>`
+        : '';
+      return `<div class="task-card ${t.status.toLowerCase()}">
+        <div class="task-title">${t.title||t.description?.slice(0,40)||t.taskId||'Task'}${badge}</div>
+        <div class="task-agent">${t.agent?.name||t.assignedToAgentId||'—'}</div>
+        ${resultHtml}
       </div>`;
+    };
     document.getElementById('col-todo').innerHTML   = cols.TODO.map(makeCard).join('') || '<div class="empty">Empty</div>';
     document.getElementById('col-doing').innerHTML  = cols.DOING.map(makeCard).join('') || '<div class="empty">Empty</div>';
     document.getElementById('col-await').innerHTML  = cols.AWAITING_VALIDATION.map(makeCard).join('') || '<div class="empty">Empty</div>';
@@ -292,10 +327,32 @@
     el.className = 'workflow-status ws-' + ws.toLowerCase().replace(/_/g,'-');
   }
 
+  function renderBanners() {
+    const awaitingTasks = state.tasks.filter(t => (t.status||'').toUpperCase() === 'AWAITING_VALIDATION');
+    const blockedTasks  = state.tasks.filter(t => (t.status||'').toUpperCase() === 'BLOCKED' && t.result?.includes('ERROR:'));
+    const bannerHitl  = document.getElementById('banner-hitl');
+    const bannerError = document.getElementById('banner-error');
+    if (awaitingTasks.length > 0) {
+      bannerHitl.style.display = 'block';
+      document.getElementById('banner-hitl-msg').textContent =
+        awaitingTasks[0].result || 'Check the orchestrator terminal for options';
+      bannerError.style.display = 'none';
+    } else if (blockedTasks.length > 0) {
+      bannerError.style.display = 'block';
+      document.getElementById('banner-error-msg').textContent =
+        blockedTasks.map(t => `• ${t.title}: ${String(t.result||'').replace('ERROR:','').trim().slice(0,200)}`).join('\n');
+      bannerHitl.style.display = 'none';
+    } else {
+      bannerHitl.style.display = 'none';
+      bannerError.style.display = 'none';
+    }
+  }
+
   function render() {
     renderAgents();
     renderTasks();
     renderWorkflow();
+    renderBanners();
   }
 
   // ── Socket.io ───────────────────────────────────────────────────

@@ -29,39 +29,40 @@ describe('AgentStatePublisher', () => {
     );
   });
 
-  it('wrapHandler() publishes EXECUTING on task start, DONE on completion', async () => {
+  it('wrapHandler() publishes EXECUTING on start, DONE on completion', async () => {
     const inner = vi.fn().mockResolvedValue('result text');
     const wrapped = publisher.wrapHandler(inner);
-    const payload: MessagePayload = {
-      taskId: 't1', agentId: 'researcher', timestamp: 0,
-      data: { instruction: 'Do research' },
-    };
+    const payload: MessagePayload = { taskId: 't1', agentId: 'researcher', timestamp: 0, data: { instruction: 'Do research' } };
 
     await wrapped(payload);
 
     const calls = mockPublish.mock.calls.map((c) => JSON.parse(c[1] as string));
     const executingCall = calls.find((c) => c.agents?.[0]?.status === 'EXECUTING');
     const doneTaskCall = calls.find((c) => c.tasks?.[0]?.status === 'DONE');
+    expect(executingCall?.agents[0].currentTaskId).toBe('t1');
+    expect(doneTaskCall?.tasks[0].result).toBe('result text');
+  });
 
-    expect(executingCall).toBeDefined();
-    expect(executingCall.agents[0].currentTaskId).toBe('t1');
-    expect(doneTaskCall).toBeDefined();
-    expect(doneTaskCall.tasks[0].result).toBe('result text');
+  it('wrapHandler() handles null result (covers result ?? branch)', async () => {
+    const inner = vi.fn().mockResolvedValue(null);
+    const wrapped = publisher.wrapHandler(inner);
+    const payload: MessagePayload = { taskId: 't3', agentId: 'researcher', timestamp: 0, data: {} };
+    await wrapped(payload);
+    const calls = mockPublish.mock.calls.map((c) => JSON.parse(c[1] as string));
+    const doneCall = calls.find((c) => c.tasks?.[0]?.status === 'DONE');
+    expect(doneCall?.tasks[0].result).toBe('');
   });
 
   it('wrapHandler() publishes ERROR/BLOCKED when handler throws', async () => {
     const inner = vi.fn().mockRejectedValue(new Error('LLM failed'));
     const wrapped = publisher.wrapHandler(inner);
-    const payload: MessagePayload = {
-      taskId: 't2', agentId: 'researcher', timestamp: 0, data: {},
-    };
+    const payload: MessagePayload = { taskId: 't2', agentId: 'researcher', timestamp: 0, data: {} };
 
     await expect(wrapped(payload)).rejects.toThrow('LLM failed');
 
     const calls = mockPublish.mock.calls.map((c) => JSON.parse(c[1] as string));
     const errorCall = calls.find((c) => c.agents?.[0]?.status === 'ERROR');
-    expect(errorCall).toBeDefined();
-    expect(errorCall.tasks[0].status).toBe('BLOCKED');
+    expect(errorCall?.tasks[0].status).toBe('BLOCKED');
   });
 
   it('disconnect() calls redis.quit()', async () => {
@@ -69,15 +70,12 @@ describe('AgentStatePublisher', () => {
     expect(mockQuit).toHaveBeenCalledOnce();
   });
 
-  it('publish() logs and swallows redis errors (covers .catch() branch)', async () => {
-    mockPublish.mockRejectedValueOnce(new Error('Redis connection lost'));
+  it('publish() logs and swallows redis errors (.catch() branch)', async () => {
+    mockPublish.mockRejectedValueOnce(new Error('Redis lost'));
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     publisher.publishIdle();
     await new Promise((r) => setTimeout(r, 20));
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to publish'),
-      expect.any(Error),
-    );
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to publish'), expect.any(Error));
     errSpy.mockRestore();
   });
 });

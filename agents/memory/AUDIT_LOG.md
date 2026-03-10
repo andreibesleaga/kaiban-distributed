@@ -54,3 +54,12 @@ DECISION: CHANGELOG.md created following Keep a Changelog format
 DECISION: SPEC.md updated to match implementation (IMessagingDriver, TaskLog.timestamp: number, context: string[])
 DECISION: lint:arch script added to package.json (madge --circular src/)
 DECISION: PROJECT_STATE.md updated (113 tests, all S01-S10 complete)
+
+DECISION: AgentStatePublisher publishes directly to Redis Pub/Sub (ioredis.publish), NOT via BullMQ — SocketGateway reads Redis Pub/Sub, not BullMQ queues
+DECISION: Board merges state deltas by agentId/taskId (not replace) so multiple worker nodes show simultaneously
+DECISION: KaibanJS agentInstance.initialize(null, env) must be called to bootstrap LLM instance outside a Team context
+DECISION: BullMQ queue names cannot contain colons — all channels use dashes (kaiban-agents-researcher, etc.)
+DECISION: KaibanJS apiBaseUrl requires `as any` cast — field exists at runtime but not in TypeScript types
+DECISION: tsconfig rootDir must be "." when examples/ is in include — otherwise dist paths shift
+DECISION: main/index.ts must NOT call .connect() on ioredis after SocketGateway.initialize() — already connected
+PHASE_TRANSITION: Full project COMPLETE — all agents live, board showing state, README done

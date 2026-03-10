@@ -48,6 +48,7 @@ export class AgentActor {
       return;
     }
 
+    let lastError = 'Max retries exceeded';
     for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
       try {
         const taskResult = await this.executeTask(payload);
@@ -59,8 +60,8 @@ export class AgentActor {
         });
         return;
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.error(`[Actor ${sanitizeId(this.id)}] Attempt ${attempt} failed: ${errMsg}`);
+        lastError = err instanceof Error ? err.message : String(err);
+        console.error(`[Actor ${sanitizeId(this.id)}] Attempt ${attempt} failed: ${lastError}`);
         if (attempt < RETRY_ATTEMPTS) {
           await delay(RETRY_BASE_DELAY_MS * attempt);
         }
@@ -71,7 +72,7 @@ export class AgentActor {
       taskId: payload.taskId,
       agentId: this.id,
       timestamp: Date.now(),
-      data: { status: 'failed', error: 'Max retries exceeded' },
+      data: { status: 'failed', error: lastError },
     });
   }
 

@@ -79,7 +79,8 @@ export const writerConfig: KaibanAgentConfig = {
   role: 'Content Creator',
   goal: 'Create engaging, well-structured blog posts based on provided research, making complex topics accessible',
   background: 'Skilled content writer specialising in technical and AI topics. Uses clear, direct language. Structures posts with a compelling headline, introduction, body sections, and conclusion.',
-  maxIterations: 8,
+  maxIterations: 15,
+  forceFinalAnswer: true,
   ...(llmConfig ? { llmConfig } : {}),
 };
 
@@ -87,30 +88,23 @@ export const writerConfig: KaibanAgentConfig = {
 export const editorConfig: KaibanAgentConfig = {
   name: 'Morgan',
   role: 'Editorial Fact-Checker',
-  goal: 'Verify the factual accuracy of blog posts, identify unsupported claims, and make a clear PUBLISH / REVISE / REJECT recommendation',
-  background: `Senior editorial fact-checker with 15 years of experience in investigative journalism and technical publishing.
-Rigorous about accuracy, logical consistency, and source quality.
-Never approves content containing unverified claims presented as facts.
-Always outputs a structured review using EXACTLY this format:
+  goal: 'Review blog post drafts for factual accuracy and provide a concise editorial verdict',
+  background: `You are a senior editorial fact-checker. Review the blog post against the research summary.
+Your final answer MUST follow this exact format (no deviations):
 
 ## EDITORIAL REVIEW
-
-**Topic:** <topic>
-**Accuracy Score:** <0.0–10.0>/10
-
+**Topic:** [topic]
+**Accuracy Score:** [0.0-10.0]/10
 ### Factual Assessment
-<overall analysis of factual reliability>
-
+[2-3 sentences on overall accuracy]
 ### Issues Found
-- <issue> — Severity: <HIGH | MEDIUM | LOW>
-
+- [main issue] — Severity: [HIGH|MEDIUM|LOW]
 ### Required Changes
-- <specific actionable change required>
-
-### Recommendation: <PUBLISH | REVISE | REJECT>
-
+- [one specific change]
+### Recommendation: [PUBLISH|REVISE|REJECT]
 ### Rationale
-<clear explanation of the recommendation based on the issues found>`,
-  maxIterations: 12,
+[one sentence explaining the recommendation]`,
+  maxIterations: 20,
+  forceFinalAnswer: true,
   ...(llmConfig ? { llmConfig } : {}),
 };

@@ -1,0 +1,162 @@
+# Blog Team — Kafka Variant
+#
+# Runs the full distributed blog pipeline using Kafka as the messaging layer.
+# State events (board updates) still use Redis Pub/Sub (SocketGateway requirement).
+#
+# Topology:
+#   zookeeper + kafka: task queues (kaiban-agents-*, kaiban-events-*)
+#   redis:             state pub/sub (kaiban-state-events → Socket.io → board)
+#   gateway:           HTTP + Socket.io edge on port 3000
+#   researcher/writer/editor: KaibanJS agent worker nodes (MESSAGING_DRIVER=kafka)
+#
+# Prerequisites:
+#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env build
+#
+# Start:
+#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env up
+#
+# Run orchestrator (separate terminal, from repo root):
+#   GATEWAY_URL=http://localhost:3000 \
+#   REDIS_URL=redis://localhost:6379 \
+#   MESSAGING_DRIVER=kafka \
+#   KAFKA_BROKERS=localhost:9092 \
+#   TOPIC="AI Agents in 2025" \
+#     npx ts-node examples/blog-team/orchestrator.ts
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: kafka
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: kaiban-gateway
+      KAFKA_GROUP_ID: kaiban-gateway
+      PORT: "3000"
+      SERVICE_NAME: kaiban-gateway-kafka
+      AGENT_IDS: gateway
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  researcher:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/researcher-node.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: kafka
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: kaiban-researcher
+      KAFKA_GROUP_ID: kaiban-blog
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    restart: on-failure
+
+  writer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/writer-node.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: kafka
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: kaiban-writer
+      KAFKA_GROUP_ID: kaiban-blog
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    restart: on-failure
+
+  editor:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/editor-node.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: kafka
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: kaiban-editor
+      KAFKA_GROUP_ID: kaiban-blog
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    restart: on-failure
