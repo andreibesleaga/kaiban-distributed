@@ -1,0 +1,43 @@
+{
+  "name": "kaiban-distributed",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andreibesleaga/kaiban-distributed.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/andreibesleaga/kaiban-distributed/issues"
+  },
+  "homepage": "https://github.com/andreibesleaga/kaiban-distributed#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.3.5",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^10.0.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@opentelemetry/auto-instrumentations-node": "^0.71.0",
+    "@opentelemetry/sdk-node": "^0.213.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "bullmq": "^5.70.4",
+    "ioredis": "^5.10.0",
+    "kaibanjs": "^0.23.1",
+    "socket.io": "^4.8.3"
+  }
+}

@@ -16,7 +16,7 @@
 ## Phase 1: Dynamic Research (The "Search" Phase)
 You are authorized to use `search_web` and `run_command` freely.
 0. Read and use throughout the project, as main baseline research and product information, and initial specs, all the files in: kaiban-distributed/research/ (md text and images interpreted for the architecture and logic workflow and states functioning). Make initial system architecture diagrams and images and specs from these.
-1.  **Landscape Analysis**: Search for "best TypeScript libraries for Distributed AI Agentic System with Tasks and States in KaibanJS system and Messaging Layer with differetn connectors and interfaces for AI nodes in 2026".
+1.  **Landscape Analysis**: Search for "best TypeScript libraries for Distributed AI Agentic System with Tasks and States in KaibanJS system and Messaging Layer with differetn connectors and interfaces for AI nodes in 2026". You can also read the local clones of kaiban/dify js from directory: work/AI/javascript/
 2.  **Skill Acquisition**:
     -   Check `github.com/heilcheng/awesome-agent-skills` or similar repos.
     -   Download relevant skill templates or create new `.skill.md` files for discovered tools.

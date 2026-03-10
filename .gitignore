@@ -12,3 +12,4 @@
 .gemini
 .github/skills
 .github/copilot-instructions.md
+node_modules

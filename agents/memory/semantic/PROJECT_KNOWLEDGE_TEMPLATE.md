@@ -54,6 +54,33 @@ const result = await library.method({ option: value });
 
 ---
 
+### [Messaging Broker] — verified 2026-03-09
+**Question:** How to properly configure BullMQ with a Redis cluster in Node.js?
+**Finding:** BullMQ's internal atomic operations can conflict with Redis cluster's sharding mechanism. This must be addressed by utilizing Redis "hash tags" within BullMQ queue prefixes to ensure related keys are placed in the same hash slot.
+**Source:** https://docs.bullmq.io
+**Applies to version:** bullmq@latest
+**Expires:** review at next major version
+
+---
+
+### [Real-time UI Sync] — verified 2026-03-09
+**Question:** How to set up a distributed Socket.io setup in 2024+?
+**Finding:** Use `@socket.io/redis-adapter` acting as the Pub/Sub broker. For new systems (Redis 7.0+), it is highly recommended to use the `createShardedAdapter` which leverages Redis sharded Pub/Sub for enhanced horizontal scalability in clustered environments.
+**Source:** https://socket.io/docs/v4/redis-adapter/
+**Applies to version:** socket.io@4+, @socket.io/redis-adapter@latest, redis@4.6.0+
+**Expires:** review at next major version
+
+---
+
+### [MCP Federation] — verified 2026-03-09
+**Question:** How to implement MCP servers with AI agents in TypeScript?
+**Finding:** The Model Context Protocol (MCP) has an official TypeScript SDK `@modelcontextprotocol/sdk`. It supports defining tools, resources, and passing prompts. Best practice is to construct MCP servers that agents can connect to, which enables the agents to load only necessary tools efficiently in their execution environments.
+**Source:** https://modelcontextprotocol.io
+**Applies to version:** @modelcontextprotocol/sdk@latest
+**Expires:** review at next major version
+
+---
+
 ## Database Schema Facts
 <!-- Key facts about the database schema that agents need to know -->
 

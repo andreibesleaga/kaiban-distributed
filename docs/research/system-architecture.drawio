@@ -1,0 +1,106 @@
+<mxfile host="Electron" modified="2026-03-09T00:00:00.000Z" agent="Mozilla/5.0" version="22.1.2" type="device">
+  <diagram id="arch_ref_1" name="System Architecture Reference">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- UI Layer -->
+        <mxCell id="KaibanUI" value="KaibanJS UI (Visual Kanban Board)&#10;[Socket.io Real-time sync]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="400" y="40" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Dify Integration -->
+        <mxCell id="Dify" value="Dify Integration / Workflow Builder&#10;[External MCP]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="100" y="40" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Edge Gateway -->
+        <mxCell id="Gateway" value="API Gateway / State Interceptor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="400" y="140" width="240" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- MAL Layer Group/Container -->
+        <mxCell id="MAL_Group" value="Messaging Abstraction Layer (MAL)" style="swimlane;startSize=20;horizontal=1;fillColor=#f5f5f5;fontStyle=1;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="220" y="220" width="600" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="RedisConnector" value="Redis + BullMQ&#10;(Default)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="MAL_Group">
+          <mxGeometry x="50" y="40" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="KafkaConnector" value="Apache Kafka&#10;(Option)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="MAL_Group">
+          <mxGeometry x="230" y="40" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="AMQPConnector" value="RabbitMQ (AMQP)&#10;(Option)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="MAL_Group">
+          <mxGeometry x="410" y="40" width="140" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Distributed Agent Nodes -->
+        <mxCell id="AgentA" value="Agent Node A&#10;(Node.js Worker)&#10;[TS Actor Wrapper]" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="260" y="400" width="120" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="AgentB" value="Agent Node B&#10;(Node.js Worker)&#10;[TS Actor Wrapper]" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="460" y="400" width="120" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="AgentC" value="Agent Node C&#10;(Node.js Worker)&#10;[TS Actor Wrapper]" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="660" y="400" width="120" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- External Integrations -->
+        <mxCell id="A2A_MCP" value="External LLMs / A2A Federation / MCP Servers" style="cloud;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="380" y="560" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Edges/Connections -->
+        <mxCell id="edge1" parent="1" source="KaibanUI" target="Gateway" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeDify" parent="1" source="Dify" target="Gateway" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="210" y="160" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge2" parent="1" source="Gateway" target="MAL_Group" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge3" parent="1" source="MAL_Group" target="AgentA" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="370" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge4" parent="1" source="MAL_Group" target="AgentB" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge5" parent="1" source="MAL_Group" target="AgentC" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="720" y="370" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="edge6" parent="1" source="AgentA" target="A2A_MCP" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="320" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge7" parent="1" source="AgentB" target="A2A_MCP" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge8" parent="1" source="AgentC" target="A2A_MCP" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="720" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
