@@ -12,6 +12,7 @@ const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 100;
 const DLQ_CHANNEL = 'kaiban-events-failed';
 const COMPLETED_CHANNEL = 'kaiban-events-completed';
+const MAX_PUBLISH_DATA_LEN = 65_536; // 64 KB — cap outbound message data
 
 function sanitizeId(id: string): string {
   return createHash('sha256').update(id).digest('hex').slice(0, 8);
@@ -19,6 +20,13 @@ function sanitizeId(id: string): string {
 
 async function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Truncate data values so published messages stay under MAX_PUBLISH_DATA_LEN */
+function capDataSize(data: Record<string, unknown>): Record<string, unknown> {
+  const json = JSON.stringify(data);
+  if (json.length <= MAX_PUBLISH_DATA_LEN) return data;
+  return { ...data, result: String(data['result'] ?? '').slice(0, MAX_PUBLISH_DATA_LEN), _truncated: true };
 }
 
 export interface AgentActorDeps {
@@ -94,7 +102,7 @@ export class AgentActor {
           taskId: payload.taskId,
           agentId: this.id,
           timestamp: Date.now(),
-          data: { status: 'success', result: taskResult ?? `Actor ${sanitizeId(this.id)} executed successfully` },
+          data: capDataSize({ status: 'success', result: taskResult ?? `Actor ${sanitizeId(this.id)} executed successfully` }),
         });
         return;
       } catch (err) {
@@ -115,7 +123,7 @@ export class AgentActor {
       taskId: payload.taskId,
       agentId: this.id,
       timestamp: Date.now(),
-      data: { status: 'failed', error, ...(reason ? { reason } : {}) },
+      data: capDataSize({ status: 'failed', error, ...(reason ? { reason } : {}) }),
     });
   }
 

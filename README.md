@@ -10,7 +10,7 @@
 > For more documentation and system build flow with [GABBE](https://github.com/andreibesleaga/GABBE), check files in [docs/](docs/).
 >
 
-[![Tests](https://img.shields.io/badge/tests-155%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-236%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
@@ -699,7 +699,7 @@ All features are **disabled by default**. Enable individually via environment va
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 155 unit tests (no external deps)
+npm run test           # 236 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -713,7 +713,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 155 tests, 19 files | None (all mocked) |
+| Unit | `npm test` | 236 tests, 30 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 7 tests | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 2 tests | Docker Kafka + Zookeeper |
 
@@ -771,7 +771,7 @@ kaiban-distributed/
 │       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 155 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 236 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts  # BullMQ: execution, fault tolerance, state sync
 │       ├── a2a-protocol.test.ts           # HTTP gateway + A2A

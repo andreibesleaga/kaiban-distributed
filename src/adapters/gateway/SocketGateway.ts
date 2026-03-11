@@ -19,7 +19,13 @@ export class SocketGateway {
   }
 
   public initialize(): void {
-    this.io = new SocketIOServer(this.httpServer, { cors: { origin: '*' } });
+    // Note: TODO In production, replace '*' with specific allowed origins
+    this.io = new SocketIOServer(this.httpServer, {
+      cors: { origin: '*' },
+      maxHttpBufferSize: 1e6,       // 1 MB — prevent oversized WebSocket frames
+      pingTimeout: 20_000,          // Disconnect dead clients after 20s without pong
+      pingInterval: 25_000,         // Ping every 25s to detect dead connections
+    });
     this.io.adapter(createAdapter(this.redisPublisher, this.redisSubscriber));
 
     this.redisSubscriber.subscribe(STATE_CHANNEL);

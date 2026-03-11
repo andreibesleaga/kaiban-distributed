@@ -29,6 +29,12 @@ export interface JsonRpcResponse {
   error?: JsonRpcError;
 }
 
+// ── Input validation constants ───────────────────────────────────────
+const MAX_AGENT_ID_LEN = 64;
+const MAX_INSTRUCTION_LEN = 10_000;
+const MAX_METHOD_ECHO_LEN = 100;
+const AGENT_ID_PATTERN = /^[\w-]+$/;  // alphanumeric, underscore, hyphen
+
 export class A2AConnector {
   constructor(
     private readonly agentCard: AgentCard,
@@ -69,15 +75,53 @@ export class A2AConnector {
       case 'tasks.get':
         return { result: { taskId: params?.['taskId'] ?? null, status: 'TODO' } };
       default:
-        return { error: { code: -32601, message: `Method not found: ${method}` } };
+        // Sanitize echoed method name to prevent log/response injection
+        return {
+          error: {
+            code: -32601,
+            message: `Method not found: ${String(method).slice(0, MAX_METHOD_ECHO_LEN)}`,
+          },
+        };
     }
+  }
+
+  private validateCreateParams(
+    params: Record<string, unknown> | undefined,
+  ): { agentId: string } | { error: JsonRpcError } {
+    const agentId = String(params?.['agentId'] ?? '*');
+
+    if (agentId !== '*') {
+      if (agentId.length > MAX_AGENT_ID_LEN || !AGENT_ID_PATTERN.test(agentId)) {
+        return {
+          error: {
+            code: -32602,
+            message: `Invalid agentId: must be alphanumeric/hyphens, max ${MAX_AGENT_ID_LEN} chars`,
+          },
+        };
+      }
+    }
+
+    const instruction = params?.['instruction'];
+    if (instruction !== undefined && typeof instruction === 'string' && instruction.length > MAX_INSTRUCTION_LEN) {
+      return {
+        error: {
+          code: -32602,
+          message: `instruction too long: max ${MAX_INSTRUCTION_LEN} chars`,
+        },
+      };
+    }
+
+    return { agentId };
   }
 
   private async handleTasksCreate(
     params: Record<string, unknown> | undefined,
-  ): Promise<{ result: unknown }> {
+  ): Promise<{ result: unknown } | { error: JsonRpcError }> {
+    const validated = this.validateCreateParams(params);
+    if ('error' in validated) return validated;
+
     const taskId = `task-${Date.now()}`;
-    const agentId = String(params?.['agentId'] ?? '*');
+    const { agentId } = validated;
 
     if (this.driver) {
       await this.driver.publish(`kaiban-agents-${agentId}`, {

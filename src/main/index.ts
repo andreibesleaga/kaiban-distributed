@@ -69,6 +69,7 @@ async function main(): Promise<void> {
 
   const messagingDriver = buildMessagingDriver(config);
   const { firewall, circuitBreaker } = buildSecurityDeps(config);
+  // Note: tokenProvider is only relevant in nodes (createKaibanTaskHandler).
 
   const redisOpts = config.redis.tls
     ? { tls: { ca: config.redis.tls.ca, cert: config.redis.tls.cert, key: config.redis.tls.key } }
@@ -108,12 +109,16 @@ async function main(): Promise<void> {
     console.log(`[kaiban-worker] Agents: ${config.agentIds.join(', ')}`);
   });
 
-  process.on('SIGTERM', async () => {
-    console.log('[kaiban-worker] Shutting down...');
+  const shutdown = async (signal: string): Promise<void> => {
+    console.log(`[kaiban-worker] ${signal} received — shutting down...`);
+    await Promise.all(actors.map((actor) => actor.stop()));
     await socketGateway.shutdown();
     await messagingDriver.disconnect();
     process.exit(0);
-  });
+  };
+
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
 main().catch((err) => {
