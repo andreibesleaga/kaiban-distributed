@@ -10,14 +10,53 @@ import { AgentActor } from '../application/actor/AgentActor';
 import { A2AConnector } from '../infrastructure/federation/a2a-connector';
 import { GatewayApp } from '../adapters/gateway/GatewayApp';
 import { SocketGateway } from '../adapters/gateway/SocketGateway';
+import type { ISemanticFirewall } from '../domain/security/semantic-firewall';
+import type { ICircuitBreaker } from '../domain/security/circuit-breaker';
+import type { ITokenProvider } from '../domain/security/token-provider';
+import { HeuristicFirewall } from '../infrastructure/security/heuristic-firewall';
+import { EnvTokenProvider } from '../infrastructure/security/env-token-provider';
+import { SlidingWindowBreaker } from '../infrastructure/security/sliding-window-breaker';
 
 function buildMessagingDriver(config: ReturnType<typeof loadConfig>): IMessagingDriver {
   if (config.messagingDriver === 'kafka') {
     console.log(`[kaiban-worker] Messaging: KafkaDriver (brokers: ${config.kafka.brokers.join(',')})`);
-    return new KafkaDriver(config.kafka);
+    return new KafkaDriver({
+      ...config.kafka,
+      ssl: config.kafka.ssl,
+    });
   }
   console.log(`[kaiban-worker] Messaging: BullMQDriver (redis: ${config.redis.host}:${config.redis.port})`);
-  return new BullMQDriver({ connection: { host: config.redis.host, port: config.redis.port } });
+  return new BullMQDriver({
+    connection: { host: config.redis.host, port: config.redis.port },
+    tls: config.redis.tls,
+  });
+}
+
+function buildSecurityDeps(config: ReturnType<typeof loadConfig>): {
+  firewall: ISemanticFirewall | undefined;
+  circuitBreaker: ICircuitBreaker | undefined;
+  tokenProvider: ITokenProvider | undefined;
+} {
+  const firewall = config.security.semanticFirewallEnabled
+    ? new HeuristicFirewall()
+    : undefined;
+
+  const circuitBreaker = config.security.circuitBreakerEnabled
+    ? new SlidingWindowBreaker(
+        config.security.circuitBreakerThreshold,
+        config.security.circuitBreakerWindowMs,
+      )
+    : undefined;
+
+  const tokenProvider = config.security.jitTokensEnabled
+    ? new EnvTokenProvider()
+    : undefined;
+
+  if (firewall) console.log('[kaiban-worker] Security: Semantic Firewall ENABLED');
+  if (circuitBreaker) console.log('[kaiban-worker] Security: Circuit Breaker ENABLED');
+  if (tokenProvider) console.log('[kaiban-worker] Security: JIT Token Provider ENABLED');
+
+  return { firewall, circuitBreaker, tokenProvider };
 }
 
 async function main(): Promise<void> {
@@ -29,12 +68,22 @@ async function main(): Promise<void> {
   });
 
   const messagingDriver = buildMessagingDriver(config);
+  const { firewall, circuitBreaker } = buildSecurityDeps(config);
 
-  const redisSocketPub = new Redis(config.redis.url);
-  const redisSocketSub = new Redis(config.redis.url);
+  const redisOpts = config.redis.tls
+    ? { tls: { ca: config.redis.tls.ca, cert: config.redis.tls.cert, key: config.redis.tls.key } }
+    : {};
+  const redisSocketPub = new Redis(config.redis.url, redisOpts);
+  const redisSocketSub = new Redis(config.redis.url, redisOpts);
 
   const actors = config.agentIds.map(
-    (agentId) => new AgentActor(agentId, messagingDriver, `kaiban-agents-${agentId}`),
+    (agentId) => new AgentActor(
+      agentId,
+      messagingDriver,
+      `kaiban-agents-${agentId}`,
+      undefined,
+      { firewall, circuitBreaker },
+    ),
   );
 
   const agentCard = {

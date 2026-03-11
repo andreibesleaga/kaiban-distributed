@@ -3,6 +3,8 @@ import {
   IMessagingDriver,
   MessagePayload,
 } from "../../infrastructure/messaging/interfaces";
+import type { ISemanticFirewall } from '../../domain/security/semantic-firewall';
+import type { ICircuitBreaker } from '../../domain/security/circuit-breaker';
 
 export type TaskHandler = (payload: MessagePayload) => Promise<unknown>;
 
@@ -19,22 +21,32 @@ async function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export interface AgentActorDeps {
+  firewall?: ISemanticFirewall;
+  circuitBreaker?: ICircuitBreaker;
+}
+
 export class AgentActor {
   private id: string;
   private driver: IMessagingDriver;
   private queueName: string;
   private taskHandler?: TaskHandler;
+  private firewall?: ISemanticFirewall;
+  private circuitBreaker?: ICircuitBreaker;
 
   constructor(
     id: string,
     driver: IMessagingDriver,
     queueName: string,
     taskHandler?: TaskHandler,
+    deps?: AgentActorDeps,
   ) {
     this.id = id;
     this.driver = driver;
     this.queueName = queueName;
     this.taskHandler = taskHandler;
+    this.firewall = deps?.firewall;
+    this.circuitBreaker = deps?.circuitBreaker;
   }
 
   public async start(): Promise<void> {
@@ -48,10 +60,36 @@ export class AgentActor {
       return;
     }
 
+    if (await this.isBlockedByGuards(payload)) return;
+
+    await this.executeWithRetries(payload);
+  }
+
+  private async isBlockedByGuards(payload: MessagePayload): Promise<boolean> {
+    if (this.circuitBreaker?.isOpen()) {
+      console.warn(`[Actor ${sanitizeId(this.id)}] Circuit breaker OPEN — rejecting task`);
+      await this.publishToDlq(payload, 'circuit_breaker_open');
+      return true;
+    }
+
+    if (this.firewall) {
+      const verdict = await this.firewall.evaluate(payload);
+      if (!verdict.allowed) {
+        console.warn(`[Actor ${sanitizeId(this.id)}] Blocked by firewall: ${verdict.reason}`);
+        await this.publishToDlq(payload, 'blocked_by_semantic_firewall', verdict.reason);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async executeWithRetries(payload: MessagePayload): Promise<void> {
     let lastError = 'Max retries exceeded';
     for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
       try {
         const taskResult = await this.executeTask(payload);
+        this.circuitBreaker?.recordSuccess();
         await this.driver.publish(COMPLETED_CHANNEL, {
           taskId: payload.taskId,
           agentId: this.id,
@@ -68,11 +106,16 @@ export class AgentActor {
       }
     }
 
+    this.circuitBreaker?.recordFailure();
+    await this.publishToDlq(payload, lastError);
+  }
+
+  private async publishToDlq(payload: MessagePayload, error: string, reason?: string): Promise<void> {
     await this.driver.publish(DLQ_CHANNEL, {
       taskId: payload.taskId,
       agentId: this.id,
       timestamp: Date.now(),
-      data: { status: 'failed', error: lastError },
+      data: { status: 'failed', error, ...(reason ? { reason } : {}) },
     });
   }
 

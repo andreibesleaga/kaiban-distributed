@@ -1,6 +1,7 @@
 import { Agent, Task } from 'kaibanjs';
 import type { IAgentParams } from 'kaibanjs';
 import type { MessagePayload, IMessagingDriver } from '../messaging/interfaces';
+import type { ITokenProvider } from '../../domain/security/token-provider';
 
 export type KaibanAgentConfig = IAgentParams;
 
@@ -25,12 +26,25 @@ function extractFinalAnswer(loopResult: AgentLoopResult): unknown {
   return r;
 }
 
+/** LLM API key environment variable names */
+const LLM_API_KEY_NAMES: string[] = [
+  'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY',
+  'GOOGLE_API_KEY', 'MISTRAL_API_KEY', 'GROQ_API_KEY',
+];
+
 /**
  * KaibanJS agents require initialization by a Team (which calls agentInstance.initialize(store, env)).
  * Without it, llmInstance is never set and workOnTask() throws "LLM instance is not initialized".
  * This helper bootstraps the internal LLM from llmConfig without needing a full Team.
+ *
+ * When a tokenProvider is given, tokens are fetched per-task (JIT).
+ * When absent, falls back to reading `process.env` directly (backwards-compatible).
  */
-function initializeAgentLLM(agent: Agent): void {
+async function initializeAgentLLM(
+  agent: Agent,
+  tokenProvider?: ITokenProvider,
+  taskId?: string,
+): Promise<void> {
   const internal = (agent as unknown as {
     agentInstance: {
       initialize: (store: null, env: Record<string, string>) => void;
@@ -39,16 +53,23 @@ function initializeAgentLLM(agent: Agent): void {
     };
   }).agentInstance;
 
-  if (!internal || internal.llmInstance) return; // Already initialized
+  if (!internal) return;
+
+  // When using JIT tokens, always re-initialize to get fresh tokens per task
+  if (internal.llmInstance && !tokenProvider) return;
 
   const env: Record<string, string> = {};
-  const keys: Array<keyof NodeJS.ProcessEnv> = [
-    'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY',
-    'GOOGLE_API_KEY', 'MISTRAL_API_KEY', 'GROQ_API_KEY',
-  ];
-  for (const key of keys) {
-    const val = process.env[key as string];
-    if (val) env[key as string] = val;
+
+  if (tokenProvider && taskId) {
+    for (const key of LLM_API_KEY_NAMES) {
+      const val = await tokenProvider.getToken(key, taskId);
+      if (val) env[key] = val;
+    }
+  } else {
+    for (const key of LLM_API_KEY_NAMES) {
+      const val = process.env[key];
+      if (val) env[key] = val;
+    }
   }
 
   internal.initialize(null, env);
@@ -63,14 +84,18 @@ function initializeAgentLLM(agent: Agent): void {
  */
 export function createKaibanTaskHandler(
   agentConfig: KaibanAgentConfig,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _driver: IMessagingDriver,
+  tokenProvider?: ITokenProvider,
 ): (payload: MessagePayload) => Promise<unknown> {
   const agent = new Agent(agentConfig);
-  initializeAgentLLM(agent);
+
+  // Initial sync initialization (backwards-compatible when no tokenProvider)
+  if (!tokenProvider) {
+    void initializeAgentLLM(agent);
+  }
 
   return async (payload: MessagePayload): Promise<unknown> => {
-    initializeAgentLLM(agent);
+    await initializeAgentLLM(agent, tokenProvider, payload.taskId);
 
     const task = new Task({
       description: String(payload.data['instruction'] ?? 'Execute task'),

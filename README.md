@@ -10,8 +10,9 @@
 > For more documentation and system build flow with [GABBE](https://github.com/andreibesleaga/GABBE), check files in [docs/](docs/).
 >
 
-[![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-155%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
+[![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-green)](package.json)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
@@ -225,17 +226,20 @@ stateDiagram-v2
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ |
-| `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Agent`; calls `agent.workOnTask()`; detects/throws LLM errors |
+| `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker |
+| `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Agent`; calls `agent.workOnTask()`; optional JIT token provider |
 | `KaibanTeamBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync |
 | `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat |
-| `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); no colon queue names |
-| `KafkaDriver` | `src/infrastructure/messaging/` | Kafka-backed messaging; unique consumer group per worker role |
+| `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); optional TLS; no colon queue names |
+| `KafkaDriver` | `src/infrastructure/messaging/` | Kafka-backed messaging; optional SSL/mTLS; unique consumer group per worker role |
 | `DistributedStateMiddleware` | `src/adapters/state/` | Intercepts Zustand store `setState()` and publishes deltas to messaging layer |
 | `GatewayApp` | `src/adapters/gateway/` | Express HTTP: `/health`, `/.well-known/agent-card.json`, `/a2a/rpc` |
 | `SocketGateway` | `src/adapters/gateway/` | Socket.io server + Redis pub/sub subscriber; broadcasts `state:update` to board |
 | `A2AConnector` | `src/infrastructure/federation/` | JSON-RPC 2.0; `tasks.create` publishes to messaging layer |
 | `MCPFederationClient` | `src/infrastructure/federation/` | Connects to any MCP tool server via stdio transport |
+| `HeuristicFirewall` | `src/infrastructure/security/` | Regex-based prompt injection detection (ASI01); opt-in via `SEMANTIC_FIREWALL_ENABLED` |
+| `EnvTokenProvider` | `src/infrastructure/security/` | JIT token abstraction (ASI03); reads API keys from env vars; opt-in via `JIT_TOKENS_ENABLED` |
+| `SlidingWindowBreaker` | `src/infrastructure/security/` | Sliding-window circuit breaker (ASI10); opt-in via `CIRCUIT_BREAKER_ENABLED` |
 | `OrchestratorStatePublisher` | `examples/blog-team/orchestrator.ts` | Owns workflow lifecycle (RUNNING→FINISHED/STOPPED/AWAITING) |
 | `CompletionRouter` | `examples/blog-team/orchestrator.ts` | Single BullMQ/Kafka subscriber dispatching completion events by `taskId` |
 
@@ -642,9 +646,38 @@ All responses: `{ data, meta, errors }` envelope.
 | `LLM_MODEL` | `gpt-4o-mini` | No | Model (for OpenRouter: `meta-llama/llama-3.1-8b-instruct:free`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | No | OpenTelemetry OTLP endpoint (else console) |
 
+#### Security (all opt-in, disabled by default)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_TLS_CA` / `REDIS_TLS_CERT` / `REDIS_TLS_KEY` | — | Paths to Redis mTLS certificates |
+| `KAFKA_SSL_CA` / `KAFKA_SSL_CERT` / `KAFKA_SSL_KEY` | — | Paths to Kafka mTLS certificates |
+| `TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` for self-signed certs in staging |
+| `SEMANTIC_FIREWALL_ENABLED` | `false` | Enable heuristic prompt injection firewall |
+| `SEMANTIC_FIREWALL_LLM_URL` | — | Optional local LLM endpoint for deep analysis |
+| `JIT_TOKENS_ENABLED` | `false` | Enable JIT token provider for LLM API keys |
+| `CIRCUIT_BREAKER_ENABLED` | `false` | Enable sliding-window circuit breaker |
+| `CIRCUIT_BREAKER_THRESHOLD` | `10` | Failures before breaker trips |
+| `CIRCUIT_BREAKER_WINDOW_MS` | `60000` | Sliding window duration (ms) |
+
 ---
 
 ## Security & Compliance
+
+A security audit was performed against the **OWASP Top 10 for Agentic AI (2026)** and **OWASP Top 10 for LLM Applications (2025)**. See [SECURITY_AUDIT.md](docs/security/SECURITY_AUDIT.md) for the full report.
+
+### Security Features (opt-in via env flags)
+
+| Feature | Component | OWASP | Description |
+|---------|-----------|-------|-------------|
+| **Semantic Firewall** | `HeuristicFirewall` | ASI01 | Regex-based prompt injection detection; blocks goal-hijacking attempts before they reach LLMs |
+| **mTLS** | `KafkaDriver` / `BullMQDriver` | ASI07 | TLS/mTLS for all messaging connections; self-signed certs via `scripts/generate-dev-certs.sh` |
+| **JIT Token Provider** | `EnvTokenProvider` | ASI03 | Abstracts API key retrieval; future implementations can fetch from Vault or Secrets Manager |
+| **Circuit Breaker** | `SlidingWindowBreaker` | ASI10 | Trips after configurable failures in a sliding window; auto-recovers; emits OTLP anomaly events |
+
+All features are **disabled by default**. Enable individually via environment variables (`SEMANTIC_FIREWALL_ENABLED`, `JIT_TOKENS_ENABLED`, `CIRCUIT_BREAKER_ENABLED`). When disabled, the system behaves identically to the pre-security baseline.
+
+### Compliance Controls
 
 | Control | Implementation |
 |---------|----------------|
@@ -653,9 +686,9 @@ All responses: `{ data, meta, errors }` envelope.
 | **GDPR — Data minimisation** | `result` field capped at 800 chars in state events |
 | **SOC2 — Non-root container** | Dockerfile: `USER kaiban` (non-root) |
 | **SOC2 — Secrets** | All secrets via env vars; `.env` gitignored; `.env.example` has no real values |
-| **ISO 27001 — Encryption** | TLS 1.3+ for Redis (`rediss://`), Kafka SSL, HTTPS for LLM APIs |
-| **Observability** | OpenTelemetry auto-instrumentation; W3C `traceparent` propagated across BullMQ/Kafka hops |
-| **Known CVE** | `kaibanjs ≥ 0.3.0` has 4 high CVEs via `@langchain/community` transitive deps; unfixable without `kaibanjs@0.0.1` downgrade (breaking) |
+| **ISO 27001 — Encryption** | mTLS for Redis/Kafka; HTTPS for LLM APIs; `scripts/generate-dev-certs.sh` for staging |
+| **Observability** | OpenTelemetry auto-instrumentation; W3C `traceparent` propagated across BullMQ/Kafka hops; `recordAnomalyEvent()` for circuit breaker events |
+| **Known CVE** | `kaibanjs ≥ 0.3.0` has 6 moderate CVEs via `@langchain/community` transitive deps; unfixable without `kaibanjs@0.0.1` downgrade (breaking) |
 
 ---
 
@@ -666,7 +699,7 @@ All responses: `{ data, meta, errors }` envelope.
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 128 unit tests (no external deps)
+npm run test           # 155 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -680,7 +713,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 128 tests, 15 files | None (all mocked) |
+| Unit | `npm test` | 155 tests, 19 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 7 tests | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 2 tests | Docker Kafka + Zookeeper |
 
@@ -701,10 +734,14 @@ kaiban-distributed/
 │   ├── domain/
 │   │   ├── entities/          # DistributedTask, DistributedAgentState (with type guards)
 │   │   ├── errors/            # DomainError, TaskNotFoundError, MessagingError, ...
-│   │   └── result.ts          # Result<T,E> — ok(), err(), isOk(), isErr()
+│   │   ├── result.ts          # Result<T,E> — ok(), err(), isOk(), isErr()
+│   │   └── security/          # Domain interfaces for security components
+│   │       ├── semantic-firewall.ts  # ISemanticFirewall — evaluates payloads for injection
+│   │       ├── token-provider.ts     # ITokenProvider — JIT token abstraction
+│   │       └── circuit-breaker.ts    # ICircuitBreaker — success/failure tracking
 │   ├── application/
 │   │   └── actor/
-│   │       └── AgentActor.ts  # Core: retry×3 + exp backoff, DLQ, PII-safe logs
+│   │       └── AgentActor.ts  # Core: retry×3 + exp backoff, DLQ, firewall, circuit breaker
 │   ├── adapters/
 │   │   ├── gateway/
 │   │   │   ├── GatewayApp.ts       # Express: /health, agent-card, /a2a/rpc, 404
@@ -715,22 +752,26 @@ kaiban-distributed/
 │   ├── infrastructure/
 │   │   ├── messaging/
 │   │   │   ├── interfaces.ts       # IMessagingDriver (publish, subscribe, unsubscribe, disconnect)
-│   │   │   ├── bullmq-driver.ts    # BullMQ Worker + Queue; no colons in queue names
-│   │   │   └── kafka-driver.ts     # KafkaJS producer + consumer; unique groupId per role
+│   │   │   ├── bullmq-driver.ts    # BullMQ Worker + Queue; optional TLS; no colons in queue names
+│   │   │   └── kafka-driver.ts     # KafkaJS producer + consumer; optional SSL/mTLS
 │   │   ├── federation/
 │   │   │   ├── a2a-connector.ts    # JSON-RPC 2.0; tasks.create routes to messaging layer
 │   │   │   └── mcp-client.ts       # MCPFederationClient via stdio transport
 │   │   ├── kaibanjs/
-│   │   │   ├── kaiban-agent-bridge.ts  # createKaibanTaskHandler; initializeAgentLLM; error detection
+│   │   │   ├── kaiban-agent-bridge.ts  # createKaibanTaskHandler; JIT tokens; error detection
 │   │   │   └── kaiban-team-bridge.ts   # KaibanTeamBridge with DistributedStateMiddleware
+│   │   ├── security/              # Security infrastructure implementations
+│   │   │   ├── heuristic-firewall.ts    # Regex prompt injection detection (10+ patterns)
+│   │   │   ├── env-token-provider.ts    # Env-var backed JIT token provider
+│   │   │   └── sliding-window-breaker.ts # Configurable sliding-window circuit breaker
 │   │   └── telemetry/
-│   │       ├── telemetry.ts        # initTelemetry(); OTLP or console exporter
+│   │       ├── telemetry.ts        # initTelemetry(); recordAnomalyEvent(); OTLP or console
 │   │       └── TraceContext.ts     # injectTraceContext / extractTraceContext (W3C)
 │   └── main/
-│       ├── index.ts    # Composition root: wires all layers, starts HTTP + actors
-│       └── config.ts   # loadConfig(); env validation; parseMessagingDriver()
+│       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
+│       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 128 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 155 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts  # BullMQ: execution, fault tolerance, state sync
 │       ├── a2a-protocol.test.ts           # HTTP gateway + A2A
@@ -750,7 +791,8 @@ kaiban-distributed/
 │       └── viewer/
 │           └── board.html                 # Live Kanban board — open in browser, no build
 ├── scripts/
-│   └── monitor.sh                         # Real-time terminal dashboard (all streams)
+│   ├── monitor.sh                         # Real-time terminal dashboard (all streams)
+│   └── generate-dev-certs.sh              # Self-signed CA + server/client certs for mTLS
 ├── agents/                                # GABBE kit: guides, skills, memory, CONSTITUTION.md
 ├── docker-compose.yml                     # Full root stack (Redis + Kafka + single worker)
 ├── Dockerfile                             # Multi-stage: builder (npm ci + tsc) → runner (non-root)
@@ -851,7 +893,7 @@ Built with [**GABBE Agentic Engineering Kit**](https://github.com/andreibesleaga
 | S05 | Core implementation (6 modules) | ✅ |
 | S06 | Unit test suite — 100% coverage | ✅ |
 | S07 | KaibanJS integration, blog-team pipeline, Kafka, README | ✅ |
-| S08-S10 | went through them second time |
+| S08 | Security remediation — mTLS, semantic firewall, JIT tokens, circuit breakers | ✅ |
 
 
 ---

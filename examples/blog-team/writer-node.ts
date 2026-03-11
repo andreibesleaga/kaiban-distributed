@@ -4,16 +4,18 @@ import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiba
 import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
 import { createDriver } from './driver-factory';
 import { writerConfig, WRITER_QUEUE } from './team-config';
+import { buildSecurityDeps } from './build-security-deps';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const driver = createDriver('writer');
+const { actorDeps, tokenProvider } = buildSecurityDeps();
 
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
   agentId: 'writer', name: 'Kai', role: 'Content Creator',
 });
 
-const handler = statePublisher.wrapHandler(createKaibanTaskHandler(writerConfig, driver));
-const actor = new AgentActor('writer', driver, WRITER_QUEUE, handler);
+const handler = statePublisher.wrapHandler(createKaibanTaskHandler(writerConfig, driver, tokenProvider));
+const actor = new AgentActor('writer', driver, WRITER_QUEUE, handler, actorDeps);
 
 actor.start()
   .then(() => { console.log('[Writer] Kai started →', WRITER_QUEUE); statePublisher.publishIdle(); })

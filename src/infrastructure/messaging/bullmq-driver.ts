@@ -2,14 +2,35 @@ import { Queue, Worker, QueueOptions } from "bullmq";
 import { context as otelContext } from "@opentelemetry/api";
 import { IMessagingDriver, MessagePayload } from "./interfaces";
 import { injectTraceContext, extractTraceContext } from "../telemetry/TraceContext";
+import type { TlsConfig } from "../../main/config";
+
+export interface BullMQDriverOptions extends QueueOptions {
+  tls?: TlsConfig;
+}
 
 export class BullMQDriver implements IMessagingDriver {
   private queues: Map<string, Queue> = new Map();
   private workers: Map<string, Worker> = new Map();
   private config: QueueOptions;
 
-  constructor(config: QueueOptions) {
-    this.config = config;
+  constructor(options: BullMQDriverOptions) {
+    const { tls, ...baseConfig } = options;
+    if (tls) {
+      this.config = {
+        ...baseConfig,
+        connection: {
+          ...(baseConfig.connection as Record<string, unknown>),
+          tls: {
+            ca: tls.ca,
+            cert: tls.cert,
+            key: tls.key,
+            rejectUnauthorized: tls.rejectUnauthorized,
+          },
+        },
+      };
+    } else {
+      this.config = baseConfig;
+    }
   }
 
   async publish(queueName: string, payload: MessagePayload): Promise<void> {

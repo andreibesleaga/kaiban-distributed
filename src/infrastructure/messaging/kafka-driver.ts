@@ -2,11 +2,13 @@ import { Kafka, Producer, Consumer } from 'kafkajs';
 import { context as otelContext } from "@opentelemetry/api";
 import { IMessagingDriver, MessagePayload } from './interfaces';
 import { injectTraceContext, extractTraceContext } from '../telemetry/TraceContext';
+import type { TlsConfig } from '../../main/config';
 
 export interface KafkaDriverConfig {
   brokers: string[];
   clientId: string;
   groupId: string;
+  ssl?: TlsConfig;
 }
 
 export class KafkaDriver implements IMessagingDriver {
@@ -16,7 +18,18 @@ export class KafkaDriver implements IMessagingDriver {
   private consumerConnected = false;
 
   constructor(config: KafkaDriverConfig) {
-    const kafka = new Kafka({ brokers: config.brokers, clientId: config.clientId });
+    const kafka = new Kafka({
+      brokers: config.brokers,
+      clientId: config.clientId,
+      ...(config.ssl ? {
+        ssl: {
+          rejectUnauthorized: config.ssl.rejectUnauthorized,
+          ca: [config.ssl.ca.toString()],
+          cert: config.ssl.cert.toString(),
+          key: config.ssl.key.toString(),
+        },
+      } : {}),
+    });
     this.producer = kafka.producer();
     this.consumer = kafka.consumer({ groupId: config.groupId });
   }

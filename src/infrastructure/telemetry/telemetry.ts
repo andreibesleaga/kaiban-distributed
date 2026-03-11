@@ -2,6 +2,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node';
+import { trace } from '@opentelemetry/api';
 
 export interface TelemetryConfig {
   serviceName: string;
@@ -26,4 +27,19 @@ export function initTelemetry(config: TelemetryConfig): void {
   process.on('SIGTERM', () => {
     sdk?.shutdown().catch(console.error);
   });
+}
+
+/**
+ * Record a custom anomaly event on the current active span.
+ * Used by CircuitBreaker and other security components to emit
+ * observable events for downstream anomaly detection.
+ */
+export function recordAnomalyEvent(
+  eventName: string,
+  attributes: Record<string, string | number | boolean>,
+): void {
+  const span = trace.getActiveSpan();
+  if (span) {
+    span.addEvent(eventName, attributes);
+  }
 }

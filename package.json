@@ -31,12 +31,12 @@
   },
   "homepage": "https://github.com/andreibesleaga/kaiban-distributed#readme",
   "overrides": {
-    "langsmith": "^0.5.9",
-    "expr-eval": "^2.0.2",
-    "file-type": "^16.5.4",
-    "@langchain/core": "^0.3.41",
-    "@langchain/community": "^0.3.32",
-    "langchain": "^0.3.15"
+    "langsmith": ">=0.5.9",
+    "expr-eval": ">=2.0.2",
+    "file-type": ">=16.5.4",
+    "@langchain/core": ">=0.3.80",
+    "@langchain/community": ">=0.3.59",
+    "langchain": ">=0.3.37"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
