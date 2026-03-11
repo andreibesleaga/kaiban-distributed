@@ -72,3 +72,21 @@ Entry format:
 **Resolution:** Wired into both `BullMQDriver.publish()` and `BullMQDriver.subscribe()` worker callback, and same for `KafkaDriver`. Uses `otelContext.with(ctx, handler)` for proper span context propagation.
 **Test pattern:** Mock `@opentelemetry/api` with `vi.mock("@opentelemetry/api", ...)` — must be at top of test file.
 **New coverage pattern:** The `?? {}` fallback for missing `traceHeaders` requires a test with a payload that has no `traceHeaders` field.
+
+## Kafka Docker Lessons (2026-03-11)
+
+### "network not found" on docker compose up
+**Problem:** Stale networks from a previous compose stack block the new stack from starting.
+**Fix:** `docker compose -f ... down --remove-orphans && docker network prune --force` before starting a new stack.
+
+### Worker containers show "unhealthy" 
+**Problem:** Dockerfile HEALTHCHECK pings `http://localhost:3000/health` but worker containers are not HTTP servers.
+**Fix:** Add `healthcheck: disable: true` to each worker service in docker-compose (only gateway needs the HTTP healthcheck).
+
+### BullMQ E2E test can't start Redis — port 6379 already allocated
+**Problem:** `globalSetup.ts` uses `docker compose up -d redis` but fails when another compose already has Redis on port 6379.
+**Fix:** Wrap the start command in try/catch; `waitForRedis()` succeeds regardless (existing Redis responds).
+**Additional:** Stop the other compose before running E2E, OR fix `waitForRedis()` to use direct socket check instead of `docker exec`.
+
+### Kafka consumer group offset vs actual message consumption
+**Note:** `CURRENT-OFFSET=1, LOG-END-OFFSET=1, LAG=0` means the consumer READ the message. But no processing logs appear because KafkaJS `eachMessage` is async and KaibanJS doesn't log during successful LLM calls. Check `kaiban-events-completed` topic offset to confirm processing completed.

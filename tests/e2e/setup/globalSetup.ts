@@ -24,10 +24,15 @@ async function waitForRedis(): Promise<void> {
 
 export async function setup(): Promise<void> {
   console.log('[E2E] Starting Redis...');
-  execSync(`docker compose -f ${COMPOSE_FILE} up -d redis`, {
-    stdio: 'inherit',
-    timeout: 30000,
-  });
+  try {
+    execSync(`docker compose -f ${COMPOSE_FILE} up -d redis`, {
+      stdio: 'pipe',
+      timeout: 30000,
+    });
+  } catch {
+    // Port already in use — Redis is already running (e.g. from another compose stack)
+    console.log('[E2E] Redis already running, skipping start.');
+  }
   console.log('[E2E] Waiting for Redis to be ready...');
   await waitForRedis();
   console.log('[E2E] Redis ready.');

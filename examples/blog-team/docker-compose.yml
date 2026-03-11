@@ -1,24 +1,10 @@
-# Blog Team Multi-Node Demo
+# Blog Team Multi-Node Demo — BullMQ (default)
 #
-# Full distributed pipeline with three AI agent nodes + edge gateway:
+# Start:
+#   docker compose -f examples/blog-team/docker-compose.yml --env-file .env up --build
 #
-#   Ava (researcher) ──> Kai (writer) ──> Morgan (editor) ──> Human (HITL)
-#
-# Prerequisites:
-#   1. Build image from repo root:   docker compose build
-#   2. Copy env file:                cp .env.example .env
-#   3. Edit .env:
-#        OPENAI_API_KEY=sk-...               (standard OpenAI)
-#        # OR for OpenRouter:
-#        OPENAI_API_KEY=sk-or-v1-...
-#        OPENAI_BASE_URL=https://openrouter.ai/api/v1
-#        LLM_MODEL=openai/gpt-4o-mini
-#
-# Start all services:
-#   docker compose -f examples/blog-team/docker-compose.yml --env-file .env up
-#
-# Run the orchestrator (separate terminal, from repo root):
-#   GATEWAY_URL=http://localhost:3000 TOPIC="AI Agents in 2025" \
+# Run orchestrator:
+#   GATEWAY_URL=http://localhost:3000 REDIS_URL=redis://localhost:6379 TOPIC="AI Agents" \
 #     npx ts-node examples/blog-team/orchestrator.ts
 
 services:
@@ -64,11 +50,13 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     restart: on-failure
+    healthcheck:
+      disable: true
 
   writer:
     build:
@@ -80,11 +68,13 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     restart: on-failure
+    healthcheck:
+      disable: true
 
   editor:
     build:
@@ -96,8 +86,10 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     restart: on-failure
+    healthcheck:
+      disable: true

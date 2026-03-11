@@ -69,3 +69,10 @@ DECISION: Kafka blog-team uses createDriver(groupIdSuffix) factory — each work
 DECISION: Orchestrator CompletionRouter uses TWO separate drivers for Kafka (orchestrator-completed / orchestrator-failed) because KafkaJS consumer.run() cannot subscribe to new topics after it starts
 DECISION: Both BullMQ and Kafka docker-composes available for blog-team; Kafka also needs zookeeper and uses internal listener kafka:29092 for inter-container comms
 PHASE_TRANSITION: All systems complete — BullMQ + Kafka paths, board heartbeat, 128 tests, 100% coverage
+
+DECISION: Workers' AgentStatePublisher heartbeats MUST NOT publish teamWorkflowStatus — only orchestrator controls lifecycle (RUNNING/FINISHED/STOPPED/INITIAL)
+DECISION: workflowFinished(writeTaskId, topic, editTaskId) takes optional editTaskId to also clear the AWAITING_VALIDATION editorial task to DONE
+DECISION: workflowStopped(taskId, reason, editTaskId?) clears editorial task to BLOCKED on REJECT
+DECISION: workflowStarted() published at orchestrator boot so board immediately shows RUNNING + all agents IDLE
+DECISION: Board event stream uses type-specific CSS classes (lt-WORKFLOW, lt-AGENT, lt-TASK) and shows full message content with status icons
+DECISION: FINISHED state: board shows green ✅ WORKFLOW COMPLETE banner + ws-finished glow animation; STOPPED shows grey ⏹ WORKFLOW ENDED
