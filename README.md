@@ -29,16 +29,11 @@ cd kaiban-distributed && npm install
 cp .env.example .env
 # Edit .env — add OPENROUTER_API_KEY or OPENAI_API_KEY + AGENT_IDS
 
-# 3. Start the full blog-team demo (Redis + 3 agent nodes + gateway)
-docker compose -f examples/blog-team/docker-compose.yml --env-file .env up --build
+# 3. Start the full blog-team demo (Docker Compose, Orchestrator, UI Preview, and Monitor)
+./scripts/blog-team.sh start
 
-# 4. Open the live Kanban board (no build step needed)
-#    → Open examples/blog-team/viewer/board.html in your browser
-
-# 5. Run the orchestrator to start the 3-agent pipeline
-GATEWAY_URL=http://localhost:3000 REDIS_URL=redis://localhost:6379 \
-TOPIC="AI Agents in 2025" \
-  npx ts-node examples/blog-team/orchestrator.ts
+# 4. Stop everything cleanly when done
+./scripts/blog-team.sh stop
 ```
 
 To wire your own KaibanJS agent into a distributed worker node:
@@ -670,7 +665,27 @@ kaiban-distributed/
 
 ---
 
-## Real-Time Monitor & Debugging
+## Managing the Example & Real-Time Monitor
+
+### Unified Start/Stop Script
+
+The easiest way to run the full `blog-team` example locally is using the orchestration script. It handles Docker Compose, the API Gateway, worker nodes, the Typescript orchestrator, and automatically opens the live board in your browser. It then launches the real-time monitor.
+
+```bash
+# Start with default Redis driver
+./scripts/blog-team.sh start
+
+# Start with high-throughput Kafka driver
+./scripts/blog-team.sh start --kafka
+
+# Stop and perfectly clean up all orphaned resources
+./scripts/blog-team.sh stop
+./scripts/blog-team.sh stop --kafka
+```
+
+### Standalone Real-Time Monitor
+
+If you started components manually, you can run the terminal monitor on its own. It automatically detects the `MESSAGING_DRIVER` (BullMQ/Redis or Kafka).
 
 ```bash
 ./scripts/monitor.sh
@@ -678,6 +693,7 @@ kaiban-distributed/
 # With options:
 REDIS_URL=redis://localhost:6379 \
 COMPOSE_FILE=examples/blog-team/docker-compose.yml \
+MESSAGING_DRIVER=bullmq \
 LOG_TAIL=200 QUEUE_POLL_SEC=3 \
   ./scripts/monitor.sh
 ```
