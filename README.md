@@ -1,11 +1,12 @@
-# kaiban-distributed
+# kaiban-distributed - Multi Agentic Distributed AI System
 
-> Distributed, horizontally-scalable Actor-Model runtime for [KaibanJS](https://kaibanjs.com) — run AI agent teams across multiple Node.js processes with real-time Kanban board visibility.
+> Distributed, horizontally-scalable Actor-Model runtime, based on [KaibanJS](https://kaibanjs.com) — Run multiple AI Agents Teams, across multiple deployed Node.js (short-lived and scalable) processes, with real-time task board visibility, and multi agentic orchestrator coordination via Redis/Kafka pub/sub streaming, A2A and MCP accessible.
+> The system can integrate current kaiban agents, other new agents, or any existing deployed agentic systems and agents (by making them publish messages via A2A, MCP, Redis Kafka), and integrating them in actor model teams flows, or corresponding with each other.
 
 [![Tests](https://img.shields.io/badge/tests-123%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
-[![License](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL-blue)](LICENSE)
 
 ---
 
@@ -216,7 +217,7 @@ Ava (researcher) ──> Kai (writer) ──> Morgan (editor) ──> Human (HIT
      Node #1              Node #2            Node #3
 ```
 
-Each agent runs as an independent Docker container subscribed to its own BullMQ queue. Results flow automatically from one stage to the next via the `kaiban-events-completed` channel.
+Each agent runs as an independent Docker container subscribed to its own BullMQ queue or Kafka streaming topic. Results flow automatically from one stage to the next via the `kaiban-events-completed` channel.
 
 ### Agents
 
@@ -288,7 +289,7 @@ After Morgan's review, the orchestrator **pauses** and presents the human with:
 ```
 ╔══════════════════════════════════════════════════════════╗
 ║  📝 EDITORIAL REVIEW BY MORGAN                          ║
-║  Accuracy: 8.5/10  |  Recommendation: REVISE            ║
+║  Accuracy: 8.5/10  |  Recommendation: REVISE             ║
 ╚══════════════════════════════════════════════════════════╝
 
 HUMAN REVIEW REQUIRED (HITL)
@@ -468,7 +469,65 @@ Response:
 
 ## MCP Integration
 
-Attach [Model Context Protocol](https://modelcontextprotocol.io) tool servers to your agents:
+For integration via MCP, directly with the streaming of tasks and agents communications, there are several **Model Context Protocol (MCP)** servers available for both Kafka and Redis that allow you to intercept, monitor, and query live data streams:
+
+## 1. Redis MCP
+
+The official **Redis MCP Server** (`mcp-redis`) is the standard choice here. It allows an AI agent to interact with Redis as if it were a native part of its memory.
+
+* **Capabilities:** * **Streams:** Full support for `XADD`, `XREAD`, and `XRANGE`. You can tell the AI to "watch the 'orders' stream for the next 10 messages" or "query the last hour of events."
+* **Pub/Sub:** Intercept real-time messages on specific channels.
+* **Querying:** Beyond simple key-value lookups, it supports JSON path querying and vector search if your Redis instance has those modules.
+
+* **Where to find it:** [Redis GitHub (mcp-redis)](https://github.com/redis/mcp-redis).
+
+## 2. Kafka MCP
+
+For Kafka, you have a few powerful options depending on whether you are using a managed service or a self-hosted cluster.
+
+### Official & Managed Options
+
+* **Confluent MCP Server:** Specifically designed for Confluent Cloud. It’s the most "query-heavy" option because it integrates with **Flink SQL**, allowing you to run actual SQL queries against a live Kafka stream (e.g., `SELECT * FROM orders WHERE total > 100`).
+* **Google Cloud Kafka MCP:** If you use Google’s Managed Service for Apache Kafka, they provide a remote MCP server that handles cluster management and message consumption out of the box.
+
+### Community & Open Source
+
+* **kafka-mcp (shivamxtech):** A lightweight Python-based server that lets you produce/consume messages and list topics using natural language.
+* **tuannvm/kafka-mcp-server:** A robust Go-based implementation. It includes "Resources" (like cluster health reports) and "Tools" (to consume messages from specific offsets). This is excellent for **intercepting** a stream to see what's happening right now.
+
+## How "Intercept and Query" Works in MCP
+
+When you use these servers with a client (like Claude Desktop or Cursor), the workflow typically looks like this:
+
+| Action | Example Natural Language Prompt |
+| --- | --- |
+| **Intercept** | "Monitor the `payments` topic and tell me if you see any transactions over $5,000." |
+| **Query (Kafka)** | "Sample 10 messages from `user-logs` and summarize the most frequent error codes." |
+| **Query (Redis)** | "Get all entries from the `sensor_data` stream between 9:00 AM and 10:00 AM today." |
+
+## Getting Started
+
+If you want to try this immediately, the **Redis MCP** is the easiest to set up locally:
+
+1. **Install the Redis MCP Server:**
+```bash
+npx @modelcontextprotocol/server-redis
+
+```
+
+2. **Add to your MCP Config:**
+In your `claude_desktop_config.json` (or equivalent), add:
+```json
+"redis": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-redis", "--url", "redis://localhost:6379"]
+}
+
+```
+
+3. **Use programatically via MCP libraries in code**
+
+Attach [Model Context Protocol](https://modelcontextprotocol.io) tool servers, or clients, to your agents:
 
 ```typescript
 import { MCPFederationClient } from './src/infrastructure/federation/mcp-client';
