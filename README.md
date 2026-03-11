@@ -1,7 +1,11 @@
 # kaiban-distributed - Multi Agentic Distributed AI System
 
-> Distributed, horizontally-scalable Actor-Model runtime, based on [KaibanJS](https://kaibanjs.com) — Run multiple AI Agents Teams, across multiple deployed Node.js (short-lived and vertical scalable) processes, with real-time task board visibility, and multi agentic orchestrator coordination via Redis/Kafka pub/sub streaming, A2A and MCP accessible.
+> Distributed, horizontally-scalable Actor-Model runtime, based on [KaibanJS](https://kaibanjs.com)
+>
+> Run multiple AI Agents Teams, across multiple deployed Node.js (short-lived and scalable) processes, with real-time task board visibility, and multi agentic orchestrator coordination via Redis/Kafka pub/sub streaming, A2A and MCP accessible.
+>
 > The system can integrate current kaiban agents, other new agents, or any existing deployed agentic systems and agents (by making them publish messages via A2A, MCP, Redis Kafka), and integrating them in actor model teams flows, or corresponding with each other.
+>
 
 [![Tests](https://img.shields.io/badge/tests-123%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
