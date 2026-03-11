@@ -63,3 +63,9 @@ DECISION: KaibanJS apiBaseUrl requires `as any` cast — field exists at runtime
 DECISION: tsconfig rootDir must be "." when examples/ is in include — otherwise dist paths shift
 DECISION: main/index.ts must NOT call .connect() on ioredis after SocketGateway.initialize() — already connected
 PHASE_TRANSITION: Full project COMPLETE — all agents live, board showing state, README done
+
+DECISION: AgentStatePublisher heartbeat (15s interval) ensures late-connecting boards see current agent state — Redis pub/sub is fire-and-forget; heartbeat re-publishes on timer
+DECISION: Kafka blog-team uses createDriver(groupIdSuffix) factory — each worker gets unique consumer group (e.g. kaiban-group-researcher) to prevent message routing conflicts  
+DECISION: Orchestrator CompletionRouter uses TWO separate drivers for Kafka (orchestrator-completed / orchestrator-failed) because KafkaJS consumer.run() cannot subscribe to new topics after it starts
+DECISION: Both BullMQ and Kafka docker-composes available for blog-team; Kafka also needs zookeeper and uses internal listener kafka:29092 for inter-container comms
+PHASE_TRANSITION: All systems complete — BullMQ + Kafka paths, board heartbeat, 128 tests, 100% coverage

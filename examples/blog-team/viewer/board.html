@@ -127,6 +127,9 @@
     .ws-finished { background: #052e16; color: #4ade80; }
     .ws-errored  { background: #450a0a; color: #f87171; }
     .ws-blocked  { background: #451a03; color: #fb923c; }
+    .ws-stopped  { background: #1e293b; color: #94a3b8; }
+    .ws-finished { background: #052e16; color: #4ade80; animation: done-glow 3s ease-in-out 2; }
+    @keyframes done-glow { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 20px rgba(74,222,128,0.6); } }
 
     /* Event log */
     .log-section { margin-top: 28px; }
@@ -179,6 +182,16 @@
     border-radius:10px;padding:14px 20px;margin-bottom:16px;text-align:center;">
     <div style="font-size:0.95rem;font-weight:800;color:#f87171">⛔ TASK FAILED</div>
     <div id="banner-error-msg" style="font-size:0.78rem;color:#fca5a5;margin-top:4px;white-space:pre-wrap"></div>
+  </div>
+  <div id="banner-finished" style="display:none;background:linear-gradient(90deg,#052e16,#14532d);
+    border:1px solid #4ade80;border-radius:10px;padding:14px 20px;margin-bottom:16px;text-align:center;">
+    <div style="font-size:1.1rem;font-weight:800;color:#4ade80">✅ WORKFLOW COMPLETE</div>
+    <div id="banner-finished-msg" style="font-size:0.8rem;color:#86efac;margin-top:4px"></div>
+  </div>
+  <div id="banner-stopped" style="display:none;background:#1e293b;border:1px solid #64748b;
+    border-radius:10px;padding:14px 20px;margin-bottom:16px;text-align:center;">
+    <div style="font-size:0.95rem;font-weight:800;color:#94a3b8">⏹ WORKFLOW ENDED</div>
+    <div id="banner-stopped-msg" style="font-size:0.78rem;color:#64748b;margin-top:4px"></div>
   </div>
 <!-- Workflow status bar -->
 <div class="workflow-bar" id="workflow-bar">
@@ -262,7 +275,7 @@
     const box = document.getElementById('log-box');
     const entry = document.createElement('div');
     entry.className = 'log-entry';
-    entry.innerHTML = `<span class="log-time">${time}</span><span class="log-type">${type}</span><span class="log-msg ${highlight ? 'highlight' : ''}">${msg}</span>`;
+    entry.innerHTML = `<span class="log-time">${time}</span><span class="log-type lt-${type}">${type}</span><span class="log-msg ${highlight ? 'highlight' : ''}">${msg}</span>`;
     box.insertBefore(entry, box.firstChild);
     if (box.children.length > 200) box.removeChild(box.lastChild);
   }
@@ -328,23 +341,37 @@
   }
 
   function renderBanners() {
+    const ws = (state.workflowStatus || '').toUpperCase();
     const awaitingTasks = state.tasks.filter(t => (t.status||'').toUpperCase() === 'AWAITING_VALIDATION');
-    const blockedTasks  = state.tasks.filter(t => (t.status||'').toUpperCase() === 'BLOCKED' && t.result?.includes('ERROR:'));
-    const bannerHitl  = document.getElementById('banner-hitl');
-    const bannerError = document.getElementById('banner-error');
-    if (awaitingTasks.length > 0) {
+    const blockedTasks  = state.tasks.filter(t => (t.status||'').toUpperCase() === 'BLOCKED' && String(t.result||'').includes('ERROR:'));
+    const doneTasks     = state.tasks.filter(t => (t.status||'').toUpperCase() === 'DONE');
+
+    const bannerHitl     = document.getElementById('banner-hitl');
+    const bannerError    = document.getElementById('banner-error');
+    const bannerFinished = document.getElementById('banner-finished');
+    const bannerStopped  = document.getElementById('banner-stopped');
+
+    // Hide all first
+    [bannerHitl, bannerError, bannerFinished, bannerStopped].forEach(b => b.style.display = 'none');
+
+    if (ws === 'FINISHED') {
+      bannerFinished.style.display = 'block';
+      const pub = doneTasks.find(t => String(t.result||'').includes('Published'));
+      document.getElementById('banner-finished-msg').textContent =
+        pub ? `"${pub.title}" was published successfully` : 'Blog post published';
+    } else if (ws === 'STOPPED') {
+      bannerStopped.style.display = 'block';
+      const stopped = state.tasks.find(t => t.title === 'Workflow ended');
+      document.getElementById('banner-stopped-msg').textContent =
+        stopped ? String(stopped.result||'').replace('🗑 ','').slice(0,200) : 'Workflow ended';
+    } else if (awaitingTasks.length > 0) {
       bannerHitl.style.display = 'block';
       document.getElementById('banner-hitl-msg').textContent =
         awaitingTasks[0].result || 'Check the orchestrator terminal for options';
-      bannerError.style.display = 'none';
     } else if (blockedTasks.length > 0) {
       bannerError.style.display = 'block';
       document.getElementById('banner-error-msg').textContent =
         blockedTasks.map(t => `• ${t.title}: ${String(t.result||'').replace('ERROR:','').trim().slice(0,200)}`).join('\n');
-      bannerHitl.style.display = 'none';
-    } else {
-      bannerHitl.style.display = 'none';
-      bannerError.style.display = 'none';
     }
   }
 
@@ -406,12 +433,25 @@
       document.getElementById('topic-label').textContent = `Topic: "${delta.inputs.topic}"`;
     }
 
-    // Log notable changes
-    const logMsg = delta.teamWorkflowStatus
-      ? `Workflow → ${delta.teamWorkflowStatus}`
-      : delta.tasks ? `${delta.tasks.length} tasks updated`
-      : JSON.stringify(delta).slice(0, 80);
-    addLog('UPDATE', logMsg, !!delta.teamWorkflowStatus);
+    // Log all state changes with full context
+    if (delta.teamWorkflowStatus) {
+      addLog('WORKFLOW', `Status → ${delta.teamWorkflowStatus}`, true);
+    }
+    if (delta.agents && Array.isArray(delta.agents)) {
+      for (const a of delta.agents) {
+        const statusIcon = { IDLE: '⚪', EXECUTING: '🟢', THINKING: '🔵', ERROR: '🔴' }[a.status] || '⬡';
+        const taskRef = a.currentTaskId ? ` [${a.currentTaskId.slice(-8)}]` : '';
+        addLog('AGENT', `${statusIcon} ${a.name || a.agentId} → ${a.status}${taskRef}`, a.status === 'EXECUTING' || a.status === 'ERROR');
+      }
+    }
+    if (delta.tasks && Array.isArray(delta.tasks)) {
+      for (const t of delta.tasks) {
+        const statusIcon = { DOING: '🔵', DONE: '✅', BLOCKED: '🔴', AWAITING_VALIDATION: '⏸' }[t.status] || '📋';
+        const resultPreview = t.result ? ` — ${String(t.result).slice(0, 80)}` : '';
+        const highlight = t.status === 'DONE' || t.status === 'BLOCKED' || t.status === 'AWAITING_VALIDATION';
+        addLog('TASK', `${statusIcon} ${(t.title || t.taskId).slice(0, 50)} → ${t.status}${resultPreview}`, highlight);
+      }
+    }
 
     render();
   });

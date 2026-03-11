@@ -1,17 +1,10 @@
 /**
- * Messaging Driver Factory for blog-team example.
+ * Messaging driver factory for the blog-team example.
+ * MESSAGING_DRIVER=bullmq (default) → BullMQDriver (Redis)
+ * MESSAGING_DRIVER=kafka            → KafkaDriver
  *
- * Creates the correct IMessagingDriver based on MESSAGING_DRIVER env var:
- *   MESSAGING_DRIVER=bullmq  (default) → BullMQDriver via Redis
- *   MESSAGING_DRIVER=kafka            → KafkaDriver via Kafka brokers
- *
- * For Kafka, a `groupIdSuffix` is appended to KAFKA_GROUP_ID to allow
- * separate consumer groups per component (orchestrator-completed, orchestrator-failed,
- * researcher, writer, editor), enabling correct message routing.
- *
- * Usage:
- *   const driver = createDriver();                    // worker node
- *   const driver = createDriver('-orchestrator');      // unique orchestrator group
+ * For Kafka: each worker gets a unique consumer groupId suffix so messages
+ * route correctly to the right node.
  */
 import { BullMQDriver } from '../../src/infrastructure/messaging/bullmq-driver';
 import { KafkaDriver } from '../../src/infrastructure/messaging/kafka-driver';
@@ -19,28 +12,33 @@ import type { IMessagingDriver } from '../../src/infrastructure/messaging/interf
 
 export type DriverType = 'bullmq' | 'kafka';
 
+// Suppress KafkaJS v2 partitioner migration warning
+process.env['KAFKAJS_NO_PARTITIONER_WARNING'] = '1';
+
 export function getDriverType(): DriverType {
-  const d = (process.env['MESSAGING_DRIVER'] ?? 'bullmq').toLowerCase();
-  if (d !== 'bullmq' && d !== 'kafka') {
-    throw new Error(`MESSAGING_DRIVER must be "bullmq" or "kafka", got: "${d}"`);
-  }
-  return d;
+  return process.env['MESSAGING_DRIVER'] === 'kafka' ? 'kafka' : 'bullmq';
 }
 
+/**
+ * Creates the configured messaging driver.
+ * @param groupIdSuffix Appended to Kafka consumer group to make it unique per role.
+ *   e.g. 'researcher' → 'kaiban-group-researcher'
+ *   For orchestrator create TWO with different suffixes (completed / failed).
+ */
 export function createDriver(groupIdSuffix = ''): IMessagingDriver {
-  const type = getDriverType();
-
-  if (type === 'kafka') {
-    const brokers = (process.env['KAFKA_BROKERS'] ?? 'localhost:9092').split(',').map((b) => b.trim());
-    const clientId = process.env['KAFKA_CLIENT_ID'] ?? 'kaiban-blog-team';
-    const groupId = `${process.env['KAFKA_GROUP_ID'] ?? 'kaiban-blog'}${groupIdSuffix}`;
-    console.log(`[factory] KafkaDriver — brokers: ${brokers.join(',')} group: ${groupId}`);
+  if (getDriverType() === 'kafka') {
+    const brokers = (process.env['KAFKA_BROKERS'] ?? 'localhost:9092').split(',');
+    const clientId = process.env['KAFKA_CLIENT_ID'] ?? 'kaiban-worker';
+    const base = process.env['KAFKA_GROUP_ID'] ?? 'kaiban-group';
+    const suffix = groupIdSuffix.startsWith("-") ? groupIdSuffix.slice(1) : groupIdSuffix;
+    const groupId = suffix ? `${base}-${suffix}` : base;
+    console.log(`[Driver] Kafka  brokers=${brokers.join(',')}  group=${groupId}`);
     return new KafkaDriver({ brokers, clientId, groupId });
   }
 
-  const redisUrl = new URL(process.env['REDIS_URL'] ?? 'redis://localhost:6379');
-  const host = redisUrl.hostname;
-  const port = parseInt(redisUrl.port || '6379', 10);
-  console.log(`[factory] BullMQDriver — ${host}:${port}`);
+  const url = new URL(process.env['REDIS_URL'] ?? 'redis://localhost:6379');
+  const host = url.hostname;
+  const port = parseInt(url.port || '6379', 10);
+  console.log(`[Driver] BullMQ  redis=${host}:${port}`);
   return new BullMQDriver({ connection: { host, port } });
 }

@@ -64,16 +64,16 @@ export class AgentStatePublisher {
   publishIdle(heartbeatIntervalMs = 15000): void {
     this.currentStatus = 'IDLE';
     this.currentTaskId = null;
+    // publishIdle: only agent state — orchestrator controls teamWorkflowStatus
     this.publish({
       agents: [{ ...this.agentInfo, status: 'IDLE', currentTaskId: null }],
-      teamWorkflowStatus: 'RUNNING',
     });
     // Start heartbeat so late-connecting board viewers see this agent within 15s
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(() => {
+      // Heartbeat: only agent state — orchestrator controls teamWorkflowStatus
       this.publish({
         agents: [{ ...this.agentInfo, status: this.currentStatus as 'IDLE' | 'EXECUTING' | 'ERROR', currentTaskId: this.currentTaskId }],
-        teamWorkflowStatus: 'RUNNING',
       });
     }, heartbeatIntervalMs);
   }
@@ -97,7 +97,6 @@ export class AgentStatePublisher {
       pub({
         agents: [{ agentId, name, role, status: 'EXECUTING', currentTaskId: payload.taskId }],
         tasks: [{ taskId: payload.taskId, title, status: 'DOING', assignedToAgentId: agentId }],
-        teamWorkflowStatus: 'RUNNING',
       });
 
       try {

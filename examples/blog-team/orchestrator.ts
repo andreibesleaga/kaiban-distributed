@@ -45,9 +45,19 @@ const EDIT_WAIT_MS     = parseInt(process.env['EDIT_WAIT_MS']     ?? '300000', 1
 // the second handler. One router handles all completions.
 // ──────────────────────────────────────────────────────────────
 
+/** All three blog-team agent descriptors (used to reset board state on completion) */
+const BLOG_AGENTS = [
+  { agentId: 'researcher', name: 'Ava',   role: 'News Researcher',        status: 'IDLE' as const, currentTaskId: null },
+  { agentId: 'writer',     name: 'Kai',   role: 'Content Creator',        status: 'IDLE' as const, currentTaskId: null },
+  { agentId: 'editor',     name: 'Morgan',role: 'Editorial Fact-Checker', status: 'IDLE' as const, currentTaskId: null },
+];
+
 /**
- * Publishes orchestration states directly to Redis Pub/Sub → SocketGateway → board.
- * Enables the board to show AWAITING_VALIDATION during HITL and errors when tasks fail.
+ * Publishes orchestration lifecycle states directly to Redis Pub/Sub → SocketGateway → board.
+ *
+ * Workers' AgentStatePublisher no longer emits teamWorkflowStatus — only the
+ * OrchestratorStatePublisher controls the workflow lifecycle (RUNNING → FINISHED / STOPPED).
+ * This prevents heartbeats from overriding terminal states.
  */
 class OrchestratorStatePublisher {
   private redis: Redis;
@@ -60,9 +70,15 @@ class OrchestratorStatePublisher {
     this.redis.publish('kaiban-state-events', JSON.stringify(delta)).catch(() => {});
   }
 
+  /** Call once when the orchestrator starts — board shows workflow is active */
+  workflowStarted(): void {
+    this.publish({ teamWorkflowStatus: 'RUNNING', agents: BLOG_AGENTS });
+  }
+
   awaitingHITL(taskId: string, reviewTitle: string, recommendation: string, score: string): void {
     this.publish({
       teamWorkflowStatus: 'RUNNING',
+      agents: BLOG_AGENTS,
       tasks: [{
         taskId,
         title: `🔍 ${reviewTitle}`,
@@ -80,11 +96,26 @@ class OrchestratorStatePublisher {
     });
   }
 
-  workflowFinished(finalTaskId: string, title: string): void {
-    this.publish({
-      teamWorkflowStatus: 'FINISHED',
-      tasks: [{ taskId: finalTaskId, title: title.slice(0, 60), status: 'DONE', assignedToAgentId: 'writer', result: '✅ Published' }],
-    });
+  /** Publish FINISHED state — resets all agents to IDLE and clears all pending tasks */
+  workflowFinished(finalTaskId: string, topic: string, editTaskId?: string): void {
+    const tasks: Array<Record<string, unknown>> = [
+      { taskId: finalTaskId, title: topic.slice(0, 60), status: 'DONE', assignedToAgentId: 'writer', result: '✅ Published' },
+    ];
+    if (editTaskId) {
+      tasks.push({ taskId: editTaskId, title: 'Editorial Review', status: 'DONE', assignedToAgentId: 'editor', result: '✅ Approved for publication' });
+    }
+    this.publish({ teamWorkflowStatus: 'FINISHED', agents: BLOG_AGENTS, tasks });
+  }
+
+  /** Publish STOPPED state — clears all pending tasks including editorial review */
+  workflowStopped(taskId: string, reason: string, editTaskId?: string): void {
+    const tasks: Array<Record<string, unknown>> = [
+      { taskId, title: 'Workflow ended', status: 'BLOCKED', assignedToAgentId: 'editor', result: `🗑 ${reason.slice(0, 200)}` },
+    ];
+    if (editTaskId && editTaskId !== taskId) {
+      tasks.push({ taskId: editTaskId, title: 'Editorial Review', status: 'BLOCKED', assignedToAgentId: 'editor', result: '⏹ Workflow stopped' });
+    }
+    this.publish({ teamWorkflowStatus: 'STOPPED', agents: BLOG_AGENTS, tasks });
   }
 
   async disconnect(): Promise<void> { await this.redis.quit(); }
@@ -354,7 +385,7 @@ async function main(): Promise<void> {
       blogDraft.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
       console.log('╚' + '═'.repeat(58) + '╝');
       console.log(`\n✅ Published. Accuracy: ${accuracyScore}\n`);
-      statePublisher.workflowFinished(writeTaskId, TOPIC);
+      statePublisher.workflowFinished(writeTaskId, TOPIC, editTaskId);
 
     } else if (decision === '2') {
       console.log('\n🔄 Sending back to Kai with editorial notes...\n');
@@ -378,12 +409,20 @@ async function main(): Promise<void> {
       console.log('╚' + '═'.repeat(58) + '╝');
 
       const pub = (await ask(rl, '\nPublish the revised draft? [y/n]: ')).trim().toLowerCase();
-      console.log(pub === 'y' ? '\n✅ Revised draft published.\n' : '\n⏸  Draft saved. Run again to review further.\n');
+      if (pub === 'y') {
+        console.log('\n✅ Revised draft published.\n');
+        statePublisher.workflowFinished(revisionTaskId, TOPIC, editTaskId);
+      } else {
+        console.log('\n⏸  Draft saved. Run again to review further.\n');
+        statePublisher.workflowStopped(revisionTaskId, 'Draft saved pending further review', editTaskId);
+      }
 
     } else {
       console.log('\n🗑  Post rejected.\n');
       const rationaleMatch = /Rationale\s*\n([\s\S]+)$/i.exec(editorialReview);
-      if (rationaleMatch) console.log(rationaleMatch[1].trim());
+      const rationale = rationaleMatch ? rationaleMatch[1].trim() : 'Rejected by human reviewer';
+      if (rationaleMatch) console.log(rationale);
+      statePublisher.workflowStopped(editTaskId, rationale, editTaskId);
     }
 
     console.log('─'.repeat(60));

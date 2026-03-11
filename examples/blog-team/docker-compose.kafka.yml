@@ -1,21 +1,13 @@
-# Blog Team — Kafka Variant
+# Blog Team — Kafka Edition
 #
-# Runs the full distributed blog pipeline using Kafka as the messaging layer.
-# State events (board updates) still use Redis Pub/Sub (SocketGateway requirement).
-#
-# Topology:
-#   zookeeper + kafka: task queues (kaiban-agents-*, kaiban-events-*)
-#   redis:             state pub/sub (kaiban-state-events → Socket.io → board)
-#   gateway:           HTTP + Socket.io edge on port 3000
-#   researcher/writer/editor: KaibanJS agent worker nodes (MESSAGING_DRIVER=kafka)
-#
-# Prerequisites:
-#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env build
+# Same three-agent pipeline (Ava → Kai → Morgan) but using Kafka for
+# task queues instead of BullMQ/Redis.
+# Redis is still required for state broadcast (kaiban-state-events pub/sub).
 #
 # Start:
-#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env up
+#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env up --build
 #
-# Run orchestrator (separate terminal, from repo root):
+# Run the orchestrator with Kafka:
 #   GATEWAY_URL=http://localhost:3000 \
 #   REDIS_URL=redis://localhost:6379 \
 #   MESSAGING_DRIVER=kafka \
@@ -84,9 +76,9 @@ services:
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-gateway
-      KAFKA_GROUP_ID: kaiban-gateway
+      KAFKA_GROUP_ID: kaiban-group
       PORT: "3000"
-      SERVICE_NAME: kaiban-gateway-kafka
+      SERVICE_NAME: kaiban-gateway
       AGENT_IDS: gateway
     restart: on-failure
     healthcheck:
@@ -110,7 +102,7 @@ services:
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-researcher
-      KAFKA_GROUP_ID: kaiban-blog
+      KAFKA_GROUP_ID: kaiban-group
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -132,7 +124,7 @@ services:
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-writer
-      KAFKA_GROUP_ID: kaiban-blog
+      KAFKA_GROUP_ID: kaiban-group
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -154,7 +146,7 @@ services:
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-editor
-      KAFKA_GROUP_ID: kaiban-blog
+      KAFKA_GROUP_ID: kaiban-group
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
