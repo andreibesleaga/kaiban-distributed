@@ -1,10 +1,17 @@
-C4Context
-    title System Context for Distributed KaibanJS
-    Person(user, "Human Operator", "Monitors and manages workflows via Kaiban Board.")
-    System(kaibanjs, "KaibanJS Environment", "Core workflow engine where AI agents execute tasks.")
-    SystemExt(langgraph, "External AI Systems (LangGraph)", "Federated external AI networks communicating via A2A.")
-    SystemExt(mcp, "MCP Servers", "External Model Context Protocol servers providing tool access.")
+flowchart LR
+  %% System Context — Distributed KaibanJS (GitHub-renderable)
 
-    Rel(user, kaibanjs, "Views state & manages tasks using", "WebSocket / HTTP")
-    Rel(kaibanjs, langgraph, "Delegates sub-tasks using", "A2A Protocol")
-    Rel(kaibanjs, mcp, "Fetches tools and context using", "MCP Protocol")
+  classDef person fill:#FFF7E6,stroke:#B7791F,stroke-width:1px,color:#1A202C;
+  classDef system fill:#E6FFFA,stroke:#2C7A7B,stroke-width:1px,color:#1A202C;
+  classDef extern fill:#EBF8FF,stroke:#2B6CB0,stroke-width:1px,color:#1A202C;
+
+  user["Human Operator<br/><small>Monitors and manages workflows via Kaiban Board.</small>"]:::person
+
+  kaibanjs["KaibanJS Environment<br/><small>Core workflow engine where AI agents execute tasks.</small>"]:::system
+
+  langgraph["External AI Systems (LangGraph)<br/><small>Federated external AI networks communicating via A2A.</small>"]:::extern
+  mcp["MCP Servers<br/><small>External Model Context Protocol servers providing tool access.</small>"]:::extern
+
+  user -->|WebSocket / HTTP<br/>Views state & manages tasks using| kaibanjs
+  kaibanjs -->|A2A Protocol<br/>Delegates sub-tasks using| langgraph
+  kaibanjs -->|MCP Protocol<br/>Fetches tools and context using| mcp
