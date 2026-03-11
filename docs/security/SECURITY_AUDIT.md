@@ -5,49 +5,61 @@
 **Auditor:** Antigravity (Automated Security Swarm)
 
 ## 1. Executive Summary
-This report presents a thorough security audit of the `kaiban-distributed` project, evaluated against the latest **OWASP Top 10 for LLM Applications (2025)**, the **OWASP Top 10 for Agentic AI (2026)**, and local stringent engineering constitutions (e.g., `CONSTITUTION.md`). The audit highlights robust foundational defenses, particularly through the Actor-Model isolation and asynchronous task boundaries, while identifying critical supply chain vulnerabilities requiring immediate remediation.
+This report presents a thorough security audit of the `kaiban-distributed` project, evaluated against the **OWASP Top 10 for Agentic AI (2026)**, **OWASP Top 10 for LLM Applications (2025)**, and internal engineering baseline standards (`CONSTITUTION.md`, Zero Trust, and STRIDE Threat Modeling). The audit highlights robust foundational defenses provided by the Actor-Model isolation and asynchronous task boundaries, while identifying specific gaps in agent-to-agent communication trust, prompt injection defenses, and supply chain dependencies.
 
 ---
 
-## 2. OWASP Top 10 for Agentic AI (2026) Audit
-Agentic AI systems face unique vulnerabilities due to their autonomous execution capabilities.
+## 2. Threat Modeling (STRIDE) Applied to Kaiban Distributed
+Before mapping specific vulnerabilities, we apply the STRIDE methodology to the core components:
+- **Spoofing**: Edge Gateways and Kanban UI must enforce strict JWT/OAuth. Agents communicate via the Message Abstraction Layer (MAL); currently, they trust the message broker. **mTLS** should be mandated between Agent Nodes and the MAL.
+- **Tampering**: State synchronization via ETags (Optimistic Concurrency Control) prevents state trampling.
+- **Repudiation**: OTLP tracing headers (`traceparent`) ensure full auditability of agent asynchronous hops.
+- **Information Disclosure**: Telemetry middleware successfully scrub PII/SSN before broadcasting via Socket.io to the browser.
+- **Denial of Service (DoS)**: Handled by BullMQ/Kafka rate-limiting and maximum retry counts (3x limits) to prevent LLM Unbounded Consumption.
+- **Elevation of Privilege**: Agents execute as non-root (`USER kaiban`) within Docker. The Node.js context must drop all unnecessary Linux capabilities.
+
+---
+
+## 3. OWASP Top 10 for Agentic AI (2026) Audit
+
+| Vulnerability | Mitigation Strategy & Status in Kaiban Distributed | Risk |
+| :--- | :--- | :--- |
+| **ASI01: Agent Goal Hijack** | **Partial.** Core logic governed by `CONSTITUTION.md`. **Action Required:** Implement a "Semantic Firewall" (secondary constrained model) to evaluate inbound tasks for payload instructions that attempt to alter an agent's overarching goals. | Medium |
+| **ASI02: Tool Misuse / Exploitation** | **Strong.** Integration with **MCP (Model Context Protocol)** restricts arbitrary system access. Tools validate inputs robustly before execution. | Low |
+| **ASI03: Identity & Privilege Abuse** | **Strong/Partial.** Agents act as isolated Node.js actors without overarching admin privileges. **Action Required:** Transition to Just-In-Time (JIT) ephemeral tokens for tools rather than static API keys. | Low |
+| **ASI04: Agentic Supply Chain** | **HIGH RISK.** Upstream dependencies (e.g., Langchain, Langsmith) may possess CVEs. **Action Required:** Generate AI-BOMs, pin all agent dependencies by hash, and explicitly allow-list MCP domains. | **High** |
+| **ASI05: Unexpected Code Execution** | **Strong.** `CONSTITUTION.md` strictly forbids arbitrary `eval()` or `exec()` execution on workers. Fallback code should only execute in ephemeral micro-VMs (e.g., Firecracker) if ever required. | Low |
+| **ASI06: Memory & Context Poisoning** | **Strong.** RAG memory (if implemented) must strictly segregate namespaces per tenant. Currently, shared state is synced via Kafka/Redis with ETag concurrency. | Low |
+| **ASI07: Insecure Inter-Agent Comm** | **Action Required.** A2A protocol and `IMessagingDriver` currently lack cryptographic intent verification. Must enforce Zero Trust via mTLS and bind API tokens to signed intents when agents delegate tasks to peers. | Medium |
+| **ASI08: Cascading Failures** | **Strong.** Actor-Model prevents one agent's crash from destroying the orchestrator. Strict circuit breakers and DLQs catch repeated failures, stopping runaway fan-out. | Low |
+| **ASI09: Trust Exploitation** | **Strong.** System requires Human-in-the-Loop (`AWAITING_VALIDATION`) for irreversible operations before proceeding from DOING state. | Low |
+| **ASI10: Rogue Agents** | **Partial.** Agents could drift over time. **Action Required:** Implement automated emergency kill switches based on OpenTelemetry anomaly detection. | Low |
+
+---
+
+## 4. OWASP Top 10 for LLM Applications (2025) Audit
 
 | Vulnerability | Kaiban Distributed Mitigation Status | Risk |
 | :--- | :--- | :--- |
-| **ASI01: Agent Goal Hijack** | **Partial Risk.** Agents rely on strict `CONSTITUTION.md` rules, but external LLMs can still be susceptible to prompt injection. | Medium |
-| **ASI02: Tool Misuse** | **Strong.** Integration with **MCP (Model Context Protocol)** limits direct arbitrary system access. | Low |
-| **ASI03: Identity & Privilege Abuse** | **Strong.** Agents act as isolated Node.js actors without overarching admin privileges across the cluster. | Low |
-| **ASI04: Agentic Supply Chain** | **FAILING (See Section 4).** Upstream dependencies (Langchain, Langsmith) possess known CVEs. | **High** |
-| **ASI05: Unexpected Code Execution** | **Strong.** `CONSTITUTION.md` forbids arbitrary `exec()` execution on workers. | Low |
-| **ASI06: Memory Poisoning** | **Strong.** State is synchronized strictly via Redis/Kafka with optimistic concurrency control (ETags). | Low |
-| **ASI07: Insecure Communication** | **Strong.** A2A protocol and internal messaging driver (`IMessagingDriver`) enforce strict typed structures. | Low |
-| **ASI08: Cascading Failures** | **Strong.** The Actor-Model prevents one agent's crash from bringing down the orchestrator. Dead-Letter Queues (DLQs) catch repeated failures. | Low |
+| **LLM01: Prompt Injection** | Agents format prompts securely via `AGENTS.md`. Relies on foundational providers. | Medium |
+| **LLM02: Sensitive Info Disclosure** | **Strong.** Privacy middleware explicitly strips PII/SSN/passwords before broadcasting to the Kanban UI. | Low |
+| **LLM03: Supply Chain** | Shared with ASI04. Requires strict SBOM/AI-BOM tracking. | High |
+| **LLM05: Improper Output Handling** | Validated via `zod`/JSON-RPC 2.0 structures on A2A edges. | Low |
+| **LLM06: Excessive Agency** | Shared with ASI02. Minimized via strict tool boundaries. | Low |
+| **LLM07: System Prompt Leakage** | `AGENTS.md` and `CONSTITUTION.md` must be kept isolated. Prevented via `gitleaks` checks. | Low |
+| **LLM08: Vector Weaknesses** | Hard cryptographic namespace segregation required if a Vector DB MCP is attached. | N/A |
+| **LLM10: Model DoS** | **Strong.** Handled by BullMQ / Kafka rate-limiting, circuit breakers, and job retry caps (max 3x). | Low |
 
 ---
 
-## 3. OWASP Top 10 for LLM Applications (2025) Audit
+## 5. Traditional API & Dependency Security (SAST/SCA)
 
-| Vulnerability | Kaiban Distributed Mitigation Status | Risk |
-| :--- | :--- | :--- |
-| **LLM01: Prompt Injection** | Agents are instructed via `AGENTS.md` to format prompts securely, though ultimate reliance is on the foundational LLM provider. | Medium |
-| **LLM02: Insecure Output Handling** | Validated via `zod`/JSON-RPC 2.0 structures on A2A edges. | Low |
-| **LLM06: Sensitive Info Disclosure** | **Strong.** Telemetry middleware explicitly strips PII/SSN/passwords before broadcasting to the Kanban UI. | Low |
-| **LLM07:2025 System Prompt Leakage** | `AGENTS.md` configuration must be kept secure. `gitleaks` policy prevents hardcoded secrets. | Low |
-| **LLM08:2025 Vector Weaknesses** | Not universally applicable unless a vector database MCP is attached. | N/A |
-| **LLM10:2025 Unbounded Consumption** | **Strong.** Handled by BullMQ / Kafka rate-limiting and job retry caps (max 3x). | Low |
-
----
-
-## 4. Traditional API & Dependency Security (SAST/SCA)
-
-Following the local `SECURITY_CHECKLIST.md` and `api-security.md` rules, an `npm audit --audit-level=moderate` was executed to check for A06 (Vulnerable Components).
+Following local `api-security.md` and `secure-architecture.md` paradigms, standard Node.js security checks apply:
 
 ### Critical Findings (Must Fix Before Release)
 - **[HIGH] Server-Side Request Forgery via Tracing Header Injection** (CVE-2024-XXXXX / GHSA-v34v-rq6j-cj6p). 
-  - **Component:** `langsmith` (0.3.41 - 0.4.5) included via `@kaibanjs/workflow`.
-  - **Impact:** Allows SSRF via tracing headers.
-- **[MODERATE] Vulnerabilities in `@langchain/core` / `@langchain/openai`**
-  - **Component:** Core AI orchestration libraries spanning 12 identified vulnerabilities (8 moderate, 4 high).
+  - **Component:** `langsmith` (included via `@kaibanjs/workflow`).
+  - **Impact:** Allows SSRF via tracing headers. Release explicitly blocked until dependency overrides are verified.
 
 ### Passed Checks
 - **[PASS] No Hardcoded Secrets:** Docker and `.env` architecture explicitly separates configuration from code.
@@ -56,10 +68,10 @@ Following the local `SECURITY_CHECKLIST.md` and `api-security.md` rules, an `npm
 
 ---
 
-## 5. Remediation Plan & Suggestions
+## 6. Remediation Plan & Strategic Next Steps
 
-1. **Immediate Dependency Patch (High Priority): FIXED WITH UPDATED DEPENDENCIES OVERRIDES** 
-    `@kaibanjs/workflow` and `langchain` packages to resolve the deep tree of `langsmith` SSRF vulnerabilities. Due to the strict `A06: Vulnerable Components` checklist rule, release blocked until dependencies are cleared.
-2. **Implement mTLS between Node Actors and Kafka/Redis:** While the Actor-Model provides memory isolation, network traffic between the agent Nodes and the MAL should be encrypted using mTLS to prevent internal network sniffing (mitigating ASI07).
-3. **Formalize Prompt Injection Scanners:** Integrate an MCP server acting as an API Gateway specifically tasked with scrubbing inbound user prompts for known prompt-injection signatures before they hit the individual Kaiban agents.
-4. **Agent Goal Hijack Circuit Breakers:** Implement a heuristic scanner that compares an Agent's current chain of thought (CoT) against its original objective, pausing the task (HITL) if significant divergence is detected.
+1. **Immediate Dependency Patch (High Priority):** Update `@kaibanjs/workflow` and `langchain` packages to resolve dynamic `langsmith` SSRF vulnerabilities.
+2. **Implement mTLS between Node Actors and Kafka/Redis:** Network traffic between the agent Nodes and the Message Abstraction Layer must use mTLS to prevent horizontal sniffing and enforce Zero Trust (mitigating ASI07).
+3. **Formalize Semantic Firewalls:** Plumb an isolated, highly constrained local model to act as a semantic firewall, explicitly evaluating inbound messages for ASI01 goal hijacks before passing them to the primary Actor LLMs.
+4. **Just-In-Time (JIT) Tool Tokens:** Replace static API keys injected into containers with dynamically generated, ephemeral, task-scoped tokens for all external MCP and REST connections.
+5. **Circuit Breakers & Kill Switches:** Enhance the OTLP observability layer with heuristic anomaly detection to automatically trip circuit breakers if an agent enters an unbounded loop or deviates significantly from its baseline objective (ASI10).

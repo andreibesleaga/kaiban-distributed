@@ -109,6 +109,118 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+
+### High-Level Distributed Topology Example
+
+```mermaid
+graph TD
+    UI[Kanban Board UI<br>Browser] -- WebSockets --> Gateway[Edge Gateway APP<br>Port 3000]
+    Gateway -- Pub/Sub (Socket.io) --> RedisPubSub[(Redis Pub/Sub<br>State Stream)]
+    Gateway -- HTTP POST --> A2A[A2A Connector]
+    
+    A2A --> Queue[(Message Queue<br>BullMQ / Kafka)]
+    
+    Queue --> |Tasks| AgentA[Node 1: Researcher Actor]
+    Queue --> |Tasks| AgentB[Node 2: Writer Actor]
+    Queue --> |Tasks| AgentC[Node 3: Editor Actor]
+    
+    AgentA -- State Updates --> RedisPubSub
+    AgentB -- State Updates --> RedisPubSub
+    AgentC -- State Updates --> RedisPubSub
+    
+    AgentA <--> LLM[LLM APIs<br>OpenAI/Anthropic]
+    AgentB <--> MCP[MCP Servers<br>Search/Database]
+```
+
+### Complete Architectural Schema (Digitalized from Sketch)
+
+```mermaid
+flowchart TD
+    classDef plain fill:none,stroke:none,color:inherit,font-style:italic;
+    classDef solidBox fill:none,stroke:#333,stroke-width:2px;
+
+    %% Row 1
+    subgraph TopLevel [" "]
+        direction LR
+        TL["DISTRIBUTED AGENTIC"]:::plain
+        Kanban["VISUALIZE TASKS, STREAMS:<br/> KANBAN STYLE BOARD<br/>(TODO, INPROGRESS, DONE, BLOCKED, AWAITING_VALIDATION)"]:::solidBox
+        TR["WRAPPER ON KAIBANJS + OTHERS(DIFY, MCP, ETC.)<br/>ACTOR MODEL, ENTERPRISE GRADE MESSAGING + QUEUEING"]:::plain
+        TL ~~~ Kanban ~~~ TR
+    end
+    style TopLevel fill:none,stroke:none;
+
+    %% Row 2
+    subgraph MidLevel [" "]
+        direction LR
+        MsgLayer["MESSAGE LAYER<br/>ASYNC. STREAMING MSG. / REALTIME (KAFKA, REDIS, ETC)"]:::solidBox
+        MAL["MAL + DRIVERS / INTERFACES<br/>(MESSAGING AGENT LAYER)"]:::plain
+        MsgLayer ~~~ MAL
+    end
+    style MidLevel fill:none,stroke:none;
+
+    Kanban <--> MsgLayer
+
+    %% Row 3
+    subgraph AgentLevel [" "]
+        direction LR
+        ActorModelText["DISTRIBUTED INFRA: AI NODE AGENTS<br/>EACH AGENT ACTOR MODEL<br/>EDGE, IOT, LOCAL, KUBERNETES, ETC."]:::plain
+        N1(("AGENT NODE<br/>optional V. SCALING"))
+        N2(("AGENT<br/>NODE"))
+        N3(("AGENT<br/>NODE"))
+        N4(("AGENT NODE"))
+        DistInfraText["TEAM WORKFLOW: RUNNING AWAITING_VALIDATION FINISHED STOPPED"]:::plain
+
+        ActorModelText ~~~ N1
+        N1 -- "optional H. SCALING" --- N2
+        N2 ~~~ N3
+        N3 -- "optional H. SCALING" --- N4
+        N4 ~~~ DistInfraText
+    end
+    style AgentLevel fill:none,stroke:none;
+
+    MsgLayer <--> N1
+    MsgLayer <--> N2
+    MsgLayer <--> N3
+    MsgLayer <--> N4
+
+    %% Row 4
+    subgraph BottomLevel [" "]
+        direction LR
+        OtherSystemsText["OTHER SYSTEMS COMPONENTS<br/>INTERACTING VIA A2A, MCP, MESSAGING"]:::plain
+        Dify["WORKFLOWS: ◯ ➞ ◻️ ➞ ◇ ➞ ◻️ [RES/OK]<br/>GRAPHIC AI PROGRAMMING"]:::solidBox
+        OtherSystemsBox["OTHER SYSTEMS: CONNECTORS TO M.A.L<br/>CUSTOMIZED TO ORG/PROJECT"]:::solidBox
+
+        OtherSystemsText ~~~ Dify ~~~ OtherSystemsBox
+    end
+    style BottomLevel fill:none,stroke:none;
+
+    N1 -. "I/O - A2A" .-> Dify
+    N2 -. "MCP I/O" .-> Dify
+    N4 -->|"I/O: A2A, MCP MESSAGING"| OtherSystemsBox
+```
+
+### Task State Machine (The Worker Lifecycle)
+
+```mermaid
+stateDiagram-v2
+    [*] --> QUEUED : task.create
+    QUEUED --> DOING : Worker Claims Task
+    
+    DOING --> DONE : Inference Success
+    DOING --> ERROR : Catch LLM failure
+    
+    ERROR --> DOING : Retry (max 3x)
+    ERROR --> DLQ : Max Retries Exceeded 
+    
+    DOING --> AWAITING_VALIDATION : HITL Required
+    AWAITING_VALIDATION --> DOING : Human Approved
+    
+    DONE --> [*]
+```
+
+---
+
+
 ### Components
 
 | Component | Location | Purpose |
