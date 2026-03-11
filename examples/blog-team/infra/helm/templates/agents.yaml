@@ -1,0 +1,32 @@
+{{- range $agentName, $agentConfig := .Values.agents }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kaiban-blog-team.fullname" $ }}-{{ $agentName }}
+  labels:
+    {{- include "kaiban-blog-team.labels" $ | nindent 4 }}
+    app: {{ include "kaiban-blog-team.fullname" $ }}-{{ $agentName }}
+spec:
+  replicas: {{ $agentConfig.replicas }}
+  selector:
+    matchLabels:
+      {{- include "kaiban-blog-team.selectorLabels" $ | nindent 6 }}
+      app: {{ include "kaiban-blog-team.fullname" $ }}-{{ $agentName }}
+  template:
+    metadata:
+      labels:
+        {{- include "kaiban-blog-team.selectorLabels" $ | nindent 8 }}
+        app: {{ include "kaiban-blog-team.fullname" $ }}-{{ $agentName }}
+    spec:
+      containers:
+      - name: {{ $agentName }}
+        image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+        imagePullPolicy: {{ $.Values.image.pullPolicy }}
+        command: ["node", "dist/examples/blog-team/{{ $agentName }}-node.js"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "kaiban-blog-team.fullname" $ }}-config
+        - secretRef:
+            name: {{ include "kaiban-blog-team.fullname" $ }}-secrets
+---
+{{- end }}

@@ -1,0 +1,28 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "../../Dockerfile"
+
+[deploy]
+restartPolicyType = "on_failure"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+
+# ==========================================
+# Railway Multi-Service Deployment Guide
+# ==========================================
+# In Railway, you attach this single repository to multiple services within the same project.
+#
+# 1. Add a Redis plugin to your Railway project.
+# 2. Add 4 new services, all pointing to this GitHub repository.
+# 3. For each service, go to Settings -> Deploy -> Custom Start Command and set it:
+#
+#    Gateway:     node dist/src/main/index.js
+#    Researcher:  node dist/examples/blog-team/researcher-node.js
+#    Writer:      node dist/examples/blog-team/writer-node.js
+#    Editor:      node dist/examples/blog-team/editor-node.js
+#
+# 4. Under Variables for each service, reference the Redis plugin URL:
+#    REDIS_URL:        ${{Redis.REDIS_URL}}
+#    OPENAI_API_KEY:   sk-...
+#
+# 5. For the Gateway service, expose the domain so you can access the Kanban board.

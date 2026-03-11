@@ -1,0 +1,83 @@
+# Researcher Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kaiban-researcher
+  labels:
+    app: kaiban-researcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kaiban-researcher
+  template:
+    metadata:
+      labels:
+        app: kaiban-researcher
+    spec:
+      containers:
+      - name: researcher
+        image: kaiban-distributed:latest
+        imagePullPolicy: IfNotPresent
+        command: ["node", "dist/examples/blog-team/researcher-node.js"]
+        envFrom:
+        - configMapRef:
+            name: kaiban-blog-team-config
+        - secretRef:
+            name: kaiban-blog-team-secrets
+---
+# Writer Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kaiban-writer
+  labels:
+    app: kaiban-writer
+spec:
+  replicas: 1 # Scale up for more generic parallel processing
+  selector:
+    matchLabels:
+      app: kaiban-writer
+  template:
+    metadata:
+      labels:
+        app: kaiban-writer
+    spec:
+      containers:
+      - name: writer
+        image: kaiban-distributed:latest
+        imagePullPolicy: IfNotPresent
+        command: ["node", "dist/examples/blog-team/writer-node.js"]
+        envFrom:
+        - configMapRef:
+            name: kaiban-blog-team-config
+        - secretRef:
+            name: kaiban-blog-team-secrets
+---
+# Editor Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kaiban-editor
+  labels:
+    app: kaiban-editor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kaiban-editor
+  template:
+    metadata:
+      labels:
+        app: kaiban-editor
+    spec:
+      containers:
+      - name: editor
+        image: kaiban-distributed:latest
+        imagePullPolicy: IfNotPresent
+        command: ["node", "dist/examples/blog-team/editor-node.js"]
+        envFrom:
+        - configMapRef:
+            name: kaiban-blog-team-config
+        - secretRef:
+            name: kaiban-blog-team-secrets

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kaiban-blog-team-config
+data:
+  REDIS_URL: "redis://kaiban-redis:6379"
+  MESSAGING_DRIVER: "bullmq"
+  GATEWAY_PORT: "3000"
+  SERVICE_NAME: "kaiban-gateway"
+  AGENT_IDS: "gateway"
+  LLM_MODEL: "gpt-4o-mini"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kaiban-blog-team-secrets
+type: Opaque
+stringData:
+  # Base64 encoded values or managed via external secret operators
+  # Replace with actual keys before applying
+  OPENAI_API_KEY: "sk-..."
+  OPENROUTER_API_KEY: "sk-or-v1-..."
