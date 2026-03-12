@@ -21,6 +21,8 @@ interface DistributedAgentState {
 }
 ```
 
+> **Note on `THINKING`:** `AgentStatePublisher` directly emits `IDLE`, `EXECUTING`, and `ERROR`. The `THINKING` status appears when KaibanJS internally transitions between reasoning steps — it is forwarded to the board via `DistributedStateMiddleware` (Zustand state interception), not via `AgentStatePublisher.wrapHandler()`.
+
 ### Task Workflow Schema
 
 ```typescript
@@ -135,11 +137,15 @@ interface JsonRpcResponse {
 
 | Method | Request `params` | Returns |
 |--------|-----------------|---------|
-| `agent.status` | `{}` | `{ status: AgentStatus, agentId: string }` |
+| `agent.status` | `{}` | `{ status: 'IDLE', agentId: string }` ¹ |
 | `tasks.create` | `{ agentId, instruction, expectedOutput, inputs?, context? }` | `{ taskId, status: 'QUEUED', agentId }` |
 | `tasks.get` | `{ taskId }` | `{ taskId, status: TaskStatus }` |
 
+¹ `agent.status` always returns the static value `'IDLE'`. Live agent state is broadcast via Socket.io `state:update` events (see §6).
+
 `tasks.create` publishes to `kaiban-agents-{agentId}` queue when `IMessagingDriver` is wired (see `src/infrastructure/federation/a2a-connector.ts`).
+
+> **Note:** The `tasks.create` response uses `status: 'QUEUED'` as an API-level acknowledgment that the task has been accepted and enqueued. This is distinct from the domain `TaskStatus` type (`'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'`). Once a worker claims the task, its domain status transitions to `'DOING'`.
 
 ---
 
@@ -192,7 +198,35 @@ Error responses: `{ data: null, errors: [{ message }] }`.
 socket.emit('state:update', delta: Record<string, unknown>)
 ```
 
-Delta fields follow KaibanJS `TeamStoreState` shape. PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped before publishing (see `DistributedStateMiddleware.sanitizeDelta`).
+**Delta payload shape** (partial — only changed fields are included per publish):
+```typescript
+interface StateDelta {
+  // Agent state (from AgentStatePublisher or distributedMiddleware)
+  agents?: Array<{
+    agentId: string;
+    name: string;
+    role: string;
+    status: AgentStatus;         // 'IDLE' | 'THINKING' | 'EXECUTING' | 'ERROR'
+    currentTaskId: string | null;
+  }>;
+
+  // Task state (from AgentStatePublisher or distributedMiddleware)
+  tasks?: Array<{
+    taskId: string;
+    title: string;
+    status: TaskStatus;          // 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'
+    assignedToAgentId: string;
+    result?: string;             // capped at 800 chars
+  }>;
+
+  // Workflow lifecycle (set exclusively by the orchestrator — never by workers)
+  teamWorkflowStatus?: 'RUNNING' | 'FINISHED' | 'STOPPED';
+}
+```
+
+> **Source of deltas:** `AgentStatePublisher` emits `IDLE → EXECUTING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. `DistributedStateMiddleware` forwards KaibanJS internal state (including `THINKING`) as additional deltas.
+
+PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped before publishing (see `DistributedStateMiddleware.sanitizeDelta`).
 
 ---
 

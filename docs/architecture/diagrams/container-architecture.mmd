@@ -4,13 +4,13 @@ C4Container
     
     Container(ui, "Kaiban Board UI", "React", "Visualizes tasks and logs.")
     Container(gateway, "Edge Gateway APIs", "Node.js (Express)", "Routes API calls and maintains WebSocket connections.")
-    Container(broker, "Messaging Abstraction Layer (MAL)", "Redis / BullMQ", "Message broker handling queueing and Pub/Sub state sync.")
+    Container(broker, "Messaging Abstraction Layer (MAL)", "Redis/BullMQ or Kafka", "Message broker handling queueing and Pub/Sub state sync.")
     Container(orchestrator, "Team Orchestrator Nodes", "Node.js + KaibanJS", "Evaluates workflows and assigns tasks.")
     Container(worker, "Agent Worker Nodes", "Node.js + KaibanJS", "Lightweight Actor wrappers that process AI tasks sequentially.")
 
     Rel(user, ui, "Interacts with", "HTTPS")
     Rel(ui, gateway, "Listens to state via", "Socket.io")
     Rel(gateway, broker, "Subscribes to Event Stream", "Redis Pub/Sub")
-    Rel(orchestrator, broker, "Publishes new tasks to", "BullMQ")
-    Rel(worker, broker, "Consumes tasks from", "BullMQ")
+    Rel(orchestrator, broker, "Publishes new tasks to", "BullMQ or Kafka")
+    Rel(worker, broker, "Consumes tasks from", "BullMQ or Kafka")
     Rel(worker, broker, "Publishes status updates to", "Redis Pub/Sub")

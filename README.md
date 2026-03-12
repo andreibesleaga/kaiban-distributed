@@ -10,7 +10,7 @@
 > For more documentation and system build flow with [GABBE](https://github.com/andreibesleaga/GABBE), check files in [docs/](docs/).
 >
 
-[![Tests](https://img.shields.io/badge/tests-238%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-340%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
@@ -144,7 +144,7 @@ flowchart TD
     subgraph TopLevel [" "]
         direction LR
         TL["DISTRIBUTED AGENTIC"]:::plain
-        Kanban["VISUALIZE TASKS, STREAMS:<br/> KANBAN STYLE BOARD<br/>(TODO, INPROGRESS, DONE, BLOCKED, AWAITING_VALIDATION)"]:::solidBox
+        Kanban["VISUALIZE TASKS, STREAMS:<br/> KANBAN STYLE BOARD<br/>(TODO, DOING, DONE, BLOCKED, AWAITING_VALIDATION)"]:::solidBox
         TR["WRAPPER ON KAIBANJS + OTHERS(DIFY, MCP, ETC.)<br/>ACTOR MODEL, ENTERPRISE GRADE MESSAGING + QUEUEING"]:::plain
         TL ~~~ Kanban ~~~ TR
     end
@@ -169,7 +169,7 @@ flowchart TD
         N2(("AGENT<br/>NODE"))
         N3(("AGENT<br/>NODE"))
         N4(("AGENT NODE"))
-        DistInfraText["TEAM WORKFLOW: RUNNING AWAITING_VALIDATION FINISHED STOPPED"]:::plain
+        DistInfraText["TEAM WORKFLOW: RUNNING → FINISHED / STOPPED"]:::plain
 
         ActorModelText ~~~ N1
         N1 -- "optional H. SCALING" --- N2
@@ -204,19 +204,19 @@ flowchart TD
 
 ```mermaid
 stateDiagram-v2
-    [*] --> QUEUED : task.create
-    QUEUED --> DOING : Worker Claims Task
-    
+    [*] --> TODO : task.create
+    note right of TODO : API response: status='QUEUED'
+    TODO --> DOING : Worker Claims Task
+
     DOING --> DONE : Inference Success
-    DOING --> ERROR : Catch LLM failure
-    
-    ERROR --> DOING : Retry (max 3x)
-    ERROR --> DLQ : Max Retries Exceeded 
-    
+    DOING --> TODO : Retry (max 3×, exp. backoff)
+    DOING --> BLOCKED : Max Retries Exceeded (→ kaiban-events-failed)
+
     DOING --> AWAITING_VALIDATION : HITL Required
     AWAITING_VALIDATION --> DOING : Human Approved
-    
+
     DONE --> [*]
+    BLOCKED --> [*]
 ```
 
 ---
@@ -398,17 +398,21 @@ SocketGateway:
 
 ### Board state lifecycle
 
+`teamWorkflowStatus` values (set by the orchestrator only):
+
 | `teamWorkflowStatus` | Board banner | Badge |
 |---|---|---|
 | `RUNNING` | none | 🔵 blue |
-| `AWAITING_VALIDATION` | ⏸ **HUMAN DECISION REQUIRED** (orange pulse) | 🟠 orange glow |
 | `FINISHED` | ✅ **WORKFLOW COMPLETE** (green glow) | 🟢 green |
 | `STOPPED` | ⏹ **WORKFLOW ENDED** (grey) | ⚫ grey |
 
+> The ⏸ **HUMAN DECISION REQUIRED** (orange pulse) banner is shown when any task has status `AWAITING_VALIDATION` — this is triggered by task state, not by `teamWorkflowStatus`.
+
 Task card states:
+- `TODO` — 📋 pending (initial state)
 - `DOING` — 🔵 blue left border + pulse dot
 - `DONE` — 🟢 green
-- `AWAITING_VALIDATION` — 🟠 orange pulsing glow + `⏸ HUMAN DECISION` badge
+- `AWAITING_VALIDATION` — 🟠 orange pulsing glow + `⏸ HUMAN DECISION` badge + HITL banner
 - `BLOCKED` — 🔴 red glow + `⛔ ERROR` badge + red error banner with message
 
 ### Option A: Static HTML viewer (zero setup)
@@ -699,7 +703,7 @@ All features are **disabled by default**. Enable individually via environment va
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 236 unit tests (no external deps)
+npm run test           # 340 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -713,7 +717,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 236 tests, 30 files | None (all mocked) |
+| Unit | `npm test` | 340 tests, 36 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 7 tests | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 2 tests | Docker Kafka + Zookeeper |
 
@@ -771,13 +775,14 @@ kaiban-distributed/
 │       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 236 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 340 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts  # BullMQ: execution, fault tolerance, state sync
 │       ├── a2a-protocol.test.ts           # HTTP gateway + A2A
 │       ├── kafka-driver.test.ts           # Kafka pub/sub round-trip
 │       └── setup/
-│           └── globalSetup.ts             # Docker Redis auto-start; resilient to existing Redis
+│           ├── globalSetup.ts             # Docker Redis auto-start; resilient to existing Redis
+│           └── kafkaSetup.ts              # Docker Kafka + Zookeeper + Redis auto-start
 ├── examples/
 │   └── blog-team/                         # Three-agent editorial pipeline
 │       ├── team-config.ts                 # Agent configs (Ava, Kai, Morgan) + LLM factory
@@ -862,7 +867,7 @@ LOG_TAIL=200 QUEUE_POLL_SEC=3 \
 
 | Stream | Description |
 |--------|-------------|
-| `[workflow]` | Status transitions: INITIAL → RUNNING → FINISHED/STOPPED |
+| `[workflow]` | Status transitions: RUNNING → FINISHED / STOPPED |
 | `[agents]` | IDLE · EXECUTING (green) · THINKING (blue) · ERROR (red) |
 | `[tasks]` | DOING · DONE (green) · BLOCKED (red) · AWAITING_VALIDATION (yellow) |
 | `[logs]` researcher/writer/editor/gateway | Per-container process logs |
