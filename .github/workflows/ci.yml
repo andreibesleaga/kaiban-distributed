@@ -41,16 +41,6 @@ jobs:
   e2e-bullmq:
     name: E2E — BullMQ / Redis
     runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -68,34 +58,6 @@ jobs:
   e2e-kafka:
     name: E2E — Kafka
     runs-on: ubuntu-latest
-    services:
-      zookeeper:
-        image: confluentinc/cp-zookeeper:7.6.0
-        ports:
-          - 2181:2181
-        env:
-          ZOOKEEPER_CLIENT_PORT: 2181
-          ZOOKEEPER_TICK_TIME: 2000
-        options: >-
-          --health-cmd "nc -z localhost 2181"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --health-start-period 15s
-      kafka:
-        image: confluentinc/cp-kafka:7.6.0
-        env:
-          KAFKA_BROKER_ID: 1
-          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-        options: >-
-          --health-cmd "kafka-topics --bootstrap-server kafka:9092 --list"
-          --health-interval 15s
-          --health-timeout 10s
-          --health-retries 15
-          --health-start-period 30s
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -106,7 +68,7 @@ jobs:
       - name: E2E Tests — Kafka
         run: npm run test:e2e:kafka
         env:
-          KAFKA_BROKERS: kafka:9092
+          KAFKA_BROKERS: localhost:9092
           AGENT_IDS: test-agent
 
   # ── Gate 5: Security Audit ────────────────────────────────────────────
