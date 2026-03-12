@@ -1,20 +1,12 @@
-# Plan
+```mermaid
+C4Context
+    title C4 Context Diagram
+    Person(user, "User")
+    System(system, "System")
+    Container(container1, "Container 1", "This is container 1")
+    Container(container2, "Container 2", "This is container 2")
 
-## Overall Architecture
-
-The system is composed of multiple components:
-
-- **Views state and manages tasks using** the provided user interface.
-- Works with external systems through well-defined APIs.
-
-## Components
-
-1. **Frontend**: The user-facing part of the application.
-2. **Backend**: The part of the system managing data and business logic.
-3. **Database**: Used to persist application data.
-
-## Workflow
-
-1. User interacts with the frontend.
-2. Frontend communicates with the backend.
-3. Backend processes the request and interacts with the database as needed.
+    Rel(user, system, "Uses")
+    Rel(system, container1, "Views state and manages tasks using")
+    Rel(system, container2, "Interacts with")
+```
