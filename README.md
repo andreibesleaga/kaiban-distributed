@@ -1,6 +1,6 @@
 # kaiban-distributed — Multi-Agent Distributed AI System
 
-> Distributed, horizontally-scalable Actor-Model multi-agents, runtime based on [KaibanJS](https://kaibanjs.com).
+> Distributed horizontally-scalable Actor-Model multi-agents runtime based on [KaibanJS](https://kaibanjs.com).
 >
 > Run multiple AI agents teams across independently deployed Node.js processes, with real-time visibility and multi-agent orchestration via Redis/Kafka pub/sub, A2A and MCP.
 >
