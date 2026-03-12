@@ -10,6 +10,31 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/).
 
 ---
 
+## [1.1.0] — 2026-03-12
+
+### Added
+
+- **`--docker` flag for `scripts/blog-team.sh`** — fully-containerised mode: runs the orchestrator as a Docker container (`docker compose run --rm orchestrator`) instead of locally via `npx ts-node`. Interactive HITL decisions [1/2/3/4] work via `stdin_open: true` + `tty: true`. Flags are now order-independent: `--kafka --docker` and `--docker --kafka` are equivalent.
+- **`orchestrator` service in blog-team compose files** — `examples/blog-team/docker-compose.yml` and `docker-compose.kafka.yml` both define an `orchestrator` service. Not started automatically by `docker compose up`; invoked on demand via `docker compose run --rm orchestrator` (or via `--docker` in `blog-team.sh`). Uses internal service hostnames (`http://gateway:3000`, `redis://redis:6379`, `kafka:29092`).
+- **`tsconfig.build.json`** — separates the production build (excludes `tests/`) from the IDE/typecheck config. `npm run build` now calls `tsc --project tsconfig.build.json`; `dist/` contains only `src/` and `examples/`, not `dist/tests/`. Dockerfile updated to copy and use `tsconfig.build.json`.
+- **Docker Compose resource limits** — all services across `docker-compose.yml`, `examples/blog-team/docker-compose.yml`, and `examples/blog-team/docker-compose.kafka.yml` now declare `deploy.resources.limits` (CPU + memory).
+- **`SlidingWindowRateLimiter` exported** from `GatewayApp.ts` for direct unit testing; 2 new tests verify Map size stays bounded after window expiry (fake timers).
+
+### Fixed
+
+- **Rate limiter Map memory leak** (`src/adapters/gateway/GatewayApp.ts`) — `SlidingWindowRateLimiter.windows` Map grew unboundedly with unique IPs after their timestamps expired. Stale entries are now replaced with a fresh one-element array (`this.windows.set(key, [now])`) when the eviction loop empties the array.
+- **`AgentActor` silent message drop** (`src/application/actor/AgentActor.ts`) — `start()` now logs a `console.warn` if no `taskHandler` is provided, preventing silent task loss when a worker node is misconfigured.
+- **`kaiban-worker` healthcheck** (`docker-compose.yml`) — explicit `healthcheck` block added to override the Dockerfile `HEALTHCHECK` on the combined worker+gateway container.
+- **`blog-team.sh stop` teardown** — `docker compose down` now has `|| true` so `set -e` does not abort teardown when containers are already stopped.
+- **OTEL console fallback warning** (`src/infrastructure/telemetry/telemetry.ts`) — `initTelemetry()` now logs a `console.warn` when `OTEL_EXPORTER_OTLP_ENDPOINT` is not configured.
+- **`.env.example` LLM configuration** — restructured LLM block; `LLM_MODEL`, `OPENROUTER_API_KEY`, and `OPENAI_BASE_URL` are now standalone commented entries; fixed section ordering.
+
+### Tests
+
+- **238 unit tests** (up from 236) — 2 new `SlidingWindowRateLimiter` Map-pruning tests with vitest fake timers
+
+---
+
 ## [1.0.0] — 2026-03-10
 
 ### Added

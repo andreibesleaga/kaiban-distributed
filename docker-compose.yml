@@ -8,6 +8,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -20,6 +25,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -42,6 +52,11 @@ services:
       timeout: 10s
       retries: 15
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   kaiban-worker:
     build: .
@@ -62,3 +77,14 @@ services:
       SERVICE_NAME: kaiban-worker
       AGENT_IDS: researcher,writer
     restart: on-failure
+    # Override Dockerfile HEALTHCHECK — only gateway mode exposes /health
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M

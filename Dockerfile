@@ -6,10 +6,11 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --include=dev
 
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.build.json ./
 COPY src/ ./src/
 COPY examples/ ./examples/
 
+# tsconfig.build.json excludes tests/ — only src/ and examples/ are compiled
 RUN npm run build
 
 # Stage 2: Runtime

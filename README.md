@@ -10,7 +10,7 @@
 > For more documentation and system build flow with [GABBE](https://github.com/andreibesleaga/GABBE), check files in [docs/](docs/).
 >
 
-[![Tests](https://img.shields.io/badge/tests-236%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-238%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
@@ -823,19 +823,27 @@ kaiban-distributed/
 
 ### Unified Start/Stop Script
 
-The easiest way to run the full `blog-team` example locally is using the orchestration script. It handles Docker Compose, the API Gateway, worker nodes, the Typescript orchestrator, and automatically opens the live board in your browser. It then launches the real-time monitor.
+The easiest way to run the full `blog-team` example is using the orchestration script. It handles Docker Compose, the API Gateway, worker nodes, the orchestrator, and automatically opens the live board in your browser. It then launches the real-time monitor.
 
 ```bash
-# Start with default Redis driver
+# BullMQ/Redis — local orchestrator (default)
 ./scripts/blog-team.sh start
-
-# Start with high-throughput Kafka driver
-./scripts/blog-team.sh start --kafka
-
-# Stop and perfectly clean up all orphaned resources
 ./scripts/blog-team.sh stop
+
+# Kafka — local orchestrator
+./scripts/blog-team.sh start --kafka
 ./scripts/blog-team.sh stop --kafka
+
+# BullMQ/Redis — fully containerised (orchestrator runs in Docker, HITL via attached terminal)
+./scripts/blog-team.sh start --docker
+./scripts/blog-team.sh stop --docker
+
+# Kafka — fully containerised (flags are order-independent)
+./scripts/blog-team.sh start --kafka --docker
+./scripts/blog-team.sh stop --kafka --docker
 ```
+
+> **`--docker` mode** runs every component — including the orchestrator — as a Docker container. The orchestrator service (`docker compose run --rm orchestrator`) attaches your terminal for interactive HITL decisions [1/2/3/4]. Inside Docker it connects to gateway/Redis/Kafka via service-name hostnames. Without `--docker`, the orchestrator runs locally via `npx ts-node` (requires Node.js + project deps installed).
 
 ### Standalone Real-Time Monitor
 
@@ -877,6 +885,7 @@ LOG_TAIL=200 QUEUE_POLL_SEC=3 \
 | Kafka: orchestrator timeout on writing/revision | Second `subscribe()` after `consumer.run()` silently dropped | Fixed — TWO KafkaDriver instances with distinct consumer groups |
 | `Timeout waiting for research` | Task failed (DLQ) but orchestrator not notified | Fixed — `CompletionRouter` subscribes to both completed AND failed |
 | BullMQ E2E: port 6379 already in use | Another compose stack has Redis | Fixed — `globalSetup` catches and skips; or stop other stack first |
+| `No OTEL endpoint` warning on startup | `OTEL_EXPORTER_OTLP_ENDPOINT` not set — using verbose ConsoleSpanExporter | Expected in dev; set `OTEL_EXPORTER_OTLP_ENDPOINT` for production |
 
 ---
 

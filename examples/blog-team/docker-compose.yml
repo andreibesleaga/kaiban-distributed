@@ -1,11 +1,13 @@
 # Blog Team Multi-Node Demo — BullMQ (default)
 #
-# Start:
-#   docker compose -f examples/blog-team/docker-compose.yml --env-file .env up --build
-#
-# Run orchestrator:
+# Local orchestrator (default):
+#   docker compose -f examples/blog-team/docker-compose.yml --env-file .env up -d --build
 #   GATEWAY_URL=http://localhost:3000 REDIS_URL=redis://localhost:6379 TOPIC="AI Agents" \
 #     npx ts-node examples/blog-team/orchestrator.ts
+#
+# Fully containerised (--docker mode via blog-team.sh):
+#   docker compose -f examples/blog-team/docker-compose.yml --env-file .env up -d --build
+#   docker compose -f examples/blog-team/docker-compose.yml run --rm orchestrator
 
 services:
   redis:
@@ -17,6 +19,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   gateway:
     build:
@@ -39,6 +46,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   researcher:
     build:
@@ -60,8 +72,14 @@ services:
       CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
       CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
     restart: on-failure
+    # Worker nodes do not expose /health — disable inherited Dockerfile HEALTHCHECK
     healthcheck:
       disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   writer:
     build:
@@ -85,6 +103,11 @@ services:
     restart: on-failure
     healthcheck:
       disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   editor:
     build:
@@ -108,3 +131,39 @@ services:
     restart: on-failure
     healthcheck:
       disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ── Orchestrator (--docker mode) ───────────────────────────────────────────
+  # Not started automatically. Use: docker compose run --rm orchestrator
+  # This gives you an interactive terminal for HITL decisions [1/2/3/4].
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/orchestrator.js"]
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      # Inside Docker, gateway is reachable by service name
+      GATEWAY_URL: http://gateway:3000
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: bullmq
+      TOPIC: ${TOPIC:-AI Agents in 2025}
+      RESEARCH_WAIT_MS: ${RESEARCH_WAIT_MS:-120000}
+      WRITE_WAIT_MS: ${WRITE_WAIT_MS:-240000}
+      EDIT_WAIT_MS: ${EDIT_WAIT_MS:-300000}
+    # stdin_open + tty are required for readline-based HITL interaction
+    stdin_open: true
+    tty: true
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M

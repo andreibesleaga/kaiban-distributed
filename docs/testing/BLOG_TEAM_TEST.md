@@ -124,13 +124,26 @@ See [Section 7 — kaiban-board Integration](#7-kaiban-board-integration) for in
 
 ## 5. Run the Full Pipeline
 
-In a new terminal, launch the orchestrator:
+In a new terminal, launch the orchestrator — choose one approach:
 
+**Option A — local** (requires Node.js + `npm install`):
 ```bash
 GATEWAY_URL=http://localhost:3000 \
 REDIS_URL=redis://localhost:6379 \
 TOPIC="Large Language Models in 2025: Capabilities and Limitations" \
   npx ts-node examples/blog-team/orchestrator.ts
+```
+
+**Option B — fully containerised** (no local Node.js deps required):
+```bash
+docker compose -f examples/blog-team/docker-compose.yml run --rm \
+  -e TOPIC="Large Language Models in 2025: Capabilities and Limitations" orchestrator
+```
+
+Or via the wrapper script:
+```bash
+TOPIC="Large Language Models in 2025: Capabilities and Limitations" \
+  ./scripts/blog-team.sh start --docker
 ```
 
 **Expected console flow:**

@@ -58,6 +58,9 @@ export class AgentActor {
   }
 
   public async start(): Promise<void> {
+    if (!this.taskHandler) {
+      console.warn(`[Actor ${sanitizeId(this.id)}] No taskHandler provided — received messages will be silently dropped`);
+    }
     console.log(`[Actor ${sanitizeId(this.id)}] Starting on queue ${this.queueName}`);
     await this.driver.subscribe(this.queueName, this.processTask.bind(this));
   }

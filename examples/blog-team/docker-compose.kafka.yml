@@ -1,12 +1,14 @@
 # Blog Team — Kafka Edition
 #
-# Start:
-#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env up --build
-#
-# Run orchestrator with Kafka:
+# Local orchestrator (default):
+#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env up -d --build
 #   GATEWAY_URL=http://localhost:3000 REDIS_URL=redis://localhost:6379 \
 #   MESSAGING_DRIVER=kafka KAFKA_BROKERS=localhost:9092 TOPIC="AI Agents" \
 #     npx ts-node examples/blog-team/orchestrator.ts
+#
+# Fully containerised (--docker mode via blog-team.sh):
+#   docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env up -d --build
+#   docker compose -f examples/blog-team/docker-compose.kafka.yml run --rm orchestrator
 
 services:
   redis:
@@ -18,6 +20,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -30,6 +37,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -52,6 +64,11 @@ services:
       timeout: 10s
       retries: 15
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   gateway:
     build:
@@ -79,6 +96,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   researcher:
     build:
@@ -101,8 +123,14 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     restart: on-failure
+    # Worker nodes do not expose /health — disable inherited Dockerfile HEALTHCHECK
     healthcheck:
       disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   writer:
     build:
@@ -127,6 +155,11 @@ services:
     restart: on-failure
     healthcheck:
       disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   editor:
     build:
@@ -151,3 +184,42 @@ services:
     restart: on-failure
     healthcheck:
       disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ── Orchestrator (--docker mode) ───────────────────────────────────────────
+  # Not started automatically. Use: docker compose run --rm orchestrator
+  # This gives you an interactive terminal for HITL decisions [1/2/3/4].
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["node", "dist/examples/blog-team/orchestrator.js"]
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      # Inside Docker, gateway/redis/kafka are reachable by service name
+      GATEWAY_URL: http://gateway:3000
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: kafka
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: kaiban-orchestrator
+      KAFKA_GROUP_ID: kaiban-orchestrator-group
+      TOPIC: ${TOPIC:-AI Agents in 2025}
+      RESEARCH_WAIT_MS: ${RESEARCH_WAIT_MS:-120000}
+      WRITE_WAIT_MS: ${WRITE_WAIT_MS:-240000}
+      EDIT_WAIT_MS: ${EDIT_WAIT_MS:-300000}
+    # stdin_open + tty are required for readline-based HITL interaction
+    stdin_open: true
+    tty: true
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M

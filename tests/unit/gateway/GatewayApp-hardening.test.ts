@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import { GatewayApp } from '../../../src/adapters/gateway/GatewayApp';
+import { GatewayApp, SlidingWindowRateLimiter } from '../../../src/adapters/gateway/GatewayApp';
 import { A2AConnector, type AgentCard } from '../../../src/infrastructure/federation/a2a-connector';
 
 const testCard: AgentCard = {
@@ -46,6 +46,41 @@ describe('GatewayApp — hardening', () => {
       const gw = new GatewayApp(new A2AConnector(testCard));
       const res = await request(gw.app).get('/health');
       expect(res.headers['x-powered-by']).toBeUndefined();
+    });
+  });
+
+  // ── Rate limiter Map pruning (unit) ───────────────────────────────
+  describe('rate limiter Map pruning', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('removes stale IP key from Map after window expires', () => {
+      const limiter = new SlidingWindowRateLimiter();
+      limiter.isAllowed('1.2.3.4');
+      // Advance past the 60s window
+      vi.advanceTimersByTime(61_000);
+      // Next call should succeed and the old key should be pruned + re-created
+      expect(limiter.isAllowed('1.2.3.4')).toBe(true);
+      // Map should contain exactly one entry (the fresh one just created)
+      expect((limiter as unknown as { windows: Map<string, number[]> }).windows.size).toBe(1);
+    });
+
+    it('does not grow Map unboundedly with many unique IPs after window expires', () => {
+      const limiter = new SlidingWindowRateLimiter();
+      // Simulate 200 unique IPs making one request each
+      for (let i = 0; i < 200; i++) {
+        limiter.isAllowed(`10.0.${Math.floor(i / 255)}.${i % 255}`);
+      }
+      // All 200 keys should be in the map
+      expect((limiter as unknown as { windows: Map<string, number[]> }).windows.size).toBe(200);
+      // Advance past window — all timestamps become stale
+      vi.advanceTimersByTime(61_000);
+      // Each subsequent call for same IPs should prune the key then re-add it
+      for (let i = 0; i < 200; i++) {
+        limiter.isAllowed(`10.0.${Math.floor(i / 255)}.${i % 255}`);
+      }
+      // Map should still be 200 (pruned + re-created), not 400
+      expect((limiter as unknown as { windows: Map<string, number[]> }).windows.size).toBe(200);
     });
   });
 

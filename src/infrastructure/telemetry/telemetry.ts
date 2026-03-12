@@ -12,6 +12,9 @@ export interface TelemetryConfig {
 let sdk: NodeSDK | null = null;
 
 export function initTelemetry(config: TelemetryConfig): void {
+  if (!config.exporterEndpoint) {
+    console.warn('[Telemetry] No OTEL_EXPORTER_OTLP_ENDPOINT configured — using ConsoleSpanExporter (dev only)');
+  }
   const exporter = config.exporterEndpoint
     ? new OTLPTraceExporter({ url: config.exporterEndpoint })
     : new ConsoleSpanExporter();

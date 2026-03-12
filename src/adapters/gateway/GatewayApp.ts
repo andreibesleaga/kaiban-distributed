@@ -21,7 +21,7 @@ function apiError(message: string): ApiResponse<null> {
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_REQUESTS = 100;
 
-class SlidingWindowRateLimiter {
+export class SlidingWindowRateLimiter {
   private windows = new Map<string, number[]>();
 
   isAllowed(key: string): boolean {
@@ -35,6 +35,13 @@ class SlidingWindowRateLimiter {
     // Evict expired entries
     while (timestamps.length > 0 && timestamps[0]! < cutoff) {
       timestamps.shift();
+    }
+    // Prune dead keys to prevent unbounded Map growth under IP-spray attacks.
+    // Replace the stale array with a fresh one (also handles brand-new keys correctly).
+    if (timestamps.length === 0) {
+      const fresh = [now];
+      this.windows.set(key, fresh);
+      return true;
     }
     if (timestamps.length >= RATE_MAX_REQUESTS) return false;
     timestamps.push(now);

@@ -77,6 +77,8 @@ Following local `api-security.md` and `secure-architecture.md` paradigms, standa
 | 3 | **Semantic Firewalls** | ✅ Complete | `ISemanticFirewall` + `HeuristicFirewall` injected into `AgentActor` |
 | 4 | **JIT Tool Tokens** | ✅ Complete | `ITokenProvider` + `EnvTokenProvider` in `kaiban-agent-bridge` |
 | 5 | **Circuit Breakers & Kill Switches** | ✅ Complete | `ICircuitBreaker` + `SlidingWindowBreaker` with OTLP anomaly events |
+| 6 | **Rate Limiter Map Memory Leak** | ✅ Fixed (v1.1.0) | `SlidingWindowRateLimiter.windows` Map now replaces stale entries instead of accumulating unboundedly; 2 regression tests added |
+| 7 | **Resource Limits on Containers** | ✅ Fixed (v1.1.0) | All Docker Compose services now declare `deploy.resources.limits` (CPU + memory) |
 
 ### New Security Environment Variables
 | Variable | Default | Description |

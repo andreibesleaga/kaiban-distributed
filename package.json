@@ -7,7 +7,7 @@
     "test": "tests"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --project tsconfig.build.json",
     "dev": "node dist/src/main/index.js",
     "lint": "eslint src tests",
     "format": "prettier --write src tests",

@@ -103,12 +103,25 @@ Open: examples/blog-team/viewer/board.html in your browser
 → Within 15 seconds: Ava, Kai, Morgan appear as IDLE
 ```
 
-**Run the orchestrator** (separate terminal):
+**Run the orchestrator** — choose one approach:
+
+*Option A — local (requires Node.js + project deps):*
 ```bash
 GATEWAY_URL=http://localhost:3000 \
 REDIS_URL=redis://localhost:6379 \
 TOPIC="AI Agents in 2025" \
   npx ts-node examples/blog-team/orchestrator.ts
+```
+
+*Option B — fully containerised (recommended for clean environments):*
+```bash
+docker compose -f examples/blog-team/docker-compose.yml run --rm \
+  -e TOPIC="AI Agents in 2025" orchestrator
+```
+
+Or use the wrapper script with `--docker`:
+```bash
+./scripts/blog-team.sh start --docker
 ```
 
 **Monitor** (optional third terminal):
@@ -154,7 +167,9 @@ docker exec blog-team-kafka-1 kafka-consumer-groups \
 # kaiban-group-editor
 ```
 
-**Run the orchestrator with Kafka:**
+**Run the orchestrator with Kafka** — choose one approach:
+
+*Option A — local:*
 ```bash
 GATEWAY_URL=http://localhost:3000 \
 REDIS_URL=redis://localhost:6379 \
@@ -162,6 +177,17 @@ MESSAGING_DRIVER=kafka \
 KAFKA_BROKERS=localhost:9092 \
 TOPIC="AI Agents in 2025" \
   npx ts-node examples/blog-team/orchestrator.ts
+```
+
+*Option B — fully containerised:*
+```bash
+docker compose -f examples/blog-team/docker-compose.kafka.yml run --rm \
+  -e TOPIC="AI Agents in 2025" orchestrator
+```
+
+Or use the wrapper script:
+```bash
+./scripts/blog-team.sh start --kafka --docker
 ```
 
 **Verify a task was consumed** (after first step):
