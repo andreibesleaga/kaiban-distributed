@@ -71,7 +71,7 @@ railway up --service gateway
 1. Go to your project → select the GitHub service
 2. In **Settings → Start Command**, set:
    ```
-   node dist/main/index.js
+   node dist/src/main/index.js
    ```
 3. In **Settings → Build Command**, set:
    ```
@@ -139,13 +139,13 @@ Create `railway.toml` in the repository root for repeatable deployments:
 # railway.toml — kaiban-distributed deployment config
 
 [build]
-builder = "DOCKERFILE"
+builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
-healthcheckTimeout = 300
-restartPolicyType = "ON_FAILURE"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 ```
 
@@ -157,7 +157,7 @@ restartPolicyMaxRetries = 10
   "services": [
     {
       "name": "gateway",
-      "startCommand": "node dist/main/index.js",
+      "startCommand": "node dist/src/main/index.js",
       "healthcheckPath": "/health",
       "port": 3000
     },
@@ -188,7 +188,10 @@ Set these in Railway **Project → Variables** (shared across all services) or p
 | Variable | Value | Notes |
 |----------|-------|-------|
 | `OPENAI_API_KEY` | `sk-...` | Required for real agent execution |
+| `OPENROUTER_API_KEY` | `sk-or-v1-...` | Optional: OpenRouter alternative LLM access |
+| `OPENAI_BASE_URL` | `https://openrouter.ai/api/v1` | Optional: override base URL for OpenRouter/local LLMs |
 | `MESSAGING_DRIVER` | `bullmq` | Use `bullmq` for Railway (Redis available) |
+| `LLM_MODEL` | `gpt-4o-mini` | LLM model name (default: `gpt-4o-mini`) |
 | `SERVICE_NAME` | `kaiban-distributed` | Used in telemetry |
 
 ### Auto-Provisioned (Railway sets these)
@@ -297,15 +300,10 @@ USER kaiban
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
   CMD wget -qO- http://localhost:3000/health || exit 1
-CMD ["node", "dist/main/index.js"]
+CMD ["node", "dist/src/main/index.js"]
 ```
 
-> **Important:** The Dockerfile must also copy `examples/` so that `dist/examples/blog-team/researcher-node.js` etc. are available for worker services. Update your `Dockerfile` if needed:
-
-```dockerfile
-# In the builder stage, add:
-COPY examples/ ./examples/
-```
+> **Note:** The Dockerfile already copies `examples/` in the builder stage, so `dist/examples/blog-team/researcher-node.js` etc. are available for worker services. The build output lands under `dist/src/` (for `src/`) and `dist/examples/` (for `examples/`).
 
 ---
 
@@ -315,17 +313,17 @@ COPY examples/ ./examples/
 # railway.toml
 
 [build]
-builder = "DOCKERFILE"
+builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
-healthcheckTimeout = 300
-restartPolicyType = "ON_FAILURE"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 
 # Default start command (gateway)
-startCommand = "node dist/main/index.js"
+startCommand = "node dist/src/main/index.js"
 ```
 
 ---
@@ -341,7 +339,7 @@ Railway Project: kaiban-distributed
 ├── 🌐 gateway (public, port 3000)
 │   ├── HTTP: /health, /.well-known/agent-card.json, /a2a/rpc
 │   ├── WebSocket: Socket.io (state:update events)
-│   └── CMD: node dist/main/index.js
+│   └── CMD: node dist/src/main/index.js
 │
 ├── 🤖 researcher (internal, Ava)
 │   ├── Subscribes: kaiban-agents-researcher (BullMQ)
