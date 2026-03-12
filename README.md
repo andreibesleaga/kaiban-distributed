@@ -4,7 +4,7 @@
 >
 > Run multiple AI agents teams across independently deployed Node.js processes, with real-time visibility and multi-agent orchestration via Redis/Kafka pub/sub, A2A and MCP.
 >
-> Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
+> Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination, scalable from local usage to enterprise grade systems.
 >
 > For running the example system see [EXAMPLES.md](EXAMPLES.md).
 > For more documentation and system build flow with [GABBE](https://github.com/andreibesleaga/GABBE), check files in [docs/](docs/).
