@@ -67,6 +67,12 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 
 ---
 
+## Running example
+(Blog team of: researcher, writer, editor - nodes distributed locally over docker services with Redis/Kafka messaging between them and their processes tasks status and results)
+![(running example gif)](docs/blogTeam.gif)
+
+---
+
 ## Architecture
 
 ```
