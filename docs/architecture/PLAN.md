@@ -3,16 +3,29 @@
 
 ### 1. System Context Diagram
 ```mermaid
-C4Context
-    title System Context for Distributed KaibanJS
-    Person(user, "Human Operator", "Monitors and manages workflows via Kaiban Board.")
-    System(kaibanjs, "KaibanJS Environment", "Core workflow engine where AI agents execute tasks.")
-    SystemExt(langgraph, "External AI Systems (LangGraph)", "Federated external AI networks communicating via A2A.")
-    SystemExt(mcp, "MCP Servers", "External Model Context Protocol servers providing tool access.")
+graph TB
+  %% Node Definitions
+  user["fa:fa-user Human Operator<br/>(Monitors & manages workflows)"]
+  
+  subgraph Core ["Internal System"]
+    kaibanjs["fa:fa-gear KaibanJS Environment<br/>(Core workflow engine)"]
+  end
 
-    Rel(user, kaibanjs, "Views state and manages tasks using", "WebSocket / HTTP")
-    Rel(kaibanjs, langgraph, "Delegates sub-tasks using", "A2A Protocol")
-    Rel(kaibanjs, mcp, "Fetches tools and context using", "MCP Protocol")
+  subgraph External ["External Ecosystem"]
+    langgraph["fa:fa-network-wired LangGraph Systems<br/>(Federated AI via A2A)"]
+    mcp["fa:fa-server MCP Servers<br/>(Tool & Context access)"]
+  end
+
+  %% Relationships
+  user -- "Views state & manages tasks<br/>(WebSocket / HTTP)" --- kaibanjs
+  kaibanjs -- "Delegates sub-tasks<br/>(A2A Protocol)" --> langgraph
+  kaibanjs -- "Fetches tools & context<br/>(MCP Protocol)" --> mcp
+
+  %% Styling
+  style kaibanjs fill:#2d3e50,color:#fff,stroke:#1a252f,stroke-width:2px
+  style Core fill:#f8f9fa,stroke:#dee2e6,stroke-dasharray: 5 5
+  style External fill:#f1f3f5,stroke:#ced4da,stroke-dasharray: 5 5
+  style user fill:#e7f5ff,stroke:#228be6
 ```
 
 ### 2. Container Diagram
