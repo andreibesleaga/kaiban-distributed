@@ -123,7 +123,8 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - name: Gate 5 — Dependency Audit
-        run: npm audit --audit-level=moderate || echo "::warning::Audit issues found - see output above (known: kaibanjs transitive CVEs)"
+        run: |
+          npm audit --audit-level=moderate || echo "::warning::Audit issues found - see output above (known: kaibanjs transitive CVEs)"
 
   # ── Gate 4c: Docker Build ─────────────────────────────────────────────
   docker:
@@ -132,6 +133,8 @@ jobs:
     needs: [quality]
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
