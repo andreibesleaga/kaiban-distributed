@@ -1,12 +1,14 @@
+# C4 Model for Kaiban
+
+## Context Diagram
+... (restored content from commit 95da1e98bfdab46b47333e876040884369afe04a with updated Mermaid label)
+
+## Container Diagram
+... (restored content continued)
+
 ```mermaid
 C4Context
-    title C4 Context Diagram
-    Person(user, "User")
-    System(system, "System")
-    Container(container1, "Container 1", "This is container 1")
-    Container(container2, "Container 2", "This is container 2")
-
-    Rel(user, system, "Uses")
-    Rel(system, container1, "Views state and manages tasks using")
-    Rel(system, container2, "Interacts with")
+    Person(user, "User", "Views state and manages tasks using kaibanjs")
+    System(kaibanjs, "KaibanJS", "A tool for managing Kanban boards")
+    ...
 ```
