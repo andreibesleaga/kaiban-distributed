@@ -205,7 +205,9 @@ flowchart TD
 ```mermaid
 stateDiagram-v2
     [*] --> TODO : task.create
-    note right of TODO : API response: status='QUEUED'
+    note right of TODO
+        API response: status='QUEUED'
+    end note
     TODO --> DOING : Worker Claims Task
 
     DOING --> DONE : Inference Success
