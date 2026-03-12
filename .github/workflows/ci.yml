@@ -84,16 +84,14 @@ jobs:
           --health-start-period 15s
       kafka:
         image: confluentinc/cp-kafka:7.6.0
-        ports:
-          - 9092:9092
         env:
           KAFKA_BROKER_ID: 1
           KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
           KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
         options: >-
-          --health-cmd "kafka-topics --bootstrap-server localhost:9092 --list"
+          --health-cmd "kafka-topics --bootstrap-server kafka:9092 --list"
           --health-interval 15s
           --health-timeout 10s
           --health-retries 15
@@ -108,7 +106,7 @@ jobs:
       - name: E2E Tests — Kafka
         run: npm run test:e2e:kafka
         env:
-          KAFKA_BROKERS: localhost:9092
+          KAFKA_BROKERS: kafka:9092
           AGENT_IDS: test-agent
 
   # ── Gate 5: Security Audit ────────────────────────────────────────────
