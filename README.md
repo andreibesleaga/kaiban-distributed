@@ -1,4 +1,4 @@
-# kaiban-distributed — Multi-Agent Distributed AI System
+# Kaiban Distributed — Multi-Agent Distributed AI System
 
 > Distributed horizontally-scalable Actor-Model multi-agents runtime based on [KaibanJS](https://kaibanjs.com).
 >
