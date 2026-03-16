@@ -1,14 +1,24 @@
 # Kaiban Distributed — Multi-Agent Distributed AI System
 
-> Distributed horizontally-scalable Actor-Model multi-agents runtime based on [KaibanJS](https://kaibanjs.com).
+> Distributed horizontally-scalable Actor-Model Multi-Agent System Runtime.
 >
-> Run multiple AI agents teams across independently deployed Node.js processes, with real-time visibility and multi-agent orchestration via Redis/Kafka pub/sub, A2A and MCP.
->
-> Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination, scalable AI workflows from Local usage to Enterprise Grade Systems.
+> Run multiple AI agents teams with independently deployed Node.js processes, real-time visibility and multi-agent orchestration via Redis/Kafka pub/sub, A2A, and MCP.
 >
 > For running the example system see [EXAMPLES.md](EXAMPLES.md).
+>
+> System based on [KaibanJS](https://kaibanjs.com). For integrating KaibanJS, Board, and [KaibanJS Examples](https://www.kaibanjs.com/examples), follow documents in [KAIBANJS_INTEGRATION.md](KAIBANJS_INTEGRATION.md).
+>
 > For more documentation and system build flow with [GABBE](https://github.com/andreibesleaga/GABBE), check files in [docs/](docs/).
 >
+
+- The very first project in the world to combine Enterprise Messaging (Kafka/Redis), Actor-Model Isolation, AI Multi-Agent Orchestration, and Kanban Visualization, into a JavaScript ecosystem, for agents and humans.
+
+- While most frameworks treat agents as scripts, Kaiban Distributed treats them as Stateful Actors. By using async Node.js, each agent operates in its own space, communicating via a pluggable Messaging Abstraction Layer (Kafka or BullMQ/Redis), horizontally scaling AI workforce.
+
+- The systems allows creation of Teams of Agents for various Tasks, Systems Integrations, and Data handling/analytics, with scalable AI workflows, from local usage to customizable Enterprise Grade Systems.
+
+- Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
+
 
 [![Tests](https://img.shields.io/badge/tests-340%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
