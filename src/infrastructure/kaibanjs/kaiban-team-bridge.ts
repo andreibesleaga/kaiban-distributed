@@ -1,7 +1,6 @@
 import { Team } from 'kaibanjs';
 import type { Agent, Task } from 'kaibanjs';
 import { DistributedStateMiddleware } from '../../adapters/state/distributedMiddleware';
-import type { IMessagingDriver } from '../messaging/interfaces';
 
 export interface KaibanTeamConfig {
   name: string;
@@ -17,7 +16,7 @@ export interface KaibanTeamConfig {
  * SocketGateway → kaiban-board in real-time.
  *
  * Usage:
- *   const bridge = new KaibanTeamBridge({ name, agents, tasks }, driver);
+ *   const bridge = new KaibanTeamBridge({ name, agents, tasks }, 'redis://localhost:6379');
  *   const result = await bridge.start({ topic: 'AI news' });
  */
 export class KaibanTeamBridge {
@@ -26,11 +25,11 @@ export class KaibanTeamBridge {
 
   constructor(
     config: KaibanTeamConfig,
-    driver: IMessagingDriver,
+    redisUrl: string,
     stateChannel = 'kaiban-state-events',
   ) {
     this.team = new Team({ name: config.name, agents: config.agents, tasks: config.tasks, env: config.env ?? {} });
-    this.middleware = new DistributedStateMiddleware(driver, stateChannel);
+    this.middleware = new DistributedStateMiddleware(redisUrl, stateChannel);
 
     const store = this.team.getStore() as unknown as { setState: (p: Record<string, unknown>) => void };
     this.middleware.attach(store);
@@ -49,5 +48,9 @@ export class KaibanTeamBridge {
     properties: string[] = [],
   ): () => void {
     return this.team.subscribeToChanges(listener, properties);
+  }
+
+  async disconnect(): Promise<void> {
+    await this.middleware.disconnect();
   }
 }

@@ -1,7 +1,5 @@
-import {
-  IMessagingDriver,
-  MessagePayload,
-} from "../../infrastructure/messaging/interfaces";
+import { Redis } from 'ioredis';
+import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 
 const PII_DENYLIST: ReadonlySet<string> = new Set([
   'email', 'name', 'phone', 'ip', 'password', 'token', 'secret', 'ssn', 'dob',
@@ -23,11 +21,11 @@ interface ZustandStore {
 }
 
 export class DistributedStateMiddleware {
-  private driver: IMessagingDriver;
+  private redis: Redis;
   private channelName: string;
 
-  constructor(driver: IMessagingDriver, channelName = 'kaiban-state-events') {
-    this.driver = driver;
+  constructor(redisUrl: string, channelName = 'kaiban-state-events') {
+    this.redis = new Redis(redisUrl, { lazyConnect: false });
     this.channelName = channelName;
   }
 
@@ -46,7 +44,7 @@ export class DistributedStateMiddleware {
       };
 
       try {
-        await this.driver.publish(this.channelName, payload);
+        await this.redis.publish(this.channelName, JSON.stringify(payload));
       } catch (err) {
         console.error("[DistributedStateMiddleware] Failed to publish state delta:", err);
       }
@@ -56,11 +54,21 @@ export class DistributedStateMiddleware {
   }
 
   public async listen(onStateChange: (delta: Record<string, unknown>) => void): Promise<void> {
-    await this.driver.subscribe(
-      this.channelName,
-      async (payload: MessagePayload) => {
-        onStateChange(payload.data['stateUpdate'] as Record<string, unknown>);
-      },
-    );
+    const sub = new Redis(this.redis.options);
+    await sub.subscribe(this.channelName);
+    sub.on('message', (channel, message) => {
+      if (channel === this.channelName) {
+        try {
+          const payload = JSON.parse(message) as MessagePayload;
+          onStateChange(payload.data['stateUpdate'] as Record<string, unknown>);
+        } catch (e) {
+          console.error("[DistributedStateMiddleware] Failed to parse message:", e);
+        }
+      }
+    });
+  }
+
+  public async disconnect(): Promise<void> {
+    await this.redis.quit();
   }
 }

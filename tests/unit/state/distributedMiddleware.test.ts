@@ -1,15 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
 import { DistributedStateMiddleware } from "../../../src/adapters/state/distributedMiddleware";
-import { IMessagingDriver, MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
+import { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
 
-function makeMockDriver(): IMessagingDriver {
-  return {
-    publish: vi.fn().mockResolvedValue(undefined),
-    subscribe: vi.fn().mockResolvedValue(undefined),
-    unsubscribe: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
-  };
-}
+const mockRedis = {
+  publish: vi.fn().mockResolvedValue(undefined),
+  subscribe: vi.fn(),
+  quit: vi.fn().mockResolvedValue(undefined),
+  on: vi.fn(),
+  options: {},
+};
+
+vi.mock('ioredis', () => ({
+  Redis: vi.fn().mockImplementation(function() { return mockRedis; }),
+}));
 
 interface MockStore {
   state: Record<string, unknown>;
@@ -24,24 +27,30 @@ function makeStore(initial: Record<string, unknown> = {}): MockStore {
 }
 
 describe("DistributedStateMiddleware", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("intercepts setState and publishes to the driver", async () => {
-    const mockDriver = makeMockDriver();
-    const mw = new DistributedStateMiddleware(mockDriver);
+    const mw = new DistributedStateMiddleware('redis://localhost');
     const store = makeStore({ count: 0 });
     mw.attach(store);
     await store.setState({ count: 1 });
     expect(store.state['count']).toBe(1);
-    expect(mockDriver.publish).toHaveBeenCalledWith("kaiban-state-events", expect.objectContaining({ data: { stateUpdate: { count: 1 } } }));
+    expect(mockRedis.publish).toHaveBeenCalledWith(
+      "kaiban-state-events",
+      expect.stringContaining('"stateUpdate":{"count":1}')
+    );
   });
 
   it("sanitizeDelta strips PII keys", async () => {
-    const mockDriver = makeMockDriver();
-    const mw = new DistributedStateMiddleware(mockDriver);
+    const mw = new DistributedStateMiddleware('redis://localhost');
     const store = makeStore();
     mw.attach(store);
     await store.setState({ count: 2, email: "x@y.com", token: "abc", password: "pw" });
-    const call = (mockDriver.publish as ReturnType<typeof vi.fn>).mock.calls[0];
-    const data = call[1].data.stateUpdate as Record<string, unknown>;
+    const call = mockRedis.publish.mock.calls[0];
+    const parsed = JSON.parse(call[1] as string) as MessagePayload;
+    const data = parsed.data['stateUpdate'] as Record<string, unknown>;
     expect(data['count']).toBe(2);
     expect(data['email']).toBeUndefined();
     expect(data['token']).toBeUndefined();
@@ -49,40 +58,37 @@ describe("DistributedStateMiddleware", () => {
   });
 
   it("sanitizeDelta handles null partial (covers null branch)", async () => {
-    const mockDriver = makeMockDriver();
-    const mw = new DistributedStateMiddleware(mockDriver);
+    const mw = new DistributedStateMiddleware('redis://localhost');
     const store = makeStore();
     mw.attach(store);
     // Trigger with null via coercion to cover `if (partial === null) return {}`
     await (store.setState as (p: unknown) => Promise<void>)(null);
-    const call = (mockDriver.publish as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[1].data.stateUpdate).toEqual({});
+    const call = mockRedis.publish.mock.calls[0];
+    const parsed = JSON.parse(call[1] as string) as MessagePayload;
+    expect(parsed.data['stateUpdate']).toEqual({});
   });
 
   it("listen() subscribes and delivers state deltas via callback", async () => {
-    let capturedHandler!: (payload: MessagePayload) => Promise<void>;
-    const mockDriver: IMessagingDriver = {
-      publish: vi.fn().mockResolvedValue(undefined),
-      subscribe: vi.fn((_q, handler) => { capturedHandler = handler; return Promise.resolve(); }),
-      unsubscribe: vi.fn().mockResolvedValue(undefined),
-      disconnect: vi.fn().mockResolvedValue(undefined),
-    };
-    const mw = new DistributedStateMiddleware(mockDriver);
+    let capturedHandler!: (channel: string, message: string) => void;
+    mockRedis.on.mockImplementation((event, handler) => {
+      if (event === 'message') capturedHandler = handler;
+    });
+    
+    const mw = new DistributedStateMiddleware('redis://localhost');
     const onStateChange = vi.fn();
     await mw.listen(onStateChange);
-    await capturedHandler({ taskId: "g", agentId: "system", timestamp: 0, data: { stateUpdate: { x: 1 } } });
+    
+    // Simulate incoming Redis pub/sub message
+    const msg = JSON.stringify({ taskId: "g", agentId: "system", timestamp: 0, data: { stateUpdate: { x: 1 } } });
+    capturedHandler("kaiban-state-events", msg);
+    
     expect(onStateChange).toHaveBeenCalledWith({ x: 1 });
   });
 
   it("publish error is caught and logged without throwing", async () => {
-    const mockDriver: IMessagingDriver = {
-      publish: vi.fn().mockRejectedValue(new Error("redis down")),
-      subscribe: vi.fn().mockResolvedValue(undefined),
-      unsubscribe: vi.fn().mockResolvedValue(undefined),
-      disconnect: vi.fn().mockResolvedValue(undefined),
-    };
+    mockRedis.publish.mockRejectedValueOnce(new Error("redis down"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const mw = new DistributedStateMiddleware(mockDriver);
+    const mw = new DistributedStateMiddleware('redis://localhost');
     const store = makeStore();
     mw.attach(store);
     await expect(store.setState({ x: 1 })).resolves.not.toThrow();
@@ -91,11 +97,10 @@ describe("DistributedStateMiddleware", () => {
   });
 
   it("sanitizeDelta handles empty state update", async () => {
-    const mockDriver = makeMockDriver();
-    const mw = new DistributedStateMiddleware(mockDriver);
+    const mw = new DistributedStateMiddleware('redis://localhost');
     const store = makeStore();
     mw.attach(store);
     await store.setState({});
-    expect(mockDriver.publish).toHaveBeenCalledOnce();
+    expect(mockRedis.publish).toHaveBeenCalledOnce();
   });
 });
