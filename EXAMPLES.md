@@ -411,3 +411,98 @@ Shows in real-time (colour-coded):
 - All container logs with error highlighting
 
 ---
+
+## Example 5 — Fan-Out / Fan-In: Parallel Agent Workflow
+
+Multiple specialized agents execute **concurrently** (fan-out), their results are
+**aggregated automatically** (fan-in), and an **auto-approver** validates the
+combined outcome — no human in the loop.
+
+```
+Orchestrator
+     │  publish N sub-tasks to shared queue (fan-out)
+     ▼
+[Agent-0] [Agent-1] [Agent-2] [Agent-N]   ← competing consumers / multi-node
+     │        │        │        │
+     └────────┴────────┴────────┘
+              publish to kaiban-events-completed (fan-in)
+                           │
+                    Aggregator collects
+                           │
+                   Auto-Approver validates
+                           │
+               kaiban-fanin-approved → ✅ / ❌
+```
+
+### Minimal implementation sketch
+
+```typescript
+import { BullMQDriver } from 'kaiban-distributed';
+import { AgentActor } from 'kaiban-distributed';
+
+const REDIS = { connection: { host: 'localhost', port: 6379 } };
+const QUEUE  = 'research-fan-out';
+const AGENT  = 'researcher';
+
+// 1. Fan-out: spawn N workers — all share the same queue (competing consumers)
+for (let i = 0; i < 4; i++) {
+  const driver = new BullMQDriver(REDIS);
+  const actor  = new AgentActor(AGENT, driver, QUEUE, async (payload) => {
+    const result = await myLLM.call(payload.data.instruction);
+    return result;  // published to kaiban-events-completed automatically
+  });
+  await actor.start();
+}
+
+// 2. Fan-in: collect completions
+const completions = new Set<string>();
+const collector = new BullMQDriver(REDIS);
+await collector.subscribe('kaiban-events-completed', async (p) => {
+  completions.add(p.taskId);
+});
+
+// 3. Publish tasks (fan-out)
+const taskIds = ['task-a', 'task-b', 'task-c', 'task-d'];
+for (const taskId of taskIds) {
+  await collector.publish(QUEUE, { taskId, agentId: AGENT, timestamp: Date.now(), data: { instruction: `research ${taskId}` } });
+}
+
+// 4. Wait for all completions (fan-in gate)
+while (completions.size < taskIds.length) {
+  await new Promise(r => setTimeout(r, 200));
+}
+
+// 5. Auto-approve (no HITL)
+const approved = completions.size === taskIds.length;
+await collector.publish('kaiban-fanin-approved', {
+  taskId: 'workflow-1',
+  agentId: 'approver',
+  timestamp: Date.now(),
+  data: { status: approved ? 'approved' : 'rejected', count: completions.size },
+});
+```
+
+### Key properties
+
+| Property | Behaviour |
+|---|---|
+| **Distribution** | BullMQ competing-consumer pattern — each job claimed by exactly one worker |
+| **Horizontal scale** | Add more `AgentActor` instances (same queue) for more throughput |
+| **Retry / DLQ** | Each actor retries up to 3× before publishing to `kaiban-events-failed` |
+| **Exactly-once fan-in** | Aggregator uses a `Set<taskId>` — duplicates are idempotently ignored |
+| **No HITL required** | Auto-approver validates success ratio against a configurable threshold |
+
+### Reference E2E tests
+
+See [`tests/e2e/fan-out-fan-in.test.ts`](./tests/e2e/fan-out-fan-in.test.ts) for
+full end-to-end scenarios covering:
+
+1. **Golden Path** — 4 agents, all succeed, approver passes
+2. **Scaled 8-node** — 8 agents (horizontal fan-out)
+3. **Partial Failure + Retry** — 1 flaky agent recovers, workflow approves
+4. **Total Failure** — all retries exhausted → DLQ, approver rejects
+5. **Late-joining agent** — BullMQ delivers persisted jobs to late consumer
+6. **Duplicate task IDs** — aggregator counts each taskId exactly once
+7. **Approver threshold** — strict vs lenient ratio comparison
+
+---
