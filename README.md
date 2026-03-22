@@ -914,7 +914,7 @@ LOG_TAIL=200 QUEUE_POLL_SEC=3 \
 
 ## Project Context
 
-Built with [**GABBE Agentic Engineering Kit**](https://github.com/andreibesleaga/GABBE) following the SDD/TDD lifecycle:
+Built with help from [**GABBE Agentic Engineering Kit**](https://github.com/andreibesleaga/GABBE), following the SDD/TDD lifecycle:
 
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
