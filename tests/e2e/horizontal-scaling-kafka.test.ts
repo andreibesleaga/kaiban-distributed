@@ -52,7 +52,7 @@ describe('E2E: Horizontal Scaling & Concurrency (Kafka)', () => {
         drivers.push(sharedDriver);
 
         // Handler simulates work and tracks which clone did the work
-        const handler = async (): Promise<any> => {
+        const handler = async (): Promise<unknown> => {
             processingAgents.add(workerId);
             // Simulate random processing time between 10ms - 50ms
             await new Promise(r => setTimeout(r, 10 + Math.random() * 40));

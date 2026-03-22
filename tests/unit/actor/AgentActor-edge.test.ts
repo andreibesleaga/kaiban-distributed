@@ -9,7 +9,7 @@
  *  - agent-actor-combined.test.ts (firewall + CB combined paths)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AgentActor, type AgentActorDeps } from '../../../src/application/actor/AgentActor';
+import { AgentActor } from '../../../src/application/actor/AgentActor';
 import type { IMessagingDriver, MessagePayload } from '../../../src/infrastructure/messaging/interfaces';
 import type { ICircuitBreaker } from '../../../src/domain/security/circuit-breaker';
 
