@@ -8,11 +8,11 @@ You can turn KaibanJS into a **fully distributed, Actor‑Model‑driven system*
 - **Observability and tracing remain first‑class**, giving visibility into distributed execution
 - **Each Agent runs on its own Node.js server**, scaling horizontally
 
-The result is a KaibanJS that behaves like a distributed AI workflow engine with Actor semantics, message queues, and real‑time UI synchronization.
+(The result is a KaibanJS that behaves like a distributed AI workflow engine with Actor semantics, message queues, and real‑time UI synchronization.)
 
 ---
 
-# Distributed KaibanJS Architecture (No Dify)
+# Distributed KaibanJS Architecture
 
 ## 1. Agents as Actors  
 KaibanJS Agents already match Actor semantics:
@@ -268,7 +268,7 @@ Teams act as supervisors:
 
 # **Architecting Distributed Multi-Agent Systems: Transitioning KaibanJS to an Actor-Model Paradigm**
 
-## **1\. Introduction to Distributed Agentic Orchestration**
+## **1. Introduction to Distributed Agentic Orchestration**
 
 The proliferation of large language models has catalyzed a fundamental paradigm shift in software engineering, moving the industry from simple generative applications toward complex, multi-agent systems capable of autonomous reasoning, tool execution, and collaborative problem-solving. As these systems transition from experimental prototypes to enterprise-grade production environments, architectural constraints surrounding state management, fault tolerance, and massive horizontal scalability become paramount. Historically, frameworks operating in Python dominated early orchestration efforts, largely due to Python's established presence in the data science and machine learning ecosystems. However, the event-driven, non-blocking asynchronous architecture of Node.js has positioned JavaScript as an optimal environment for high-concurrency agent workflows, offering microsecond latency and native integration with web-based interfaces. The year 2025 marked a definitive turning point where JavaScript frameworks began to rival their Python counterparts in production deployments.
 
@@ -276,7 +276,7 @@ KaibanJS has emerged as a robust, JavaScript-native framework that orchestrates 
 
 To achieve massive horizontal scalability, true fault tolerance, and seamless task execution, KaibanJS must evolve beyond its centralized orchestration model into a decentralized, distributed paradigm. The Actor Model, a mathematical theory of computation developed in the 1970s, provides the ideal architectural foundation for this transition. By treating each KaibanJS Agent as an isolated, stateful Actor running on independent Node.js server instances, and by abstracting inter-agent communication through robust message brokers and standard protocols, the framework can achieve seamless distributed execution. This comprehensive report provides an exhaustive blueprint for redesigning KaibanJS for distributed computing. The analysis focuses extensively on the implementation of a configurable middleware layer to replace the localized state engine, the integration of distributed state management protocols, the establishment of a robust messaging abstraction layer, and the deployment of full-stack OpenTelemetry observability to ensure transparency across complex, multi-node workflows.
 
-## **2\. Comprehensive Analysis of KaibanJS Architecture and Kanban Methodology**
+## **2. Comprehensive Analysis of KaibanJS Architecture and Kanban Methodology**
 
 Understanding the pathway to a distributed architecture requires a rigorous examination of the existing KaibanJS framework. The architecture is elegantly designed around a set of core primitives that interact within a tightly controlled, synchronous state environment. These primitives encapsulate the logic, behavior, and workflow of the artificial intelligence components.
 
@@ -286,7 +286,7 @@ The framework is constructed upon four foundational pillars: Agents, Tasks, Tool
 
 Agents are defined as autonomous entities within the KaibanJS ecosystem, functioning analogously to specialized human team members. Each agent is instantiated with a distinct identity encompassing a defined name, role, overarching goal, and specific background context. This contextual grounding is critical for prompt generation, as it guides the underlying language model's reasoning pathways. Furthermore, agents are governed by a configuration object known as llmConfig, which dictates the provider (such as OpenAI, Anthropic, or local models), the specific model iteration, and custom API base URLs to support self-hosted or proxy-based infrastructure. To prevent infinite reasoning loops and unbounded computational expenditure, agents utilize parameters like maxIterations, which establishes a hard limit on reasoning cycles, and forceFinalAnswer, which compulsorily extracts a response when iteration limits are approached. Additionally, KaibanJS introduces the WorkflowDrivenAgent, a specialized entity that eschews language model reasoning in favor of executing deterministic workflows, providing highly structured control over specific operational segments.
 
-Tasks represent the discrete units of work within the system. They encapsulate specific actions or processes, define necessary inputs, and articulate expected outputs. Tasks are explicitly assigned to agents or teams, forming the backbone of the operational sequence. Tools, conversely, are the functional interfaces that grant agents external capabilities. These range from basic utilities like internet search integrations and web scraping to complex computational engines and workflow control mechanisms, such as the block\_task Kanban tool. By equipping agents with specific tools, the framework expands their utility beyond mere text generation into actionable system manipulation.
+Tasks represent the discrete units of work within the system. They encapsulate specific actions or processes, define necessary inputs, and articulate expected outputs. Tasks are explicitly assigned to agents or teams, forming the backbone of the operational sequence. Tools, conversely, are the functional interfaces that grant agents external capabilities. These range from basic utilities like internet search integrations and web scraping to complex computational engines and workflow control mechanisms, such as the block_task Kanban tool. By equipping agents with specific tools, the framework expands their utility beyond mere text generation into actionable system manipulation.
 
 The Team serves as the orchestration layer. It aggregates agents and tasks into a cohesive operational unit, establishing the sequential workflow and managing the flow of data. The team dictates how results from completed tasks are interpolated into the inputs of subsequent tasks, allowing a complex chain of reasoning where a researcher agent's output directly fuels a writer agent's prompt context.
 
@@ -303,7 +303,7 @@ A defining characteristic of KaibanJS is its utilization of a Kanban methodology
 
 The task lifecycle operates as a strict state machine, transitioning through statuses such as TODO, DOING, BLOCKED, and DONE. This structure is not merely aesthetic; it enforces operational constraints and provides clear indicators of system throughput. This state machine becomes particularly vital when implementing Human-in-the-Loop workflows, an essential feature for enterprise systems requiring compliance, safety checks, or qualitative review.
 
-When a task is instantiated with the externalValidationRequired flag set to true, the state machine alters its terminal trajectory. Instead of transitioning from DOING directly to DONE, the task shifts into an AWAITING\_VALIDATION state. This effectively suspends the agent's progression on that specific workflow branch, allowing human operators to intervene, provide feedback, or authorize completion. The agent maintains a feedbackHistory to ensure transparency in how human intervention altered its decision paths. Concurrently, the overarching team maintains a macro-level state, the teamWorkflowStatus, which tracks the broader phase of the operation through values such as INITIAL, RUNNING, STOPPED, ERRORED, FINISHED, and BLOCKED.
+When a task is instantiated with the externalValidationRequired flag set to true, the state machine alters its terminal trajectory. Instead of transitioning from DOING directly to DONE, the task shifts into an AWAITING_VALIDATION state. This effectively suspends the agent's progression on that specific workflow branch, allowing human operators to intervene, provide feedback, or authorize completion. The agent maintains a feedbackHistory to ensure transparency in how human intervention altered its decision paths. Concurrently, the overarching team maintains a macro-level state, the teamWorkflowStatus, which tracks the broader phase of the operation through values such as INITIAL, RUNNING, STOPPED, ERRORED, FINISHED, and BLOCKED.
 
 ## **2.3 The Zustand State Engine and Monolithic Limitations**
 
@@ -313,7 +313,7 @@ The store internally manages critical attributes, including arrays of active age
 
 While this architecture is extraordinarily efficient for single-page applications running in the browser or monolithic Node.js backend processes, it inherently precludes distributed scalability. Because Zustand operates entirely within the volatile memory space of a single process, any disruption to the Node.js server results in catastrophic state loss. Furthermore, attempting to scale the application horizontally by deploying multiple Node.js instances behind a load balancer creates divergent, isolated state silos. In a multi-agent system where one agent might be performing a resource-intensive web scraping operation while another waits for the data, relying on localized memory creates unresolvable bottlenecks. The entire Team must exist within the same memory boundary, directly contradicting the principles of cloud-native microservices and distributed computing.
 
-## **3\. The Actor Model Paradigm for Distributed AI Agents**
+## **3. The Actor Model Paradigm for Distributed AI Agents**
 
 To transcend the limitations of localized state engines, KaibanJS must be re-architected utilizing the Actor Model. This paradigm shift offers a robust, mathematically sound approach to managing concurrent processes across distributed networks, perfectly aligning with the intrinsic nature of autonomous artificial intelligence agents.
 
@@ -345,7 +345,7 @@ To successfully decentralize the KaibanJS framework, its core primitives must be
 
 By deploying each KaibanJS Agent as a Node.js worker hosting a Dapr Actor, the framework achieves unparalleled scalability. The turn-based concurrency model provided by Dapr ensures that as tasks are assigned to a specific agent, they are queued and processed sequentially, completely isolating prompt generation and memory updates from concurrent execution conflicts.
 
-## **4\. Designing the Configurable Messaging Abstraction Layer**
+## **4. Designing the Configurable Messaging Abstraction Layer**
 
 A truly distributed multi-agent system relies heavily on robust, decoupled communication architectures. As KaibanJS actors transition across the Kanban statuses, emit state changes, publish task completions, and ingest real-time contextual signals, they must do so without requiring intimate knowledge of the network topology or the physical location of their peers. Dapr excels in this domain by providing a unified Publish/Subscribe (Pub/Sub) building block that abstracts the underlying message broker, ensuring at-least-once delivery guarantees and offering standardized HTTP or gRPC interfaces.
 
@@ -379,7 +379,7 @@ To prevent vendor lock-in and enable KaibanJS agents to collaborate securely wit
 
 The A2A Protocol acts as a universal standard for agent interoperability, defining a shared language utilizing JSON-RPC 2.0 interfaces. It introduces the concept of "AgentCards" for discovery, allowing agents to advertise their distinct capabilities, required inputs, and expected outputs. By incorporating the A2A SDK into the KaibanJS Node.js worker nodes, the messaging abstraction layer can route tasks not just internally via Dapr Pub/Sub, but externally to federated, third-party agentic systems over standard HTTP or streaming endpoints. This establishes a truly borderless multi-agent ecosystem where a KaibanJS Team can seamlessly dispatch a sub-task to a specialized remote agent and await its standardized response.
 
-## **5\. Middleware Proposal: Replacing the State Engine for Distributed Usage**
+## **5. Middleware Proposal: Replacing the State Engine for Distributed Usage**
 
 A critical hurdle in decentralizing KaibanJS is migrating away from the localized Zustand state engine without destroying the elegant, React-friendly API that developers rely upon. Completely excising Zustand would require rewriting the entire front-end integration layer. Instead, the architecture requires the implementation of a custom middleware plugin that intercepts localized state mutations and synchronizes them across a distributed, multi-node backbone.
 
@@ -416,21 +416,21 @@ Consider the lifecycle of a discrete task:
 5. Upon successful completion, the Actor writes the resultant artifact to the workflowResult and transitions the task status to DONE.  
 6. The Team Orchestrator Actor, listening to the Pub/Sub topic, receives the DONE event, evaluates the workflow sequence, and subsequently triggers the next agent in the pipeline.
 
-## **6\. Front-End and Multi-Node Observability and Tracing**
+## **6. Front-End and Multi-Node Observability and Tracing**
 
 Distributed architectures introduce inherent opacity. When a single workflow spans multiple autonomous agents, underlying databases, and asynchronous message queues, traditional linear logging becomes entirely insufficient for debugging or performance monitoring. The system mandates comprehensive distributed tracing and observability, standardizing on the OpenTelemetry framework to meticulously track spans, metrics, and logs across the entire infrastructure.
 
 ## **6.1 The @kaibanjs/opentelemetry Integration**
 
-KaibanJS provides a native OpenTelemetry package designed specifically to map AI workflow logs into standardized OTel spans. This plugin automatically instruments the application, capturing high-cardinality metadata essential for AI operations, including task.duration\_ms, financial metrics like task.total\_cost, and throughput metrics such as task.total\_tokens\_input and task.total\_tokens\_output. It supports highly configurable sampling strategies, allowing operators to reduce noise in production environments, and exports telemetry data to OTLP-compatible backends (such as Jaeger, SigNoz, or Langfuse) utilizing HTTP or gRPC protocols.
+KaibanJS provides a native OpenTelemetry package designed specifically to map AI workflow logs into standardized OTel spans. This plugin automatically instruments the application, capturing high-cardinality metadata essential for AI operations, including task.duration_ms, financial metrics like task.total_cost, and throughput metrics such as task.total_tokens_input and task.total_tokens_output. It supports highly configurable sampling strategies, allowing operators to reduce noise in production environments, and exports telemetry data to OTLP-compatible backends (such as Jaeger, SigNoz, or Langfuse) utilizing HTTP or gRPC protocols.
 
 To accurately represent the complex execution flow, the integration utilizes the concept of nested spans. A broad parent span represents the overall Task duration, while intricate, nested child spans represent the agent's internal "thinking" phases, granular tool executions, and the specific network requests made to the language model providers.
 
 | OpenTelemetry Concept | KaibanJS Trace Mapping | Key Telemetry Attributes Captured |
 | :---- | :---- | :---- |
-| **Parent Span** | Overall Task Execution | task.id, task.status, task.duration\_ms. |
+| **Parent Span** | Overall Task Execution | task.id, task.status, task.duration_ms. |
 | **Child Span (Logic)** | Agent Reasoning Cycle | Iteration count, logic paths, internal error states. |
-| **Child Span (Network)** | LLM Inference Call | task.total\_tokens\_input, task.total\_cost, latency. |
+| **Child Span (Network)** | LLM Inference Call | task.total_tokens_input, task.total_cost, latency. |
 
 ## **6.2 Context Propagation Across Asynchronous Boundaries**
 
@@ -442,9 +442,9 @@ To solve this fragmentation, the messaging abstraction layer must rigorously imp
 
 Dapr's internal workflow engine utilizes long-lived gRPC streams for communication between the sidecar and the application. Historically, this caused context fragmentation where activity spans did not correctly align with workflow spans because new metadata could not be attached to an already open stream. However, recent optimizations in Dapr have aligned its telemetry with OpenTelemetry semantic conventions, ensuring that calls traversing the daprd sidecar maintain contiguous trace hierarchies. By enabling comprehensive tracing in the Dapr configuration YAML and adjusting sampling rates, developers gain unparalleled visibility into the time spent within the language model inference, the time spent queued in the network, and the time spent committing state to the database.
 
-Observability must also extend fully to the Kaiban Board user interface. Using libraries such as @opentelemetry/sdk-trace-web, the frontend React application generates native traces for user interactions, such as initiating a workflow or manually approving a Human-in-the-Loop validation request. These frontend interactions generate an initial trace\_id. When the frontend communicates with the backend via Socket.io or REST APIs, this trace\_id is propagated to the Node.js gateway, initiating the chain. This provides complete, end-to-end visibility from the initial user browser click, through the API gateway, across the message broker, and down to the specific algorithmic inference call.
+Observability must also extend fully to the Kaiban Board user interface. Using libraries such as @opentelemetry/sdk-trace-web, the frontend React application generates native traces for user interactions, such as initiating a workflow or manually approving a Human-in-the-Loop validation request. These frontend interactions generate an initial trace_id. When the frontend communicates with the backend via Socket.io or REST APIs, this trace_id is propagated to the Node.js gateway, initiating the chain. This provides complete, end-to-end visibility from the initial user browser click, through the API gateway, across the message broker, and down to the specific algorithmic inference call.
 
-## **7\. Comprehensive System Design and Deployment Architecture**
+## **7. Comprehensive System Design and Deployment Architecture**
 
 To fully realize this distributed KaibanJS framework, the deployment architecture must be orchestrated utilizing Kubernetes, ensuring robust scaling, strict network isolation, and resilient lifecycle management.
 
@@ -460,9 +460,9 @@ The topology is divided into functional domains:
 
 | Component Role | Deployment Construct | Scaling Mechanism |
 | :---- | :---- | :---- |
-| **Team Orchestrator** | Node.js Deployment \+ daprd | Moderate scaling based on active workflows. |
-| **Agent Workers** | Node.js Deployment \+ daprd | Aggressive horizontal scaling based on queue metrics (KEDA). |
-| **Edge Gateway** | Node.js \+ Socket.io \+ Redis Adapter | Scaled based on active frontend client connections. |
+| **Team Orchestrator** | Node.js Deployment + daprd | Moderate scaling based on active workflows. |
+| **Agent Workers** | Node.js Deployment + daprd | Aggressive horizontal scaling based on queue metrics (KEDA). |
+| **Edge Gateway** | Node.js + Socket.io + Redis Adapter | Scaled based on active frontend client connections. |
 | **State / Broker** | Redis Cluster / Managed Kafka | Managed externally or via StatefulSets for data durability. |
 
 ## **7.2 The Request Lifecycle in a Production Environment**
@@ -475,7 +475,7 @@ Upon invocation, state hydration occurs. The custom Zustand middleware intervene
 
 Once the reasoning is complete, the Agent resolves the task and updates its internal Zustand state to DONE. The distributed middleware intercepts this final mutation, commits the state delta to Redis using ETag verification to prevent concurrency conflicts, and publishes the update to the internal Pub/Sub topic. The Edge Gateway Node.js server receives this Pub/Sub broadcast and immediately pushes the visual Kanban board update to connected browsers via Socket.io. Finally, if the task requires external federation, the Agent utilizes the A2A Protocol to format a standard AgentCard and transmits the data securely over the internet to a separate corporate network running an entirely different agentic framework.
 
-## **8\. Integrating with Dify JS for Visual Agentic Workflows**
+## **8. Integrating with Dify JS for Visual Agentic Workflows**
 
 While KaibanJS, reinforced with a Dapr-backed distributed architecture, excels at programmatic execution and strict multi-node scalability, configuring these robust systems entirely via code can alienate non-technical stakeholders such as product managers and domain experts.1 To address this, the architecture can be seamlessly integrated with **Dify**, an open-source platform renowned for its intuitive, drag-and-drop visual workflow builder. By embedding the distributed KaibanJS engine within the Dify ecosystem, developers achieve a synergy between visual accessibility and enterprise-grade distributed processing.1
 
@@ -505,11 +505,11 @@ Synthesizing these technologies yields an innovative product architecture: a ful
 
 * **The Design Phase:** Users utilize Dify's intuitive canvas to build the macro-workflow. They drag and drop "KaibanJS Team" nodes onto the canvas, defining the overarching logic, conditions, and human-in-the-loop validation points.1  
 * **The Execution Phase:** Once triggered, Dify delegates the operational flow to the Dapr-managed cluster via MCP. KaibanJS worker nodes instantly spin up as Virtual Actors, leveraging Kafka for task fan-out and Redis for localized state synchronization.  
-* **The Feedback Loop:** As the KaibanJS agents process data, they stream telemetry and state changes back through the Dify Endpoint plugin. If a task reaches an AWAITING\_VALIDATION state, the visual node in Dify halts, prompting the user for input directly in the Dify interface. Upon approval, the signal travels back through the broker, reactivating the dormant KaibanJS actor to finish the operation.
+* **The Feedback Loop:** As the KaibanJS agents process data, they stream telemetry and state changes back through the Dify Endpoint plugin. If a task reaches an AWAITING_VALIDATION state, the visual node in Dify halts, prompting the user for input directly in the Dify interface. Upon approval, the signal travels back through the broker, reactivating the dormant KaibanJS actor to finish the operation.
 
 By bridging Dify's visual workflow with KaibanJS's Actor-Model processing, organizations achieve the ultimate duality: a system simple enough for domain experts to build intelligent logic, yet structurally sound enough to scale horizontally under realistic, massive event-driven workloads.1
 
-## **9\. Conclusion**
+## **9. Conclusion**
 
 The rapid evolution of agentic artificial intelligence dictates the necessity for architectural frameworks that are explicitly designed for distributed execution, robust state management, and comprehensive observability. By retrofitting the KaibanJS ecosystem with the principles of the Actor Model paradigm, the framework successfully transitions from a localized, in-memory orchestrator to an enterprise-grade, massively scalable distributed system.
 
