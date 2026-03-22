@@ -66,4 +66,10 @@ describe('KaibanTeamBridge', () => {
     bridge.subscribeToChanges(listener, ['teamWorkflowStatus']);
     expect(mockGetStore).toHaveBeenCalled();
   });
+
+  it('disconnect() calls middleware disconnect', async () => {
+    const bridge = new KaibanTeamBridge({ name: 'T', agents: [], tasks: [] }, 'redis://localhost:6379');
+    await bridge.disconnect();
+    expect(mockRedis.quit).toHaveBeenCalled();
+  });
 });

@@ -11,6 +11,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { BullMQDriver } from '../../src/infrastructure/messaging/bullmq-driver';
 import { AgentActor } from '../../src/application/actor/AgentActor';
 import { DistributedStateMiddleware } from '../../src/adapters/state/distributedMiddleware';
+import Redis from 'ioredis';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 
@@ -96,22 +97,21 @@ describe('E2E: Distributed Task Execution', () => {
 
   it('Scenario 3: DistributedStateMiddleware publishes state changes via Redis Pub/Sub', async () => {
     // Architecture: state sync uses ioredis pub/sub directly, NOT BullMQ queues.
-    // We use a BullMQ-compatible queue name (no colons) for the middleware channel.
-    const url = new URL(REDIS_URL);
-    const connConfig = { connection: { host: url.hostname, port: parseInt(url.port || '6379', 10) } };
-    const publisherDriver = new BullMQDriver(connConfig);
-    const subscriberDriver = new BullMQDriver(connConfig);
-    drivers.push(publisherDriver, subscriberDriver);
-
-    // Use a BullMQ-compatible channel name (no colons per BullMQ constraint)
     const stateChannel = 'kaiban-state-events';
 
     const receivedDeltas: unknown[] = [];
-    await subscriberDriver.subscribe(stateChannel, async (payload) => {
-      receivedDeltas.push(payload.data['stateUpdate']);
+    
+    // Create direct redis subscriber
+    const sub = new Redis(REDIS_URL);
+    await sub.subscribe(stateChannel);
+    sub.on('message', (channel, message) => {
+      if (channel === stateChannel) {
+        const payload = JSON.parse(message);
+        receivedDeltas.push(payload.data?.['stateUpdate']);
+      }
     });
 
-    const middleware = new DistributedStateMiddleware(publisherDriver, stateChannel);
+    const middleware = new DistributedStateMiddleware(REDIS_URL, stateChannel);
     interface E2EStore { state: Record<string, unknown>; setState: (partial: Record<string, unknown>) => void; }
     const store: E2EStore = {
       state: { taskCount: 0 },
@@ -127,5 +127,8 @@ describe('E2E: Distributed Task Execution', () => {
     expect(receivedDeltas.length).toBeGreaterThan(0);
     const delta = receivedDeltas[0] as Record<string, unknown>;
     expect(delta['taskCount']).toBe(5);
+    
+    await sub.quit();
+    await middleware.disconnect();
   }, 15000);
 });

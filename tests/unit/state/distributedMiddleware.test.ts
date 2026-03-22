@@ -85,6 +85,29 @@ describe("DistributedStateMiddleware", () => {
     expect(onStateChange).toHaveBeenCalledWith({ x: 1 });
   });
 
+  it("listen() logs error on invalid json payload", async () => {
+    let capturedHandler!: (channel: string, message: string) => void;
+    mockRedis.on.mockImplementation((event, handler) => {
+      if (event === 'message') capturedHandler = handler;
+    });
+
+    const mw = new DistributedStateMiddleware('redis://localhost');
+    const onStateChange = vi.fn();
+    await mw.listen(onStateChange);
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    capturedHandler("kaiban-state-events", "invalid json");
+
+    expect(errSpy).toHaveBeenCalledWith("[DistributedStateMiddleware] Failed to parse message:", expect.any(SyntaxError));
+    errSpy.mockRestore();
+  });
+
+  it("disconnect() calls redis quit", async () => {
+    const mw = new DistributedStateMiddleware('redis://localhost');
+    await mw.disconnect();
+    expect(mockRedis.quit).toHaveBeenCalled();
+  });
+
   it("publish error is caught and logged without throwing", async () => {
     mockRedis.publish.mockRejectedValueOnce(new Error("redis down"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
