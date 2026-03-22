@@ -412,7 +412,7 @@ Shows in real-time (colour-coded):
 
 ---
 
-## Example 5 — Fan-Out / Fan-In: Parallel Agent Workflow
+## Example 6 — Fan-Out / Fan-In: Parallel Agent Workflow
 
 Multiple specialized agents execute **concurrently** (fan-out), their results are
 **aggregated automatically** (fan-in), and an **auto-approver** validates the
