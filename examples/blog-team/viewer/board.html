@@ -4,164 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kaiban Distributed — Live Board</title>
-  <script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      min-height: 100vh;
-      padding: 24px;
-    }
-    header {
-      display: flex; align-items: center; gap: 16px;
-      margin-bottom: 28px; padding-bottom: 16px;
-      border-bottom: 1px solid #1e293b;
-    }
-    header h1 { font-size: 1.4rem; font-weight: 700; }
-    .badge {
-      padding: 3px 10px; border-radius: 20px; font-size: 0.75rem;
-      font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
-    }
-    .badge-connecting { background: #334155; color: #94a3b8; }
-    .badge-live       { background: #052e16; color: #4ade80; }
-    .badge-error      { background: #450a0a; color: #f87171; }
-
-    /* Board layout */
-    .board {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 20px;
-      margin-bottom: 32px;
-    }
-    .column {
-      background: #1e293b; border-radius: 12px; padding: 16px;
-      border: 1px solid #334155;
-    }
-    .column-header {
-      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; margin-bottom: 12px;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .col-todo    .column-header { color: #94a3b8; }
-    .col-doing   .column-header { color: #60a5fa; }
-    .col-done    .column-header { color: #4ade80; }
-    .col-blocked .column-header { color: #f87171; }
-    .col-await   .column-header { color: #fb923c; }
-
-    .task-card {
-      background: #0f172a; border-radius: 8px; padding: 12px;
-      margin-bottom: 10px; border-left: 3px solid transparent;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .task-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-    .task-card.todo    { border-left-color: #64748b; }
-    .task-card.doing   { border-left-color: #3b82f6; background: #0c1a30; }
-    .task-card.done    { border-left-color: #22c55e; }
-    .task-card.blocked {
-      border-left-color: #ef4444; background: #130505;
-      box-shadow: 0 0 8px rgba(239,68,68,0.3);
-    }
-    .task-card.awaiting_validation {
-      border-left-color: #f97316; background: #1a1000;
-      box-shadow: 0 0 12px rgba(249,115,22,0.4); animation: awaiting-glow 2s ease-in-out infinite;
-    }
-    @keyframes awaiting-glow {
-      0%, 100% { box-shadow: 0 0 12px rgba(249,115,22,0.4); }
-      50% { box-shadow: 0 0 24px rgba(249,115,22,0.8); }
-    }
-
-    .task-title { font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
-    .task-agent { font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px; }
-    .task-result {
-      font-size: 0.72rem; color: #cbd5e1; margin-top: 8px;
-      padding: 8px; background: #1e293b; border-radius: 6px;
-      max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
-    }
-    .task-pulse {
-      display: inline-block; width: 8px; height: 8px;
-      border-radius: 50%; background: #3b82f6; margin-right: 6px;
-      animation: pulse 1.5s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.4); }
-    }
-
-    /* Agent status strip */
-    .agents-section { margin-bottom: 28px; }
-    .agents-section h2 {
-      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: #94a3b8; margin-bottom: 12px;
-    }
-    .agents-grid { display: flex; gap: 12px; flex-wrap: wrap; }
-    .agent-card {
-      background: #1e293b; border-radius: 10px; padding: 12px 16px;
-      min-width: 140px; border: 1px solid #334155;
-    }
-    .agent-name { font-size: 0.85rem; font-weight: 700; }
-    .agent-role { font-size: 0.7rem; color: #94a3b8; margin: 2px 0 8px; }
-    .agent-status {
-      font-size: 0.7rem; font-weight: 600; padding: 2px 8px;
-      border-radius: 20px; display: inline-block;
-    }
-    .status-idle      { background: #1e293b; color: #64748b; border: 1px solid #334155; }
-    .status-thinking  { background: #1e3a5f; color: #60a5fa; }
-    .status-executing { background: #052e16; color: #4ade80; }
-    .status-error     { background: #450a0a; color: #f87171; }
-
-    /* Workflow status */
-    .workflow-bar {
-      background: #1e293b; border-radius: 12px; padding: 16px 20px;
-      display: flex; align-items: center; gap: 16px;
-      margin-bottom: 24px; border: 1px solid #334155;
-    }
-    .workflow-label { font-size: 0.8rem; color: #94a3b8; font-weight: 600; }
-    .workflow-status {
-      font-size: 0.85rem; font-weight: 700; padding: 4px 12px;
-      border-radius: 20px;
-    }
-    .ws-initial  { background: #1e293b; color: #94a3b8; }
-    .ws-running  { background: #1e3a5f; color: #60a5fa; }
-    .ws-finished { background: #052e16; color: #4ade80; }
-    .ws-errored  { background: #450a0a; color: #f87171; }
-    .ws-blocked  { background: #451a03; color: #fb923c; }
-    .ws-stopped  { background: #1e293b; color: #94a3b8; }
-    .ws-finished { background: #052e16; color: #4ade80; animation: done-glow 3s ease-in-out 2; }
-    @keyframes done-glow { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 20px rgba(74,222,128,0.6); } }
-
-    /* Event log */
-    .log-section { margin-top: 28px; }
-    .log-section h2 {
-      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: #94a3b8; margin-bottom: 12px;
-    }
-    .log-box {
-      background: #020d1e; border: 1px solid #1e293b; border-radius: 10px;
-      padding: 14px; max-height: 280px; overflow-y: auto;
-      font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem;
-    }
-    .log-entry {
-      padding: 4px 0; border-bottom: 1px solid #0f172a;
-      display: grid; grid-template-columns: 70px 80px 1fr; gap: 8px;
-    }
-    .log-time  { color: #475569; }
-    .log-type  { color: #7c3aed; font-weight: 600; }
-    .log-msg   { color: #94a3b8; }
-    .log-msg.highlight { color: #e2e8f0; }
-
-    /* Empty state */
-    .empty { color: #475569; font-size: 0.8rem; text-align: center; padding: 20px; }
-
-    /* Connection overlay */
-    #connection-info {
-      position: fixed; bottom: 20px; right: 20px;
-      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
-      padding: 12px 16px; font-size: 0.75rem; color: #94a3b8;
-    }
-    #connection-info strong { color: #e2e8f0; display: block; margin-bottom: 4px; }
-  </style>
+  <link rel="stylesheet" href="board.css">
 </head>
 <body>
 
@@ -171,28 +14,24 @@
   <span id="workflow-badge" style="font-size:0.75rem; color:#475569"></span>
 </header>
 
-<!-- HITL / Error banners (shown dynamically) -->
-  <div id="banner-hitl" style="display:none;background:linear-gradient(90deg,#7c2d12,#431407);
-    border:1px solid #f97316;border-radius:10px;padding:14px 20px;margin-bottom:16px;
-    text-align:center;animation:awaiting-glow 2s ease-in-out infinite;">
-    <div style="font-size:1rem;font-weight:800;color:#fb923c">⏸ HUMAN DECISION REQUIRED</div>
-    <div id="banner-hitl-msg" style="font-size:0.8rem;color:#fed7aa;margin-top:4px"></div>
-  </div>
-  <div id="banner-error" style="display:none;background:#130505;border:1px solid #ef4444;
-    border-radius:10px;padding:14px 20px;margin-bottom:16px;text-align:center;">
-    <div style="font-size:0.95rem;font-weight:800;color:#f87171">⛔ TASK FAILED</div>
-    <div id="banner-error-msg" style="font-size:0.78rem;color:#fca5a5;margin-top:4px;white-space:pre-wrap"></div>
-  </div>
-  <div id="banner-finished" style="display:none;background:linear-gradient(90deg,#052e16,#14532d);
-    border:1px solid #4ade80;border-radius:10px;padding:14px 20px;margin-bottom:16px;text-align:center;">
-    <div style="font-size:1.1rem;font-weight:800;color:#4ade80">✅ WORKFLOW COMPLETE</div>
-    <div id="banner-finished-msg" style="font-size:0.8rem;color:#86efac;margin-top:4px"></div>
-  </div>
-  <div id="banner-stopped" style="display:none;background:#1e293b;border:1px solid #64748b;
-    border-radius:10px;padding:14px 20px;margin-bottom:16px;text-align:center;">
-    <div style="font-size:0.95rem;font-weight:800;color:#94a3b8">⏹ WORKFLOW ENDED</div>
-    <div id="banner-stopped-msg" style="font-size:0.78rem;color:#64748b;margin-top:4px"></div>
-  </div>
+<!-- Banners (shown dynamically by board.js) -->
+<div id="banner-hitl" class="banner banner-hitl">
+  <div class="banner-title">⏸ HUMAN DECISION REQUIRED</div>
+  <div class="banner-msg" id="banner-hitl-msg"></div>
+</div>
+<div id="banner-error" class="banner banner-error">
+  <div class="banner-title">⛔ TASK FAILED</div>
+  <div class="banner-msg" id="banner-error-msg"></div>
+</div>
+<div id="banner-finished" class="banner banner-finished">
+  <div class="banner-title">✅ WORKFLOW COMPLETE</div>
+  <div class="banner-msg" id="banner-finished-msg"></div>
+</div>
+<div id="banner-stopped" class="banner banner-stopped">
+  <div class="banner-title">⏹ WORKFLOW ENDED</div>
+  <div class="banner-msg" id="banner-stopped-msg"></div>
+</div>
+
 <!-- Workflow status bar -->
 <div class="workflow-bar" id="workflow-bar">
   <span class="workflow-label">Workflow:</span>
@@ -208,10 +47,8 @@
   </div>
 </div>
 
-<!-- Kanban Board -->
-<div style="margin-bottom:12px">
-  <span style="font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#94a3b8">Tasks</span>
-</div>
+<!-- Kanban board -->
+<span class="tasks-label">Tasks</span>
 <div class="board">
   <div class="column col-todo">
     <div class="column-header">📋 TODO <span id="cnt-todo">0</span></div>
@@ -247,219 +84,13 @@
   </div>
 </div>
 
+<!-- Connection info -->
 <div id="connection-info">
   <strong id="gateway-url-display">Gateway</strong>
   <span id="conn-detail">Connecting...</span>
 </div>
 
-<script>
-  // ── Config ──────────────────────────────────────────────────────
-  const GATEWAY_URL = window.GATEWAY_URL
-    || new URLSearchParams(location.search).get('gateway')
-    || 'http://localhost:3000';
-
-  document.getElementById('gateway-url-display').textContent = GATEWAY_URL;
-
-  // ── State ───────────────────────────────────────────────────────
-  let state = {
-    agents: [],
-    tasks: [],
-    workflowStatus: 'INITIAL',
-    logs: []
-  };
-
-  // ── Log helper ──────────────────────────────────────────────────
-  function addLog(type, msg, highlight = false) {
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
-    const box = document.getElementById('log-box');
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.innerHTML = `<span class="log-time">${time}</span><span class="log-type lt-${type}">${type}</span><span class="log-msg ${highlight ? 'highlight' : ''}">${msg}</span>`;
-    box.insertBefore(entry, box.firstChild);
-    if (box.children.length > 200) box.removeChild(box.lastChild);
-  }
-
-  // ── Render ──────────────────────────────────────────────────────
-  function renderAgents() {
-    const grid = document.getElementById('agents-grid');
-    if (!state.agents.length) {
-      grid.innerHTML = '<div class="empty">Waiting for agent state...</div>';
-      return;
-    }
-    grid.innerHTML = state.agents.map(a => `
-      <div class="agent-card">
-        <div class="agent-name">${a.name || a.agentId || 'Agent'}</div>
-        <div class="agent-role">${a.role || ''}</div>
-        <span class="agent-status status-${(a.status||'idle').toLowerCase()}">${a.status || 'IDLE'}</span>
-        ${a.currentTaskId ? `<div style="font-size:0.68rem;color:#475569;margin-top:6px">Task: ${a.currentTaskId.slice(-8)}</div>` : ''}
-      </div>`).join('');
-  }
-
-  function renderTasks() {
-    const cols = { TODO: [], DOING: [], AWAITING_VALIDATION: [], DONE: [], BLOCKED: [] };
-    for (const t of state.tasks) {
-      const s = (t.status || 'TODO').toUpperCase();
-      if (cols[s]) cols[s].push(t);
-    }
-    const makeCard = (t) => {
-      const statusUpper = (t.status||'TODO').toUpperCase();
-      const isAwaiting = statusUpper === 'AWAITING_VALIDATION';
-      const isBlocked  = statusUpper === 'BLOCKED';
-      const badge = isAwaiting
-        ? '<span style="background:#7c2d12;color:#fb923c;font-size:0.65rem;padding:2px 8px;border-radius:10px;font-weight:700;margin-left:6px">⏸ HUMAN DECISION</span>'
-        : isBlocked
-        ? '<span style="background:#450a0a;color:#f87171;font-size:0.65rem;padding:2px 8px;border-radius:10px;font-weight:700;margin-left:6px">⛔ ERROR</span>'
-        : '';
-      const resultHtml = t.result
-        ? `<div class="task-result" style="${isBlocked?'border-left:2px solid #ef4444;color:#fca5a5;':isAwaiting?'border-left:2px solid #f97316;color:#fed7aa;':''}">${
-            String(t.result).slice(0,500)}${String(t.result).length>500?'…':''}</div>`
-        : '';
-      return `<div class="task-card ${t.status.toLowerCase()}">
-        <div class="task-title">${t.title||t.description?.slice(0,40)||t.taskId||'Task'}${badge}</div>
-        <div class="task-agent">${t.agent?.name||t.assignedToAgentId||'—'}</div>
-        ${resultHtml}
-      </div>`;
-    };
-    document.getElementById('col-todo').innerHTML   = cols.TODO.map(makeCard).join('') || '<div class="empty">Empty</div>';
-    document.getElementById('col-doing').innerHTML  = cols.DOING.map(makeCard).join('') || '<div class="empty">Empty</div>';
-    document.getElementById('col-await').innerHTML  = cols.AWAITING_VALIDATION.map(makeCard).join('') || '<div class="empty">Empty</div>';
-    document.getElementById('col-done').innerHTML   = cols.DONE.map(makeCard).join('') || '<div class="empty">Empty</div>';
-    document.getElementById('col-blocked').innerHTML= cols.BLOCKED.map(makeCard).join('') || '<div class="empty">Empty</div>';
-    document.getElementById('cnt-todo').textContent    = cols.TODO.length;
-    document.getElementById('cnt-doing').textContent   = cols.DOING.length;
-    document.getElementById('cnt-await').textContent   = cols.AWAITING_VALIDATION.length;
-    document.getElementById('cnt-done').textContent    = cols.DONE.length;
-    document.getElementById('cnt-blocked').textContent = cols.BLOCKED.length;
-  }
-
-  function renderWorkflow() {
-    const el = document.getElementById('workflow-status');
-    const ws = state.workflowStatus || 'INITIAL';
-    el.textContent = ws;
-    el.className = 'workflow-status ws-' + ws.toLowerCase().replace(/_/g,'-');
-  }
-
-  function renderBanners() {
-    const ws = (state.workflowStatus || '').toUpperCase();
-    const awaitingTasks = state.tasks.filter(t => (t.status||'').toUpperCase() === 'AWAITING_VALIDATION');
-    const blockedTasks  = state.tasks.filter(t => (t.status||'').toUpperCase() === 'BLOCKED' && String(t.result||'').includes('ERROR:'));
-    const doneTasks     = state.tasks.filter(t => (t.status||'').toUpperCase() === 'DONE');
-
-    const bannerHitl     = document.getElementById('banner-hitl');
-    const bannerError    = document.getElementById('banner-error');
-    const bannerFinished = document.getElementById('banner-finished');
-    const bannerStopped  = document.getElementById('banner-stopped');
-
-    // Hide all first
-    [bannerHitl, bannerError, bannerFinished, bannerStopped].forEach(b => b.style.display = 'none');
-
-    if (ws === 'FINISHED') {
-      bannerFinished.style.display = 'block';
-      const pub = doneTasks.find(t => String(t.result||'').includes('Published'));
-      document.getElementById('banner-finished-msg').textContent =
-        pub ? `"${pub.title}" was published successfully` : 'Blog post published';
-    } else if (ws === 'STOPPED') {
-      bannerStopped.style.display = 'block';
-      const stopped = state.tasks.find(t => t.title === 'Workflow ended');
-      document.getElementById('banner-stopped-msg').textContent =
-        stopped ? String(stopped.result||'').replace('🗑 ','').slice(0,200) : 'Workflow ended';
-    } else if (awaitingTasks.length > 0) {
-      bannerHitl.style.display = 'block';
-      document.getElementById('banner-hitl-msg').textContent =
-        awaitingTasks[0].result || 'Check the orchestrator terminal for options';
-    } else if (blockedTasks.length > 0) {
-      bannerError.style.display = 'block';
-      document.getElementById('banner-error-msg').textContent =
-        blockedTasks.map(t => `• ${t.title}: ${String(t.result||'').replace('ERROR:','').trim().slice(0,200)}`).join('\n');
-    }
-  }
-
-  function render() {
-    renderAgents();
-    renderTasks();
-    renderWorkflow();
-    renderBanners();
-  }
-
-  // ── Socket.io ───────────────────────────────────────────────────
-  addLog('INIT', `Connecting to ${GATEWAY_URL}`);
-
-  const socket = io(GATEWAY_URL, {
-    transports: ['websocket', 'polling'],
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 2000,
-  });
-
-  socket.on('connect', () => {
-    document.getElementById('conn-badge').className = 'badge badge-live';
-    document.getElementById('conn-badge').textContent = '● LIVE';
-    document.getElementById('conn-detail').textContent = `id: ${socket.id?.slice(0,8)}`;
-    addLog('CONNECT', `Connected to ${GATEWAY_URL}`, true);
-  });
-
-  socket.on('disconnect', (reason) => {
-    document.getElementById('conn-badge').className = 'badge badge-error';
-    document.getElementById('conn-badge').textContent = '✕ Disconnected';
-    document.getElementById('conn-detail').textContent = reason;
-    addLog('DISCONNECT', reason);
-  });
-
-  socket.on('connect_error', (err) => {
-    document.getElementById('conn-badge').className = 'badge badge-error';
-    document.getElementById('conn-badge').textContent = '✕ Error';
-    document.getElementById('conn-detail').textContent = err.message;
-    addLog('ERROR', err.message);
-  });
-
-  socket.on('state:update', (delta) => {
-    // Merge delta by ID — each worker broadcasts its own agent; board keeps all
-    if (delta.teamWorkflowStatus) state.workflowStatus = delta.teamWorkflowStatus;
-    if (delta.agents && Array.isArray(delta.agents)) {
-      const agentMap = new Map(state.agents.map(a => [a.agentId, a]));
-      for (const agent of delta.agents) {
-        agentMap.set(agent.agentId, { ...agentMap.get(agent.agentId), ...agent });
-      }
-      state.agents = Array.from(agentMap.values());
-    }
-    if (delta.tasks && Array.isArray(delta.tasks)) {
-      const taskMap = new Map(state.tasks.map(t => [t.taskId, t]));
-      for (const task of delta.tasks) {
-        taskMap.set(task.taskId, { ...taskMap.get(task.taskId), ...task });
-      }
-      state.tasks = Array.from(taskMap.values());
-    }
-    if (delta.inputs?.topic) {
-      document.getElementById('topic-label').textContent = `Topic: "${delta.inputs.topic}"`;
-    }
-
-    // Log all state changes with full context
-    if (delta.teamWorkflowStatus) {
-      addLog('WORKFLOW', `Status → ${delta.teamWorkflowStatus}`, true);
-    }
-    if (delta.agents && Array.isArray(delta.agents)) {
-      for (const a of delta.agents) {
-        const statusIcon = { IDLE: '⚪', EXECUTING: '🟢', THINKING: '🔵', ERROR: '🔴' }[a.status] || '⬡';
-        const taskRef = a.currentTaskId ? ` [${a.currentTaskId.slice(-8)}]` : '';
-        addLog('AGENT', `${statusIcon} ${a.name || a.agentId} → ${a.status}${taskRef}`, a.status === 'EXECUTING' || a.status === 'ERROR');
-      }
-    }
-    if (delta.tasks && Array.isArray(delta.tasks)) {
-      for (const t of delta.tasks) {
-        const statusIcon = { DOING: '🔵', DONE: '✅', BLOCKED: '🔴', AWAITING_VALIDATION: '⏸' }[t.status] || '📋';
-        const resultPreview = t.result ? ` — ${String(t.result).slice(0, 80)}` : '';
-        const highlight = t.status === 'DONE' || t.status === 'BLOCKED' || t.status === 'AWAITING_VALIDATION';
-        addLog('TASK', `${statusIcon} ${(t.title || t.taskId).slice(0, 50)} → ${t.status}${resultPreview}`, highlight);
-      }
-    }
-
-    render();
-  });
-
-  // Also listen for completion events (if gateway forwards them)
-  socket.on('task:completed', (data) => {
-    addLog('DONE', `Task ${data.taskId} completed by ${data.agentId}`, true);
-  });
-</script>
+<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
+<script src="board.js"></script>
 </body>
 </html>
