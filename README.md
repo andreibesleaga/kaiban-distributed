@@ -8,7 +8,7 @@
 >
 > System based on [KaibanJS](https://kaibanjs.com). For integrating KaibanJS, Board, and [KaibanJS Examples](https://www.kaibanjs.com/examples), follow documents in [KAIBANJS_INTEGRATION.md](KAIBANJS_INTEGRATION.md).
 >
-> For more documentation and system build flow with [GABBE](https://github.com/andreibesleaga/GABBE), check files in [docs/](docs/).
+> (For more documentation and system build flow, check files in [docs/](docs/)).
 >
 
 - The very first project in the world to combine Enterprise Messaging (Kafka/Redis), Actor-Model Isolation, AI Multi-Agent Orchestration, and Kanban Visualization, into a JavaScript ecosystem, for agents and humans.
