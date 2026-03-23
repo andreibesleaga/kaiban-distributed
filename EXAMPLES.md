@@ -377,11 +377,11 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 128 tests, 15 files, 100% coverage
+# → 340+ tests, 30+ files, 100% coverage
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
-# → 7 tests: task execution, fault tolerance, state sync, A2A protocol
+# → 20+ tests: task execution, fault tolerance, state sync, A2A protocol
 
 # Kafka E2E (requires Kafka — starts automatically)
 npm run test:e2e:kafka

@@ -20,7 +20,7 @@
 - Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
 
-[![Tests](https://img.shields.io/badge/tests-340%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-300+%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
@@ -721,7 +721,7 @@ All features are **disabled by default**. Enable individually via environment va
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 340 unit tests (no external deps)
+npm run test           # 300+ unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -735,8 +735,8 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 340 tests, 36 files | None (all mocked) |
-| BullMQ E2E | `npm run test:e2e` | 7 tests | Docker Redis (auto-managed by globalSetup) |
+| Unit | `npm test` | 300+ tests, 37 files | None (all mocked) |
+| BullMQ E2E | `npm run test:e2e` | 22 tests | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 2 tests | Docker Kafka + Zookeeper |
 
 ### Coverage
@@ -793,7 +793,7 @@ kaiban-distributed/
 │       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 340 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 340+ unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts  # BullMQ: execution, fault tolerance, state sync
 │       ├── a2a-protocol.test.ts           # HTTP gateway + A2A

@@ -72,7 +72,7 @@ describe('E2E: A2A Protocol', () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json() as { result: { taskId: string } };
-    expect(body.result.taskId).toMatch(/^task-\d+$/);
+    expect(body.result.taskId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   });
 
   it('GET /health returns 200', async () => {
