@@ -245,7 +245,7 @@ stateDiagram-v2
 | Component | Location | Purpose |
 |-----------|----------|---------|
 | `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker |
-| `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Agent`; calls `agent.workOnTask()`; optional JIT token provider |
+| `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS agent in a per-task `Team`; calls `team.start()`; returns token-tracked `KaibanHandlerResult`; optional JIT token provider |
 | `KaibanTeamBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync |
 | `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat |
 | `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); optional TLS; no colon queue names |
@@ -833,8 +833,8 @@ kaiban-distributed/
 | `AgentStatePublisher` uses ioredis directly | SocketGateway reads Redis pub/sub; BullMQ queues are separate concerns |
 | 15-second heartbeat in `AgentStatePublisher` | Redis pub/sub is fire-and-forget; late-connecting boards see state within 15s |
 | Two KafkaDriver instances in `CompletionRouter` | KafkaJS `consumer.run()` cannot subscribe to new topics after start |
-| `initializeAgentLLM()` in agent bridge | KaibanJS requires `agentInstance.initialize(store, env)` to bootstrap LLM; no Team needed |
-| KaibanJS error results throw, not return | `agent.workOnTask()` returns `{ error: '...' }` on LLM failure; throwing enables AgentActor retry |
+| `Team` per task in agent bridge | `Team.start()` initializes LLM automatically from `env`; `WorkflowResult.stats` provides token counts without internal hacks |
+| KaibanJS ERRORED status throws | `team.start()` returns `{ status: 'ERRORED' }`; bridge throws so AgentActor retries (3×), then DLQs |
 | `forceFinalAnswer: true` on editor | Free 8B models reach max iterations without structured output |
 | SHA-256 hash prefix for agent IDs | 8-char prefix preserves debuggability while preventing PII leakage |
 | `globalSetup` catches Redis port conflict | E2E tests are resilient when Redis is already running from another compose stack |
@@ -899,7 +899,7 @@ LOG_TAIL=200 QUEUE_POLL_SEC=3 \
 | `401 User not found` | Invalid OpenRouter API key | Get valid key at https://openrouter.ai/keys |
 | `404 MODEL_NOT_FOUND` / data policy | Free model requires privacy opt-in | Enable https://openrouter.ai/settings/privacy or use paid model |
 | `No endpoints found matching your data policy` | Free tier data-sharing required | Enable https://openrouter.ai/settings/privacy |
-| `LLM instance is not initialized` | KaibanJS `llmInstance` not bootstrapped | Fixed — `initializeAgentLLM()` calls `agentInstance.initialize(null, env)` |
+| `LLM instance is not initialized` | KaibanJS `llmInstance` not bootstrapped | No longer occurs — `Team` initialises the LLM automatically from the `env` map |
 | `Queue name cannot contain :` | Colon in BullMQ queue name | Fixed — all internal queues use dashes |
 | `Agent failed: Max retries exceeded` | LLM API error | Check API key and model name |
 | `Task incomplete: max iterations` | Small model can't produce structured output | Fixed — `forceFinalAnswer: true` on editor; increase `maxIterations` |

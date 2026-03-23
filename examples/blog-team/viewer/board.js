@@ -14,6 +14,7 @@ const state = {
   agents: [],
   tasks: [],
   workflowStatus: 'INITIAL',
+  metadata: null,
 };
 
 // ── Log ──────────────────────────────────────────────────────────────────
@@ -34,6 +35,20 @@ function addLog(type, msg, highlight = false) {
   ].join('');
   box.insertBefore(entry, box.firstChild);
   if (box.children.length > 200) box.removeChild(box.lastChild);
+}
+
+// ── Result parser ────────────────────────────────────────────────────────
+
+/** Extract display text from a task result — handles KaibanHandlerResult JSON */
+function parseTaskResult(raw) {
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && typeof obj.answer === 'string') {
+      return obj.answer.trim() || null;
+    }
+  } catch {}
+  return raw;
 }
 
 // ── Render helpers ───────────────────────────────────────────────────────
@@ -71,7 +86,7 @@ function makeTaskCard(task) {
     : '';
 
   const resultClass = isBlocked ? ' blocked' : isAwaiting ? ' awaiting' : '';
-  const resultText  = task.result ? String(task.result) : null;
+  const resultText  = parseTaskResult(task.result);
   const resultHtml  = resultText
     ? `<div class="task-result${resultClass}">${resultText.slice(0, 500)}${resultText.length > 500 ? '…' : ''}</div>`
     : '';
@@ -153,11 +168,29 @@ function renderBanners() {
   }
 }
 
+function renderEconomics() {
+  const meta = state.metadata;
+  if (!meta) return;
+  if (meta.totalTokens !== undefined) {
+    document.getElementById('meta-tokens').textContent = Number(meta.totalTokens).toLocaleString();
+  }
+  if (meta.estimatedCost !== undefined) {
+    document.getElementById('meta-cost').textContent = `$${Number(meta.estimatedCost).toFixed(4)}`;
+  }
+  if (meta.startTime) {
+    document.getElementById('meta-start').textContent = new Date(meta.startTime).toLocaleTimeString();
+  }
+  if (meta.endTime) {
+    document.getElementById('meta-end').textContent = new Date(meta.endTime).toLocaleTimeString();
+  }
+}
+
 function render() {
   renderAgents();
   renderTasks();
   renderWorkflow();
   renderBanners();
+  renderEconomics();
 }
 
 // ── State merge ──────────────────────────────────────────────────────────
@@ -181,6 +214,10 @@ function applyDelta(delta) {
       map.set(task.taskId, { ...map.get(task.taskId), ...task });
     }
     state.tasks = Array.from(map.values());
+  }
+
+  if (delta.metadata) {
+    state.metadata = { ...(state.metadata || {}), ...delta.metadata };
   }
 
   if (delta.inputs?.topic) {
@@ -210,7 +247,7 @@ function logDelta(delta) {
   if (Array.isArray(delta.tasks)) {
     for (const t of delta.tasks) {
       const icon    = TASK_ICONS[t.status] || '📋';
-      const preview = t.result ? ` — ${String(t.result).slice(0, 80)}` : '';
+      const preview = parseTaskResult(t.result) ? ` — ${parseTaskResult(t.result).slice(0, 80)}` : '';
       const hi      = t.status === 'DONE' || t.status === 'BLOCKED' || t.status === 'AWAITING_VALIDATION';
       addLog('TASK', `${icon} ${(t.title || t.taskId).slice(0, 50)} → ${t.status}${preview}`, hi);
     }

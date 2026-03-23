@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Result, ok } from '../../domain/result';
 import { DomainError } from '../../domain/errors/DomainError';
 import type { IMessagingDriver } from '../messaging/interfaces';
@@ -120,7 +121,7 @@ export class A2AConnector {
     const validated = this.validateCreateParams(params);
     if ('error' in validated) return validated;
 
-    const taskId = `task-${Date.now()}`;
+    const taskId = randomUUID();
     const { agentId } = validated;
 
     if (this.driver) {

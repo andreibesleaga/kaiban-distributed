@@ -1,4 +1,9 @@
-import type { MessagePayload } from '../../infrastructure/messaging/interfaces';
+/** Minimal payload shape needed for firewall evaluation — no infrastructure import needed. */
+export interface EvaluationPayload {
+  taskId: string;
+  agentId: string;
+  data: Record<string, unknown>;
+}
 
 export interface FirewallVerdict {
   allowed: boolean;
@@ -6,5 +11,5 @@ export interface FirewallVerdict {
 }
 
 export interface ISemanticFirewall {
-  evaluate(payload: MessagePayload): Promise<FirewallVerdict>;
+  evaluate(payload: EvaluationPayload): Promise<FirewallVerdict>;
 }

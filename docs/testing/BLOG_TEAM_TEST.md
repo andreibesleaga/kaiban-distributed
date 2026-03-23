@@ -401,46 +401,7 @@ blogTeam.start({ topic: 'AI agents in 2025' });
 
 This runs a **local** KaibanJS team. For connecting it to the distributed workers:
 
-### 7c. Bridge kaiban-board to distributed backend
-
-```typescript
-// In a Node.js bridge script (examples/blog-team/kaiban-board-bridge.ts):
-import { Agent, Task } from 'kaibanjs';
-import { BullMQDriver } from '../../src/infrastructure/messaging/bullmq-driver';
-import { KaibanTeamBridge } from '../../src/infrastructure/kaibanjs/kaiban-team-bridge';
-
-const REDIS_URL = 'redis://localhost:6379';
-const redisUrl = new URL(REDIS_URL);
-
-const ava = new Agent({ name: 'Ava', role: 'News Researcher', goal: '...', background: '...' });
-const kai = new Agent({ name: 'Kai', role: 'Content Creator', goal: '...', background: '...' });
-const morgan = new Agent({ name: 'Morgan', role: 'Editorial Fact-Checker', goal: '...', background: '...' });
-
-const driver = new BullMQDriver({
-  connection: { host: redisUrl.hostname, port: 6379 },
-});
-
-// KaibanTeamBridge attaches DistributedStateMiddleware to the Team's Zustand store.
-// Every state change from distributed workers propagates via Redis Pub/Sub
-// → SocketGateway → socket.io → Live Board.
-const bridge = new KaibanTeamBridge({
-  name: 'Distributed Blog Team',
-  agents: [ava, kai, morgan],
-  tasks: [],  // tasks are dispatched via A2A, not local execution
-}, driver, 'kaiban-state-events');
-
-const team = bridge.getTeam();
-
-// Subscribe to state changes for logging
-bridge.subscribeToChanges((changes) => {
-  console.log('[Bridge] State update:', JSON.stringify(changes).slice(0, 200));
-}, ['teamWorkflowStatus', 'workflowResult']);
-
-// Pass `team` to kaiban-board:
-// <KaibanBoard teams={[{ title: 'Blog Team', code: teamDefinitionCode }]} />
-```
-
-### 7d. Live board captures all state
+### 7c. Live board captures all state
 
 Once the bridge is running:
 1. The Live Board (`board.html`) shows real-time Kanban updates via Socket.io

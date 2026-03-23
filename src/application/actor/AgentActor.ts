@@ -3,6 +3,7 @@ import {
   IMessagingDriver,
   MessagePayload,
 } from "../../infrastructure/messaging/interfaces";
+import { COMPLETED_CHANNEL, DLQ_CHANNEL } from '../../infrastructure/messaging/channels';
 import type { ISemanticFirewall } from '../../domain/security/semantic-firewall';
 import type { ICircuitBreaker } from '../../domain/security/circuit-breaker';
 
@@ -10,8 +11,6 @@ export type TaskHandler = (payload: MessagePayload) => Promise<unknown>;
 
 const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 100;
-const DLQ_CHANNEL = 'kaiban-events-failed';
-const COMPLETED_CHANNEL = 'kaiban-events-completed';
 const MAX_PUBLISH_DATA_LEN = 65_536; // 64 KB — cap outbound message data
 
 function sanitizeId(id: string): string {

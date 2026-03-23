@@ -165,7 +165,7 @@ localhost:3000  ──►  gateway   (HTTP + Socket.io)
 | `OPENAI_BASE_URL` | — | Optional, for OpenRouter / local LLMs |
 | `LLM_MODEL` | `gpt-4o-mini` | Any model supported by your provider |
 | `MESSAGING_DRIVER` | `bullmq` | `bullmq` or `kafka` |
-| `KAFKA_BROKERS` | `kafka:29092` | Kafka only |
+| `KAFKA_BROKERS` | `localhost:9092` (host) / `kafka:29092` (Docker Compose) | Kafka only |
 | `KAFKA_CLIENT_ID` | per-service name | Kafka only |
 | `KAFKA_GROUP_ID` | `kaiban-group` | Kafka only |
 | `SEMANTIC_FIREWALL_ENABLED` | `false` | BullMQ stack only |

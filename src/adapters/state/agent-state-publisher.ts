@@ -9,6 +9,7 @@
  */
 import { Redis } from 'ioredis';
 import type { MessagePayload } from '../../infrastructure/messaging/interfaces';
+import { STATE_CHANNEL } from '../../infrastructure/messaging/channels';
 
 export interface AgentInfo {
   agentId: string;
@@ -29,7 +30,7 @@ interface TaskState {
   result?: string;
 }
 
-const STATE_CHANNEL = 'kaiban-state-events';
+
 const MAX_RESULT_LEN = 800;
 
 export class AgentStatePublisher {
@@ -112,7 +113,7 @@ export class AgentStatePublisher {
             title,
             status: 'DONE',
             assignedToAgentId: agentId,
-            result: String(result ?? '').slice(0, MAX_RESULT_LEN),
+            result: (result == null ? '' : typeof result === 'string' ? result : JSON.stringify(result)).slice(0, MAX_RESULT_LEN),
           }],
         });
 

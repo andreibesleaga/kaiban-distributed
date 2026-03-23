@@ -204,22 +204,36 @@ export function createKaibanTaskHandler(
   _driver: IMessagingDriver,
   tokenProvider?: ITokenProvider,
 ): (payload: MessagePayload) => Promise<unknown> {
-  const agent = new Agent(agentConfig);       // KaibanJS Agent
-
   return async (payload: MessagePayload) => {
-    await initializeAgentLLM(agent, tokenProvider, payload.taskId); // bootstrap LLM
+    const env = await buildEnv(tokenProvider, payload.taskId); // JIT token resolution
+
+    const agent = new Agent(agentConfig);   // fresh Agent per task
+    const instruction = String(payload.data['instruction'] ?? 'Execute task');
+    const context     = String(payload.data['context'] ?? '');
+    const description = context ? `${instruction}\n\nContext:\n${context}` : instruction;
 
     const task = new Task({
-      description: String(payload.data['instruction']),
-      expectedOutput: String(payload.data['expectedOutput']),
+      description,
+      expectedOutput: String(payload.data['expectedOutput'] ?? 'Task result'),
       agent,
     });
 
+    const team = new Team({ name: `task-${payload.taskId}`, agents: [agent], tasks: [task], env });
     const inputs = (payload.data['inputs'] as Record<string, unknown>) ?? {};
-    const context = String(payload.data['context'] ?? '');
+    const result = await team.start(inputs);
 
-    const loopResult = await agent.workOnTask(task, inputs, context);
-    return extractFinalAnswer(loopResult);    // throws on error → triggers retry
+    if (result.status === 'ERRORED') {
+      throw new Error(`KaibanJS workflow error: ${String(result.result ?? 'unknown')}`);
+    }
+
+    const inputTokens  = result.stats?.llmUsageStats.inputTokens  ?? 0;
+    const outputTokens = result.stats?.llmUsageStats.outputTokens ?? 0;
+    return {
+      answer:        String(result.result ?? ''),
+      inputTokens,
+      outputTokens,
+      estimatedCost: estimateCost(agentConfig.llmConfig?.model ?? 'default', inputTokens, outputTokens),
+    } satisfies KaibanHandlerResult;
   };
 }
 ```
@@ -1609,7 +1623,7 @@ const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 100;
 
 // On failure: 100ms → 200ms → 300ms → DLQ
-// Each retry re-calls createKaibanTaskHandler → KaibanJS agent.workOnTask()
+// Each retry re-calls the handler → KaibanJS Team.start() (fresh Team per task)
 // On success: publishes to kaiban-events-completed
 ```
 
@@ -1693,24 +1707,18 @@ const workflowAgent = new Agent({
   workflow: dataWorkflow,
 } as any);
 
-// ── Custom task handler (WorkflowDrivenAgent doesn't use createKaibanTaskHandler) ──
-async function workflowTaskHandler(payload: MessagePayload): Promise<unknown> {
-  const task = new Task({
-    description: String(payload.data['instruction']),
-    expectedOutput: String(payload.data['expectedOutput']),
-    agent: workflowAgent,
-  });
-
-  const inputs = (payload.data['inputs'] as Record<string, unknown>) ?? {};
-  const context = String(payload.data['context'] ?? '');
-
-  const result = await workflowAgent.workOnTask(task, inputs, context) as any;
-
-  if (result?.error) throw new Error(result.error);
-  if (result?.result?.finalAnswer) return result.result.finalAnswer;
-  if (typeof result?.result === 'string') return result.result;
-  return JSON.stringify(result?.result ?? result);
-}
+// ── Use createKaibanTaskHandler for standard Team-based execution ─────────────
+// Note: prefer createKaibanTaskHandler over direct workOnTask — Team.start() provides
+// real token counts and cost tracking via WorkflowResult.stats.llmUsageStats.
+const workflowTaskHandler = createKaibanTaskHandler(
+  {
+    name: 'DataProcessor',
+    role: 'Data processing specialist',
+    goal: 'Process and transform data',
+    background: 'Expert in data workflows',
+  },
+  driver,
+);
 
 // ── Start actor ───────────────────────────────────────────────────────────────
 const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
@@ -1808,21 +1816,14 @@ const researchAgent = new Agent({
   workflow: researchWorkflow,
 } as any);
 
-// Task handler
-async function researchTaskHandler(payload: MessagePayload): Promise<unknown> {
-  const task = new Task({
-    description: String(payload.data['instruction']),
-    expectedOutput: String(payload.data['expectedOutput']),
-    agent: researchAgent,
-  });
-  const inputs = (payload.data['inputs'] as Record<string, unknown>) ?? {};
-  const result = await researchAgent.workOnTask(task, inputs, '') as any;
-  if (result?.error) throw new Error(result.error);
-  return result?.result?.finalAnswer ?? JSON.stringify(result?.result ?? result);
-}
-
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const driver = new BullMQDriver({ connection: { host: 'localhost', port: parseInt(new URL(REDIS_URL).port || '6379', 10) } });
+
+// Use createKaibanTaskHandler — Team.start() provides token/cost tracking automatically
+const researchTaskHandler = createKaibanTaskHandler(
+  { name: 'ResearchAgent', role: 'AI Research Workflow', goal: 'Conduct research', background: 'Expert researcher' },
+  driver,
+);
 
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
   agentId: 'research-workflow', name: 'ResearchAgent', role: 'AI Research Workflow',
@@ -2672,7 +2673,7 @@ TLS_REJECT_UNAUTHORIZED=true   # set false for self-signed certs in staging
 
 ### "LLM instance is not initialized"
 
-`createKaibanTaskHandler` calls `initializeAgentLLM()` internally. This error means no API key was found.
+This error no longer occurs with the Team-based bridge — `Team` initialises the LLM automatically from the `env` map passed to `team.start()`. If you see it in custom handlers that call `agent.workOnTask()` directly, ensure an API key is set in the environment.
 
 ```bash
 # Check env vars are set

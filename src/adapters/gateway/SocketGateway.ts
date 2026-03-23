@@ -2,9 +2,9 @@ import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import type Redis from 'ioredis';
+import { STATE_CHANNEL, STATE_EVENT_UPDATE } from '../../infrastructure/messaging/channels';
 
-const STATE_CHANNEL = 'kaiban-state-events';
-const STATE_EVENT = 'state:update';
+const STATE_EVENT = STATE_EVENT_UPDATE;
 
 export class SocketGateway {
   private io: SocketIOServer | null = null;

@@ -1,5 +1,6 @@
 import { Redis } from 'ioredis';
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
+import { STATE_CHANNEL } from '../../infrastructure/messaging/channels';
 
 const PII_DENYLIST: ReadonlySet<string> = new Set([
   'email', 'name', 'phone', 'ip', 'password', 'token', 'secret', 'ssn', 'dob',
@@ -24,7 +25,7 @@ export class DistributedStateMiddleware {
   private redis: Redis;
   private channelName: string;
 
-  constructor(redisUrl: string, channelName = 'kaiban-state-events') {
+  constructor(redisUrl: string, channelName = STATE_CHANNEL) {
     this.redis = new Redis(redisUrl, { lazyConnect: false });
     this.channelName = channelName;
   }

@@ -1,6 +1,11 @@
 import { execSync, spawnSync } from 'child_process';
 
 const COMPOSE_FILE = 'docker-compose.yml';
+
+function assertDockerAvailable(): void {
+  try { execSync('docker --version', { stdio: 'pipe' }); }
+  catch { throw new Error('[E2E Setup] Docker not found — install Docker Desktop and try again'); }
+}
 const POLL_INTERVAL_MS = 1000;
 const MAX_WAIT_MS = 60000;
 
@@ -23,6 +28,7 @@ async function waitForRedis(): Promise<void> {
 }
 
 export async function setup(): Promise<void> {
+  assertDockerAvailable();
   console.log('[E2E] Starting Redis...');
   try {
     execSync(`docker compose -f ${COMPOSE_FILE} up -d redis`, {

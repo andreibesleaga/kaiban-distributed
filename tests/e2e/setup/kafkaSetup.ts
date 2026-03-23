@@ -1,6 +1,11 @@
 import { execSync, spawnSync } from 'child_process';
 
 const COMPOSE_FILE = 'docker-compose.yml';
+
+function assertDockerAvailable(): void {
+  try { execSync('docker --version', { stdio: 'pipe' }); }
+  catch { throw new Error('[E2E Setup] Docker not found — install Docker Desktop and try again'); }
+}
 const POLL_INTERVAL_MS = 3000;
 const MAX_WAIT_MS = 120000;
 
@@ -28,6 +33,7 @@ async function waitForKafka(): Promise<void> {
 }
 
 export async function setup(): Promise<void> {
+  assertDockerAvailable();
   console.log('[Kafka E2E] Starting stack (Redis + Zookeeper + Kafka)...');
   execSync(`docker compose -f ${COMPOSE_FILE} up -d redis zookeeper kafka`, {
     stdio: 'inherit',

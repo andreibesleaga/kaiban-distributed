@@ -59,7 +59,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/).
 - `Result<T,E>` type with `ok()`, `err()`, `isOk()`, `isErr()` helpers
 
 #### KaibanJS Integration
-- `createKaibanTaskHandler` — maps `MessagePayload` to real `agent.workOnTask()`, returns LLM `finalAnswer`
+- `createKaibanTaskHandler` — maps `MessagePayload` to a per-task `Team.start()`, returns `KaibanHandlerResult { answer, inputTokens, outputTokens, estimatedCost }`
 - `KaibanTeamBridge` — wraps KaibanJS `Team` with `DistributedStateMiddleware` for distributed state sync
 - `KafkaDriver` and `BullMQDriver` now inject W3C trace context on publish and extract on subscribe
 

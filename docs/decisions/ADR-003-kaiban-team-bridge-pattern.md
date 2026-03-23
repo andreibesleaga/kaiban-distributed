@@ -21,7 +21,7 @@ createKaibanTaskHandler(agentConfig: KaibanAgentConfig, driver: IMessagingDriver
   → (payload: MessagePayload) => Promise<unknown>
 ```
 
-Maps a `MessagePayload` to a KaibanJS `Task`, calls `agent.workOnTask(task, inputs, context)`, and returns the LLM `finalAnswer`. This result is included in the BullMQ completion event so downstream agents (e.g., the editor) receive real LLM output.
+Maps a `MessagePayload` to a KaibanJS `Team` (one Team per task), calls `team.start(inputs)`, and returns a structured `KaibanHandlerResult` with `{ answer, inputTokens, outputTokens, estimatedCost }`. Token counts and cost come directly from `WorkflowResult.stats` — no extraction hacks needed.
 
 ### KaibanTeamBridge (`src/infrastructure/kaibanjs/kaiban-team-bridge.ts`)
 
@@ -39,5 +39,5 @@ Wraps a KaibanJS `Team` and attaches `DistributedStateMiddleware` to `team.getSt
 
 - `AgentActor` is completely decoupled from KaibanJS — can run any `TaskHandler`
 - `createKaibanTaskHandler` returns `Promise<unknown>` (not `void`) to carry LLM results through completion events
-- The `extractFinalAnswer()` helper handles four KaibanJS `AgentLoopResult` variants
+- `WorkflowResult.stats.llmUsageStats` provides real token counts; cost is estimated via a built-in `MODEL_PRICING` table (covers OpenAI, Anthropic, OpenRouter models)
 - kaiban-board receives real distributed state via the bridge's `DistributedStateMiddleware` attachment

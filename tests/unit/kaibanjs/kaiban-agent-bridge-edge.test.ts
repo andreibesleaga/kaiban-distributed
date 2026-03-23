@@ -1,41 +1,39 @@
 /**
- * kaiban-agent-bridge — edge cases and uncovered branch coverage.
+ * kaiban-agent-bridge — edge cases.
  *
  * Covers:
- *   - `!internal` early-return branch (line 56): agent without agentInstance
- *   - JIT token provider: re-initialises on every call even if llmInstance is set
- *   - JIT token provider: fetches each supported API key name
- *   - JIT token provider: handles missing tokens gracefully (not added to env)
- *   - extractFinalAnswer: all result shape variants
+ *   - Context merging into Task description
  *   - Task defaults (missing instruction, expectedOutput, inputs, context)
- *   - Thrown errors from workOnTask propagate through handler
+ *   - JIT token provider: fetches all API key names per-task
+ *   - JIT token provider: passes taskId to getToken
+ *   - JIT token provider: includes returned token in Team env
  *   - Multiple env API keys included when set
+ *   - Empty env when no keys in process.env
+ *   - Non-string instruction coercion
+ *   - STOPPED status treated as success (not an error)
+ *   - result null → answer is empty string
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createKaibanTaskHandler } from '../../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import type { IMessagingDriver, MessagePayload } from '../../../src/infrastructure/messaging/interfaces';
 import type { ITokenProvider } from '../../../src/domain/security/token-provider';
-import { Agent } from 'kaibanjs';
 
-const mockWorkOnTask = vi.fn();
-const mockInitialize = vi.fn();
+const mockTeamStart = vi.fn();
 
 vi.mock('kaibanjs', () => ({
-  Agent: vi.fn().mockImplementation(function () {
-    return {
-      workOnTask: mockWorkOnTask,
-      agentInstance: { initialize: mockInitialize, llmInstance: undefined },
-    };
+  Agent: vi.fn().mockImplementation(function () { return {}; }),
+  Task:  vi.fn().mockImplementation(function (params: Record<string, unknown>) { return { ...params }; }),
+  Team:  vi.fn().mockImplementation(function (params: Record<string, unknown>) {
+    return { start: mockTeamStart, ...params };
   }),
-  Task: vi.fn().mockImplementation(function (params: Record<string, unknown>) { return { ...params }; }),
 }));
 
 function makeDriver(): IMessagingDriver {
   return {
-    publish: vi.fn().mockResolvedValue(undefined),
-    subscribe: vi.fn().mockResolvedValue(undefined),
+    publish:     vi.fn().mockResolvedValue(undefined),
+    subscribe:   vi.fn().mockResolvedValue(undefined),
     unsubscribe: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn().mockResolvedValue(undefined),
+    disconnect:  vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -43,352 +41,170 @@ const basePayload: MessagePayload = {
   taskId: 'task-001', agentId: 'researcher', timestamp: Date.now(), data: {},
 };
 
-describe('kaiban-agent-bridge — !internal early-return branch (line 56)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Agent with NO agentInstance property
-    vi.mocked(Agent).mockImplementation(function () {
-      return { workOnTask: mockWorkOnTask }; // agentInstance is undefined
-    });
-  });
+function makeSuccess(result = 'done') {
+  return {
+    status: 'FINISHED',
+    result,
+    stats: {
+      llmUsageStats: { inputTokens: 10, outputTokens: 5, callsCount: 1 },
+      costDetails: { costInputTokens: 0, costOutputTokens: 0, totalCost: 0.001 },
+    },
+  };
+}
 
-  it('does not crash when agentInstance is missing on factory creation', () => {
-    expect(() =>
-      createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver()),
-    ).not.toThrow();
-  });
+const API_KEYS = ['OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'MISTRAL_API_KEY', 'GROQ_API_KEY'];
 
-  it('does not call initialize() when agentInstance is missing', async () => {
-    // Allow void initializeAgentLLM to settle
-    createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    await new Promise<void>((r) => setTimeout(r, 10));
-    expect(mockInitialize).not.toHaveBeenCalled();
-  });
+describe('kaiban-agent-bridge — Task construction from MessagePayload', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockTeamStart.mockResolvedValue(makeSuccess()); });
 
-  it('handler still calls workOnTask even when agentInstance is missing', async () => {
-    mockWorkOnTask.mockResolvedValue({ result: { finalAnswer: 'fallback result' } });
+  it('passes instruction as Task description', async () => {
+    const { Task } = await import('kaibanjs');
     const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const result = await h(basePayload);
-    expect(mockWorkOnTask).toHaveBeenCalledOnce();
-    expect(result).toBe('fallback result');
-  });
-});
-
-describe('kaiban-agent-bridge — JIT token provider', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(Agent).mockImplementation(function () {
-      return {
-        workOnTask: mockWorkOnTask,
-        agentInstance: { initialize: mockInitialize, llmInstance: 'already-set' },
-      };
-    });
-    mockWorkOnTask.mockResolvedValue({ result: { finalAnswer: 'ok' } });
+    await h({ ...basePayload, data: { instruction: 'Research quantum computing' } });
+    const taskArg = vi.mocked(Task).mock.calls[0]?.[0] as { description: string };
+    expect(taskArg.description).toBe('Research quantum computing');
   });
 
-  it('with tokenProvider, re-initialises even when llmInstance is already set', async () => {
-    const tokenProvider: ITokenProvider = {
-      getToken: vi.fn().mockResolvedValue(null),
-    };
-    const h = createKaibanTaskHandler(
-      { name: 'A', role: 'R', goal: 'G', background: 'B' },
-      makeDriver(),
-      tokenProvider,
-    );
-    await h(basePayload);
-    // initialize must be called at handler invocation time (not on factory creation)
-    expect(mockInitialize).toHaveBeenCalledOnce();
+  it('merges context into description when present', async () => {
+    const { Task } = await import('kaibanjs');
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await h({ ...basePayload, data: { instruction: 'Edit', context: 'DRAFT: hello' } });
+    const taskArg = vi.mocked(Task).mock.calls[0]?.[0] as { description: string };
+    expect(taskArg.description).toBe('Edit\n\nContext:\nDRAFT: hello');
   });
 
-  it('without tokenProvider, does NOT re-initialise when llmInstance is already set', async () => {
-    // llmInstance is 'already-set' from mock above, no tokenProvider
+  it('description is just instruction when context is empty', async () => {
+    const { Task } = await import('kaibanjs');
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await h({ ...basePayload, data: { instruction: 'Do something', context: '' } });
+    const taskArg = vi.mocked(Task).mock.calls[0]?.[0] as { description: string };
+    expect(taskArg.description).toBe('Do something');
+  });
+
+  it('passes expectedOutput to Task', async () => {
+    const { Task } = await import('kaibanjs');
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await h({ ...basePayload, data: { expectedOutput: 'A detailed report' } });
+    const taskArg = vi.mocked(Task).mock.calls[0]?.[0] as { expectedOutput: string };
+    expect(taskArg.expectedOutput).toBe('A detailed report');
+  });
+
+  it('defaults description to "Execute task" when instruction absent', async () => {
+    const { Task } = await import('kaibanjs');
     const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
     await h(basePayload);
-    // Only the initial sync call (which skips because llmInstance is set) — 0 calls total
-    expect(mockInitialize).not.toHaveBeenCalled();
+    const taskArg = vi.mocked(Task).mock.calls[0]?.[0] as { description: string };
+    expect(taskArg.description).toBe('Execute task');
   });
 
-  it('fetches all supported API key names via tokenProvider.getToken', async () => {
-    const getToken = vi.fn().mockResolvedValue(null);
-    const tokenProvider: ITokenProvider = { getToken };
-    const h = createKaibanTaskHandler(
-      { name: 'A', role: 'R', goal: 'G', background: 'B' },
-      makeDriver(),
-      tokenProvider,
-    );
-    await h({ ...basePayload, taskId: 'task-jit' });
-    const calledKeys = getToken.mock.calls.map((c) => c[0] as string);
-    expect(calledKeys).toContain('OPENAI_API_KEY');
-    expect(calledKeys).toContain('OPENROUTER_API_KEY');
-    expect(calledKeys).toContain('ANTHROPIC_API_KEY');
-    expect(calledKeys).toContain('GOOGLE_API_KEY');
-    expect(calledKeys).toContain('MISTRAL_API_KEY');
-    expect(calledKeys).toContain('GROQ_API_KEY');
-  });
-
-  it('passes taskId to tokenProvider.getToken for each key', async () => {
-    const getToken = vi.fn().mockResolvedValue(null);
-    const h = createKaibanTaskHandler(
-      { name: 'A', role: 'R', goal: 'G', background: 'B' },
-      makeDriver(),
-      { getToken },
-    );
-    await h({ ...basePayload, taskId: 'specific-task' });
-    for (const call of getToken.mock.calls) {
-      expect(call[1]).toBe('specific-task');
-    }
-  });
-
-  it('includes token in env when tokenProvider returns a value', async () => {
-    const getToken = vi.fn().mockImplementation(async (key: string) => {
-      if (key === 'OPENROUTER_API_KEY') return 'sk-jit-token';
-      return null;
-    });
-    const h = createKaibanTaskHandler(
-      { name: 'A', role: 'R', goal: 'G', background: 'B' },
-      makeDriver(),
-      { getToken },
-    );
+  it('defaults expectedOutput to "Task result" when absent', async () => {
+    const { Task } = await import('kaibanjs');
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
     await h(basePayload);
-    const envArg = mockInitialize.mock.calls[0][1] as Record<string, string>;
-    expect(envArg['OPENROUTER_API_KEY']).toBe('sk-jit-token');
-    expect(envArg['OPENAI_API_KEY']).toBeUndefined();
+    const taskArg = vi.mocked(Task).mock.calls[0]?.[0] as { expectedOutput: string };
+    expect(taskArg.expectedOutput).toBe('Task result');
   });
 
-  it('calls handler multiple times: re-initialises on each call (fresh JIT tokens)', async () => {
-    let callCount = 0;
-    const getToken = vi.fn().mockImplementation(async () => {
-      callCount++;
-      return callCount <= 6 ? 'token-call-1' : 'token-call-2';
-    });
-    const h = createKaibanTaskHandler(
-      { name: 'A', role: 'R', goal: 'G', background: 'B' },
-      makeDriver(),
-      { getToken },
-    );
-    await h({ ...basePayload, taskId: 'task-1' });
-    await h({ ...basePayload, taskId: 'task-2' });
-    // initialize() called once per handler invocation
-    expect(mockInitialize).toHaveBeenCalledTimes(2);
+  it('passes empty inputs object to team.start() when absent', async () => {
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await h(basePayload);
+    expect(mockTeamStart).toHaveBeenCalledWith({});
+  });
+
+  it('coerces non-string instruction with String()', async () => {
+    const { Task } = await import('kaibanjs');
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await h({ ...basePayload, data: { instruction: 42 } });
+    const taskArg = vi.mocked(Task).mock.calls[0]?.[0] as { description: string };
+    expect(taskArg.description).toBe('42');
+  });
+
+  it('answer is empty string when result is null', async () => {
+    mockTeamStart.mockResolvedValue({ status: 'FINISHED', result: null, stats: null });
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    const r = await h(basePayload) as { answer: string };
+    expect(r.answer).toBe('');
+  });
+
+  it('STOPPED status is treated as success (not thrown)', async () => {
+    mockTeamStart.mockResolvedValue({ status: 'STOPPED', result: 'partial', stats: null });
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await expect(h(basePayload)).resolves.toBeDefined();
   });
 });
 
 describe('kaiban-agent-bridge — env API keys without tokenProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(Agent).mockImplementation(function () {
-      return {
-        workOnTask: mockWorkOnTask,
-        agentInstance: { initialize: mockInitialize, llmInstance: undefined },
-      };
-    });
-    // Clean env before each test
-    const keysToDelete = [
-      'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY',
-      'GOOGLE_API_KEY', 'MISTRAL_API_KEY', 'GROQ_API_KEY',
-    ];
-    for (const k of keysToDelete) delete process.env[k];
+    mockTeamStart.mockResolvedValue(makeSuccess());
+    for (const k of API_KEYS) delete process.env[k];
   });
+  afterEach(() => { for (const k of API_KEYS) delete process.env[k]; });
 
-  afterEach(() => {
-    const keysToDelete = [
-      'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY',
-      'GOOGLE_API_KEY', 'MISTRAL_API_KEY', 'GROQ_API_KEY',
-    ];
-    for (const k of keysToDelete) delete process.env[k];
-  });
-
-  it('includes multiple API keys from env when all are set', () => {
+  it('includes multiple API keys from env when set', async () => {
+    const { Team } = await import('kaibanjs');
     process.env['OPENAI_API_KEY'] = 'sk-openai';
     process.env['OPENROUTER_API_KEY'] = 'sk-or';
     process.env['ANTHROPIC_API_KEY'] = 'sk-ant';
-    createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const env = mockInitialize.mock.calls[0][1] as Record<string, string>;
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await h(basePayload);
+    const env = (vi.mocked(Team).mock.calls[0]?.[0] as { env: Record<string, string> }).env;
     expect(env['OPENAI_API_KEY']).toBe('sk-openai');
     expect(env['OPENROUTER_API_KEY']).toBe('sk-or');
     expect(env['ANTHROPIC_API_KEY']).toBe('sk-ant');
   });
 
-  it('env is empty object when no API keys are in process.env', () => {
-    createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const env = mockInitialize.mock.calls[0][1] as Record<string, string>;
+  it('env is empty object when no API keys are in process.env', async () => {
+    const { Team } = await import('kaibanjs');
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+    await h(basePayload);
+    const env = (vi.mocked(Team).mock.calls[0]?.[0] as { env: Record<string, string> }).env;
     expect(Object.keys(env).length).toBe(0);
   });
 });
 
-describe('kaiban-agent-bridge — task construction from MessagePayload', () => {
+describe('kaiban-agent-bridge — JIT token provider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(Agent).mockImplementation(function () {
-      return {
-        workOnTask: mockWorkOnTask,
-        agentInstance: { initialize: mockInitialize, llmInstance: undefined },
-      };
-    });
-    mockWorkOnTask.mockResolvedValue({ result: { finalAnswer: 'done' } });
+    mockTeamStart.mockResolvedValue(makeSuccess());
+    for (const k of API_KEYS) delete process.env[k];
+  });
+  afterEach(() => { for (const k of API_KEYS) delete process.env[k]; });
+
+  it('fetches all supported API key names via tokenProvider.getToken', async () => {
+    const getToken = vi.fn().mockResolvedValue(null);
+    const tokenProvider: ITokenProvider = { getToken };
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver(), tokenProvider);
+    await h({ ...basePayload, taskId: 'task-jit' });
+    const calledKeys = getToken.mock.calls.map((c) => c[0] as string);
+    for (const key of API_KEYS) expect(calledKeys).toContain(key);
   });
 
-  it('passes instruction from data to Task description', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const p: MessagePayload = {
-      ...basePayload,
-      data: { instruction: 'Research quantum computing', expectedOutput: 'Report' },
-    };
-    await h(p);
-    const [taskArg] = mockWorkOnTask.mock.calls[0] as [Record<string, unknown>];
-    expect(taskArg['description']).toBe('Research quantum computing');
+  it('passes taskId to tokenProvider.getToken for each key', async () => {
+    const getToken = vi.fn().mockResolvedValue(null);
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver(), { getToken });
+    await h({ ...basePayload, taskId: 'specific-task' });
+    for (const call of getToken.mock.calls) expect(call[1]).toBe('specific-task');
   });
 
-  it('passes expectedOutput to Task expectedOutput', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const p: MessagePayload = {
-      ...basePayload,
-      data: { instruction: 'Task', expectedOutput: 'A detailed report with citations' },
-    };
-    await h(p);
-    const [taskArg] = mockWorkOnTask.mock.calls[0] as [Record<string, unknown>];
-    expect(taskArg['expectedOutput']).toBe('A detailed report with citations');
-  });
-
-  it('passes inputs object from data to workOnTask', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const p: MessagePayload = {
-      ...basePayload,
-      data: {
-        instruction: 'Write about {topic}',
-        inputs: { topic: 'AI agents', year: 2025 },
-      },
-    };
-    await h(p);
-    const [, inputsArg] = mockWorkOnTask.mock.calls[0] as [unknown, Record<string, unknown>];
-    expect(inputsArg).toEqual({ topic: 'AI agents', year: 2025 });
-  });
-
-  it('passes context string from data to workOnTask', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const p: MessagePayload = {
-      ...basePayload,
-      data: { instruction: 'Edit', context: 'PREVIOUS DRAFT: The quick brown fox...' },
-    };
-    await h(p);
-    const [, , ctxArg] = mockWorkOnTask.mock.calls[0] as [unknown, unknown, string];
-    expect(ctxArg).toBe('PREVIOUS DRAFT: The quick brown fox...');
-  });
-
-  it('defaults description to "Execute task" when instruction is absent', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
+  it('includes token in Team env when tokenProvider returns a value', async () => {
+    const { Team } = await import('kaibanjs');
+    const getToken = vi.fn().mockImplementation(async (key: string) =>
+      key === 'OPENROUTER_API_KEY' ? 'sk-jit-token' : null,
+    );
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver(), { getToken });
     await h(basePayload);
-    const [taskArg] = mockWorkOnTask.mock.calls[0] as [Record<string, unknown>];
-    expect(taskArg['description']).toBe('Execute task');
+    const env = (vi.mocked(Team).mock.calls[0]?.[0] as { env: Record<string, string> }).env;
+    expect(env['OPENROUTER_API_KEY']).toBe('sk-jit-token');
+    expect(env['OPENAI_API_KEY']).toBeUndefined();
   });
 
-  it('defaults expectedOutput to "Task result" when absent', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    await h(basePayload);
-    const [taskArg] = mockWorkOnTask.mock.calls[0] as [Record<string, unknown>];
-    expect(taskArg['expectedOutput']).toBe('Task result');
-  });
-
-  it('defaults context to empty string when absent', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    await h(basePayload);
-    const [, , ctxArg] = mockWorkOnTask.mock.calls[0] as [unknown, unknown, string];
-    expect(ctxArg).toBe('');
-  });
-
-  it('defaults inputs to empty object when absent', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    await h(basePayload);
-    const [, inputsArg] = mockWorkOnTask.mock.calls[0] as [unknown, Record<string, unknown>];
-    expect(inputsArg).toEqual({});
-  });
-
-  it('non-string instruction is coerced with String()', async () => {
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const p: MessagePayload = { ...basePayload, data: { instruction: 42 } };
-    await h(p);
-    const [taskArg] = mockWorkOnTask.mock.calls[0] as [Record<string, unknown>];
-    expect(taskArg['description']).toBe('42');
-  });
-});
-
-describe('kaiban-agent-bridge — extractFinalAnswer variants', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(Agent).mockImplementation(function () {
-      return {
-        workOnTask: mockWorkOnTask,
-        agentInstance: { initialize: mockInitialize, llmInstance: undefined },
-      };
-    });
-  });
-
-  it('extracts finalAnswer string from result.finalAnswer', async () => {
-    mockWorkOnTask.mockResolvedValue({ result: { finalAnswer: 'The answer is 42' } });
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    expect(await h(basePayload)).toBe('The answer is 42');
-  });
-
-  it('returns string result directly when result is a plain string', async () => {
-    mockWorkOnTask.mockResolvedValue({ result: 'plain string result' });
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    expect(await h(basePayload)).toBe('plain string result');
-  });
-
-  it('returns result object when result has no finalAnswer field', async () => {
-    const obj = { summary: 'data', count: 5 };
-    mockWorkOnTask.mockResolvedValue({ result: obj });
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    expect(await h(basePayload)).toBe(obj);
-  });
-
-  it('returns full loopResult when result is null', async () => {
-    const loop = { result: null, metadata: { extra: true } };
-    mockWorkOnTask.mockResolvedValue(loop);
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    expect(await h(basePayload)).toBe(loop);
-  });
-
-  it('returns full loopResult when result is undefined', async () => {
-    const loop = { result: undefined };
-    mockWorkOnTask.mockResolvedValue(loop);
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    const res = await h(basePayload);
-    // result is falsy, so extractFinalAnswer returns loopResult
-    expect(res).toBe(loop);
-  });
-
-  it('throws with KaibanJS error message when error field is present', async () => {
-    mockWorkOnTask.mockResolvedValue({
-      error: 'LLM API Error during executeThinking',
-      metadata: { iterations: 3, maxAgentIterations: 10 },
-    });
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    await expect(h(basePayload)).rejects.toThrow('KaibanJS execution error: LLM API Error');
-  });
-
-  it('throws when error field is non-empty string', async () => {
-    mockWorkOnTask.mockResolvedValue({
-      error: 'Rate limit exceeded',
-      metadata: { iterations: 0, maxAgentIterations: 5 },
-    });
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    await expect(h(basePayload)).rejects.toThrow('KaibanJS execution error');
-  });
-
-  it('propagates rejection from workOnTask directly', async () => {
-    mockWorkOnTask.mockRejectedValue(new Error('network timeout'));
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    await expect(h(basePayload)).rejects.toThrow('network timeout');
-  });
-
-  it('finalAnswer undefined in result object falls through to returning result', async () => {
-    // result.finalAnswer exists but is explicitly undefined — typeof check in code
-    const obj = { finalAnswer: undefined };
-    mockWorkOnTask.mockResolvedValue({ result: obj });
-    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver());
-    // finalAnswer is undefined, so r = obj, 'finalAnswer' in r is true, return r.finalAnswer = undefined
-    const result = await h(basePayload);
-    expect(result).toBeUndefined();
+  it('fetches fresh tokens per task invocation', async () => {
+    const getToken = vi.fn().mockResolvedValue(null);
+    const h = createKaibanTaskHandler({ name: 'A', role: 'R', goal: 'G', background: 'B' }, makeDriver(), { getToken });
+    await h({ ...basePayload, taskId: 'task-1' });
+    await h({ ...basePayload, taskId: 'task-2' });
+    // getToken called once per key per invocation = 12 total (6 keys × 2 tasks)
+    expect(getToken.mock.calls.length).toBe(API_KEYS.length * 2);
   });
 });

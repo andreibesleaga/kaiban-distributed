@@ -55,7 +55,7 @@ describe('A2AConnector', () => {
       const r = result.value.result as { taskId: string; status: string; agentId: string };
       expect(r.status).toBe('QUEUED');
       expect(r.agentId).toBe('researcher');
-      expect(r.taskId).toMatch(/^task-\d+$/);
+      expect(r.taskId).toMatch(/^[0-9a-f-]{36}$/); // UUID v4
     }
   });
 
