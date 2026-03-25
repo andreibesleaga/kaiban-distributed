@@ -20,7 +20,7 @@
 - Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
 
-[![Tests](https://img.shields.io/badge/tests-300+%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
@@ -721,7 +721,7 @@ All features are **disabled by default**. Enable individually via environment va
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 300+ unit tests (no external deps)
+npm run test           # 349 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -735,9 +735,9 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 300+ tests, 37 files | None (all mocked) |
-| BullMQ E2E | `npm run test:e2e` | 22 tests | Docker Redis (auto-managed by globalSetup) |
-| Kafka E2E | `npm run test:e2e:kafka` | 2 tests | Docker Kafka + Zookeeper |
+| Unit | `npm test` | 349 tests, 37 files | None (all mocked) |
+| BullMQ E2E | `npm run test:e2e` | 15 tests, 4 files | Docker Redis (auto-managed by globalSetup) |
+| Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
 
 ### Coverage
 
@@ -774,6 +774,7 @@ kaiban-distributed/
 │   ├── infrastructure/
 │   │   ├── messaging/
 │   │   │   ├── interfaces.ts       # IMessagingDriver (publish, subscribe, unsubscribe, disconnect)
+│   │   │   ├── channels.ts         # Canonical channel names (STATE, COMPLETED, DLQ)
 │   │   │   ├── bullmq-driver.ts    # BullMQ Worker + Queue; optional TLS; no colons in queue names
 │   │   │   └── kafka-driver.ts     # KafkaJS producer + consumer; optional SSL/mTLS
 │   │   ├── federation/
@@ -793,11 +794,14 @@ kaiban-distributed/
 │       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 340+ unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 349 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
-│       ├── distributed-execution.test.ts  # BullMQ: execution, fault tolerance, state sync
-│       ├── a2a-protocol.test.ts           # HTTP gateway + A2A
-│       ├── kafka-driver.test.ts           # Kafka pub/sub round-trip
+│       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
+│       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
+│       ├── horizontal-scaling-bullmq.test.ts  # Competing consumers, exact-once delivery
+│       ├── horizontal-scaling-kafka.test.ts   # Kafka consumer groups scaling
+│       ├── a2a-protocol.test.ts               # HTTP gateway + A2A
+│       ├── kafka-driver.test.ts               # Kafka pub/sub round-trip
 │       └── setup/
 │           ├── globalSetup.ts             # Docker Redis auto-start; resilient to existing Redis
 │           └── kafkaSetup.ts              # Docker Kafka + Zookeeper + Redis auto-start
@@ -809,11 +813,15 @@ kaiban-distributed/
 │       ├── writer-node.ts                 # Kai worker entry point
 │       ├── editor-node.ts                 # Morgan worker entry point
 │       ├── orchestrator.ts                # Event-driven pipeline + HITL terminal
+│       ├── build-security-deps.ts         # Shared security setup (firewall, breaker, tokens)
 │       ├── docker-compose.yml             # BullMQ: redis + gateway + 3 workers
 │       ├── docker-compose.kafka.yml       # Kafka: zookeeper + kafka + redis + gateway + 3 workers
 │       └── viewer/
-│           └── board.html                 # Live Kanban board — open in browser, no build
+│           ├── board.html                 # Live Kanban board — open in browser, no build
+│           ├── board.js                   # Socket.io client + state rendering logic
+│           └── board.css                  # Board styling
 ├── scripts/
+│   ├── blog-team.sh                       # Start/stop orchestration wrapper (all modes)
 │   ├── monitor.sh                         # Real-time terminal dashboard (all streams)
 │   └── generate-dev-certs.sh              # Self-signed CA + server/client certs for mTLS
 ├── agents/                                # GABBE kit: guides, skills, memory, CONSTITUTION.md

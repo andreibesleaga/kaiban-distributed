@@ -76,12 +76,21 @@ describe('AgentStatePublisher', () => {
     expect(calls.find(c => c.tasks?.[0]?.status === 'DONE')?.tasks[0].result).toBe('result text');
   });
 
-  it('wrapHandler() handles null result (covers result ?? branch)', async () => {
+  it('wrapHandler() handles null result (covers result == null branch)', async () => {
     publisher.publishIdle();
     const wrapped = publisher.wrapHandler(vi.fn().mockResolvedValue(null));
     await wrapped({ taskId: 't3', agentId: 'researcher', timestamp: 0, data: {} });
     const calls = mockPublish.mock.calls.map((c) => JSON.parse(c[1] as string));
     expect(calls.find(c => c.tasks?.[0]?.status === 'DONE')?.tasks[0].result).toBe('');
+  });
+
+  it('wrapHandler() JSON-stringifies object results (covers typeof !== string branch)', async () => {
+    publisher.publishIdle();
+    const wrapped = publisher.wrapHandler(vi.fn().mockResolvedValue({ answer: 'hello', score: 9 }));
+    await wrapped({ taskId: 't4', agentId: 'researcher', timestamp: 0, data: {} });
+    const calls = mockPublish.mock.calls.map((c) => JSON.parse(c[1] as string));
+    const doneTask = calls.find(c => c.tasks?.[0]?.status === 'DONE')?.tasks[0];
+    expect(doneTask.result).toBe('{"answer":"hello","score":9}');
   });
 
   it('wrapHandler() publishes ERROR/BLOCKED on throw', async () => {

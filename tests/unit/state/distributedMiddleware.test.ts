@@ -85,6 +85,22 @@ describe("DistributedStateMiddleware", () => {
     expect(onStateChange).toHaveBeenCalledWith({ x: 1 });
   });
 
+  it("listen() ignores messages from other channels (covers channel !== channelName branch)", async () => {
+    let capturedHandler!: (channel: string, message: string) => void;
+    mockRedis.on.mockImplementation((event, handler) => {
+      if (event === 'message') capturedHandler = handler;
+    });
+
+    const mw = new DistributedStateMiddleware('redis://localhost');
+    const onStateChange = vi.fn();
+    await mw.listen(onStateChange);
+
+    const msg = JSON.stringify({ taskId: "g", agentId: "system", timestamp: 0, data: { stateUpdate: { x: 1 } } });
+    capturedHandler("some-other-channel", msg);
+
+    expect(onStateChange).not.toHaveBeenCalled();
+  });
+
   it("listen() logs error on invalid json payload", async () => {
     let capturedHandler!: (channel: string, message: string) => void;
     mockRedis.on.mockImplementation((event, handler) => {

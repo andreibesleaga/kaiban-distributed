@@ -168,11 +168,11 @@ localhost:3000  ──►  gateway   (HTTP + Socket.io)
 | `KAFKA_BROKERS` | `localhost:9092` (host) / `kafka:29092` (Docker Compose) | Kafka only |
 | `KAFKA_CLIENT_ID` | per-service name | Kafka only |
 | `KAFKA_GROUP_ID` | `kaiban-group` | Kafka only |
-| `SEMANTIC_FIREWALL_ENABLED` | `false` | BullMQ stack only |
-| `CIRCUIT_BREAKER_ENABLED` | `false` | BullMQ stack only |
-| `JIT_TOKENS_ENABLED` | `false` | BullMQ stack only |
-| `CIRCUIT_BREAKER_THRESHOLD` | `10` | BullMQ stack only |
-| `CIRCUIT_BREAKER_WINDOW_MS` | `60000` | BullMQ stack only |
+| `SEMANTIC_FIREWALL_ENABLED` | `false` | Both BullMQ and Kafka stacks |
+| `CIRCUIT_BREAKER_ENABLED` | `false` | Both BullMQ and Kafka stacks |
+| `JIT_TOKENS_ENABLED` | `false` | Both BullMQ and Kafka stacks |
+| `CIRCUIT_BREAKER_THRESHOLD` | `10` | Both BullMQ and Kafka stacks |
+| `CIRCUIT_BREAKER_WINDOW_MS` | `60000` | Both BullMQ and Kafka stacks |
 
 ### Gateway service
 
