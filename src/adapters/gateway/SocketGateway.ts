@@ -19,7 +19,10 @@ export class SocketGateway {
   }
 
   public initialize(): void {
-    // Note: TODO In production, replace '*' with specific allowed origins
+    // SECURITY WARNING: The wildcard origin '*' is used here for local
+    // development convenience ONLY. In production, replace with an explicit
+    // allowlist of trusted origins, e.g.:
+    //   cors: { origin: ['https://your-dashboard.example.com'] }
     this.io = new SocketIOServer(this.httpServer, {
       cors: { origin: '*' },
       maxHttpBufferSize: 1e6,       // 1 MB — prevent oversized WebSocket frames
