@@ -13,6 +13,13 @@ export default defineConfig({
         ws: true,
       },
     },
+    headers: {
+      'X-Frame-Options': 'DENY',
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+    },
   },
   build: {
     outDir: 'dist',

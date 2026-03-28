@@ -30,6 +30,8 @@ import { io, type Socket } from 'socket.io-client';
 import { Redis } from 'ioredis';
 import { createDriver, getDriverType } from './driver-factory';
 import { COMPLETED_QUEUE } from './team-config';
+import { wrapSigned } from '../../src/infrastructure/security/channel-signing';
+import { issueA2AToken } from '../../src/infrastructure/security/a2a-auth';
 
 const GATEWAY_URL      = process.env['GATEWAY_URL']      ?? 'http://localhost:3000';
 const REDIS_URL        = process.env['REDIS_URL']        ?? 'redis://localhost:6379';
@@ -67,7 +69,7 @@ class OrchestratorStatePublisher {
   }
 
   publish(delta: Record<string, unknown>): void {
-    this.redis.publish('kaiban-state-events', JSON.stringify(delta)).catch((err: unknown) =>
+    this.redis.publish('kaiban-state-events', wrapSigned(delta)).catch((err: unknown) =>
       console.error('[OrchestratorStatePublisher] Publish failed:', err),
     );
   }
@@ -201,10 +203,15 @@ class CompletionRouter {
 // Helpers
 // ──────────────────────────────────────────────────────────────
 
+/** A2A bearer token — issued at startup when A2A_JWT_SECRET is set. Empty string = no auth. */
+let a2aToken = '';
+
 async function rpc(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (a2aToken) headers['Authorization'] = `Bearer ${a2aToken}`;
   const res = await fetch(`${GATEWAY_URL}/a2a/rpc`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
   });
   const body = await res.json() as { result: Record<string, unknown>; error?: { message: string } };
@@ -331,6 +338,12 @@ async function main(): Promise<void> {
     console.log(`\n${'═'.repeat(60)}`);
     console.log(' KAIBAN DISTRIBUTED — BLOG TEAM ORCHESTRATOR');
     console.log(`${'═'.repeat(60)}\n`);
+
+    // Issue A2A bearer token if secret is configured
+    if (process.env['A2A_JWT_SECRET']) {
+      a2aToken = issueA2AToken('blog-team-orchestrator');
+      console.log('✓ A2A auth token issued');
+    }
 
     const health = await fetch(`${GATEWAY_URL}/health`).then((r) => r.json()) as { data: { status: string } };
     console.log(`✓ Gateway: ${health.data.status.toUpperCase()} at ${GATEWAY_URL}`);

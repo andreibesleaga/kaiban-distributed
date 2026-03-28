@@ -2,6 +2,7 @@ import express, { type Application, type Request, type Response, type NextFuncti
 import { randomUUID } from 'crypto';
 import helmet from 'helmet';
 import { A2AConnector, type JsonRpcRequest } from '../../infrastructure/federation/a2a-connector';
+import { verifyA2AToken } from '../../infrastructure/security/a2a-auth';
 
 interface ApiResponse<T> {
   data: T | null;
@@ -18,15 +19,18 @@ function apiError(message: string): ApiResponse<null> {
 }
 
 // ── In-memory sliding-window rate limiter (zero-dependency) ──────────
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_REQUESTS = 100;
 
 export class SlidingWindowRateLimiter {
   private windows = new Map<string, number[]>();
 
+  constructor(
+    private readonly windowMs = 60_000,
+    private readonly maxRequests = 100,
+  ) {}
+
   isAllowed(key: string): boolean {
     const now = Date.now();
-    const cutoff = now - RATE_WINDOW_MS;
+    const cutoff = now - this.windowMs;
     let timestamps = this.windows.get(key);
     if (!timestamps) {
       timestamps = [];
@@ -43,7 +47,7 @@ export class SlidingWindowRateLimiter {
       this.windows.set(key, fresh);
       return true;
     }
-    if (timestamps.length >= RATE_MAX_REQUESTS) return false;
+    if (timestamps.length >= this.maxRequests) return false;
     timestamps.push(now);
     return true;
   }
@@ -54,11 +58,17 @@ const REQUEST_TIMEOUT_MS = 30_000;
 export class GatewayApp {
   public readonly app: Application;
   private connector: A2AConnector;
-  private rateLimiter = new SlidingWindowRateLimiter();
+  private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
+  private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 5);
 
   constructor(connector: A2AConnector) {
     this.connector = connector;
     this.app = express();
+
+    // Trust proxy — enables correct req.ip behind reverse proxies (Railway, Kubernetes, Nginx).
+    // Must be set before any middleware that reads req.ip.
+    if (process.env['TRUST_PROXY'] === 'true') this.app.set('trust proxy', 1);
+
     this.app.use(helmet({
       contentSecurityPolicy: { directives: { defaultSrc: ["'none'"] } },
       hsts: { maxAge: 63072000, includeSubDomains: true },
@@ -70,9 +80,13 @@ export class GatewayApp {
 
   private registerRoutes(): void {
     this.app.use(this.requestLogger.bind(this));
-    this.app.get('/health', this.handleHealth.bind(this));
+    this.app.get('/health', this.healthRateLimit.bind(this), this.handleHealth.bind(this));
     this.app.get('/.well-known/agent-card.json', this.handleAgentCard.bind(this));
-    this.app.post('/a2a/rpc', this.rateLimit.bind(this), this.handleRpc.bind(this));
+    this.app.post('/a2a/rpc',
+      this.rateLimit.bind(this),
+      this.requireA2AAuth.bind(this),
+      this.handleRpc.bind(this),
+    );
     this.app.use(this.handleNotFound.bind(this));
   }
 
@@ -91,6 +105,29 @@ export class GatewayApp {
       return;
     }
     next();
+  }
+
+  private healthRateLimit(req: Request, res: Response, next: NextFunction): void {
+    const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    if (!this.healthRateLimiter.isAllowed(clientIp)) {
+      res.status(429).json(apiError('Too Many Requests'));
+      return;
+    }
+    next();
+  }
+
+  /**
+   * A2A bearer token auth middleware.
+   * Gated: only enforced when A2A_JWT_SECRET is set (backwards-compatible).
+   */
+  private requireA2AAuth(req: Request, res: Response, next: NextFunction): void {
+    if (!process.env['A2A_JWT_SECRET']) return next(); // auth disabled
+    try {
+      verifyA2AToken(req.headers['authorization']);
+      next();
+    } catch {
+      res.status(401).json(apiError('Unauthorized'));
+    }
   }
 
   private handleHealth(_req: Request, res: Response): void {
@@ -115,7 +152,10 @@ export class GatewayApp {
     if (result.ok) {
       res.json(result.value);
     } else {
-      res.status(500).json(apiError(result.error.message));
+      // Sanitize internal error details in production
+      const isDev = process.env['NODE_ENV'] !== 'production';
+      const publicMsg = isDev ? result.error.message : 'Internal server error';
+      res.status(500).json(apiError(publicMsg));
     }
   }
 

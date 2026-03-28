@@ -49,10 +49,24 @@ export class BullMQDriver implements IMessagingDriver {
     handler: (payload: MessagePayload) => Promise<void>,
   ): Promise<void> {
     if (!this.workers.has(queueName)) {
+      // Validate W3C traceparent format before passing to extractTraceContext.
+      // Prevents crafted job payloads from injecting malformed trace headers.
+      const TRACEPARENT_RE = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
       const worker = new Worker(
         queueName,
         async (job) => {
-          const ctx = extractTraceContext(job.data.traceHeaders ?? {});
+          const rawHeaders =
+            typeof job.data.traceHeaders === 'object' && job.data.traceHeaders !== null
+              ? (job.data.traceHeaders as Record<string, unknown>)
+              : {};
+          const safeHeaders: Record<string, string> = {};
+          for (const [k, v] of Object.entries(rawHeaders)) {
+            if (typeof k === 'string' && typeof v === 'string') {
+              if (k === 'traceparent' && !TRACEPARENT_RE.test(v)) continue;
+              safeHeaders[k] = v;
+            }
+          }
+          const ctx = extractTraceContext(safeHeaders);
           await otelContext.with(ctx, () => handler(job.data as MessagePayload));
         },
         this.config,

@@ -19,10 +19,11 @@ let connectionHandler: ((socket: MockSocket) => void) | null = null;
 interface MockSocket {
   emit: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
+  data: Record<string, unknown>;
 }
 
 function makeMockSocket(): MockSocket {
-  return { emit: vi.fn(), on: vi.fn() };
+  return { emit: vi.fn(), on: vi.fn(), data: {} };
 }
 
 const mockIoOn = vi.fn().mockImplementation((event: string, cb: (socket: MockSocket) => void) => {
@@ -31,7 +32,7 @@ const mockIoOn = vi.fn().mockImplementation((event: string, cb: (socket: MockSoc
 
 vi.mock('socket.io', () => ({
   Server: vi.fn().mockImplementation(function () {
-    return { adapter: mockAdapter, emit: mockEmit, close: mockIoClose, on: mockIoOn };
+    return { adapter: mockAdapter, emit: mockEmit, close: mockIoClose, on: mockIoOn, use: vi.fn() };
   }),
 }));
 vi.mock('@socket.io/redis-adapter', () => ({ createAdapter: vi.fn().mockReturnValue('mock-redis-adapter') }));
@@ -71,12 +72,13 @@ describe('SocketGateway', () => {
     expect(mockEmit).toHaveBeenCalledWith('state:update', { stateUpdate: { count: 1 } });
   });
 
-  it('invalid JSON in Redis message is caught and logged', () => {
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('invalid JSON in Redis message is caught and logged (warn on bad/unsigned message)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     sg.initialize();
     getRedisMessageHandler()('kaiban-state-events', '{invalid}');
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to parse'));
-    errSpy.mockRestore();
+    // unwrapVerified returns null on bad JSON → triggers 'Rejected unsigned/invalid' warn
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Rejected'));
+    warnSpy.mockRestore();
   });
 
   it('shutdown() resolves without calling io.close when not initialized', async () => {

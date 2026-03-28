@@ -6,7 +6,7 @@ let capturedOptions: Record<string, unknown> | null = null;
 vi.mock('socket.io', () => ({
   Server: vi.fn().mockImplementation(function (_srv: unknown, opts: Record<string, unknown>) {
     capturedOptions = opts;
-    return { adapter: vi.fn(), emit: vi.fn(), close: vi.fn((cb?: () => void) => { if (cb) cb(); }), on: vi.fn() };
+    return { adapter: vi.fn(), emit: vi.fn(), close: vi.fn((cb?: () => void) => { if (cb) cb(); }), on: vi.fn(), use: vi.fn() };
   }),
 }));
 vi.mock('@socket.io/redis-adapter', () => ({ createAdapter: vi.fn().mockReturnValue('mock-adapter') }));
@@ -44,13 +44,14 @@ describe('SocketGateway — hardening options', () => {
     expect(capturedOptions!['pingInterval']).toBe(25_000);
   });
 
-  it('still sets CORS origin', () => {
+  it('still sets CORS origin (wildcard array when SOCKET_CORS_ORIGINS unset)', () => {
     capturedOptions = null;
     const httpServer = createServer();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sg = new SocketGateway(httpServer, mockRedis as any, mockRedis as any);
     sg.initialize();
     const cors = capturedOptions!['cors'] as Record<string, unknown>;
-    expect(cors['origin']).toBe('*');
+    // When SOCKET_CORS_ORIGINS is not set (non-production), origin is ['*']
+    expect(cors['origin']).toEqual(['*']);
   });
 });

@@ -31,10 +31,15 @@ export function initSocket(): void {
   const gatewayUrl = resolveGatewayUrl();
   const store = useBoardStore.getState();
 
+  // Pass board viewer token if configured (required when BOARD_JWT_SECRET is set on the gateway).
+  // Set VITE_BOARD_TOKEN in board/.env to authenticate. When unset, connects without auth.
+  const boardToken = (import.meta.env['VITE_BOARD_TOKEN'] as string | undefined) ?? '';
+
   socket = io(gatewayUrl, {
     transports: ['websocket', 'polling'],
     reconnectionAttempts: Infinity,
     reconnectionDelay: 2000,
+    ...(boardToken ? { auth: { token: boardToken } } : {}),
   });
 
   socket.on('connect', () => {

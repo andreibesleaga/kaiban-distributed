@@ -34,6 +34,11 @@ export interface AppConfig {
     circuitBreakerEnabled: boolean;
     circuitBreakerThreshold: number;
     circuitBreakerWindowMs: number;
+    boardJwtSecret?: string;
+    a2aJwtSecret?: string;
+    channelSigningSecret?: string;
+    socketCorsOrigins?: string;
+    trustProxy: boolean;
   };
 }
 
@@ -106,6 +111,11 @@ export function loadConfig(): AppConfig {
       circuitBreakerEnabled: getBoolEnv('CIRCUIT_BREAKER_ENABLED', false),
       circuitBreakerThreshold: parseInt(getEnv('CIRCUIT_BREAKER_THRESHOLD', '10'), 10),
       circuitBreakerWindowMs: parseInt(getEnv('CIRCUIT_BREAKER_WINDOW_MS', '60000'), 10),
+      boardJwtSecret: process.env['BOARD_JWT_SECRET'],
+      a2aJwtSecret: process.env['A2A_JWT_SECRET'],
+      channelSigningSecret: process.env['CHANNEL_SIGNING_SECRET'],
+      socketCorsOrigins: process.env['SOCKET_CORS_ORIGINS'],
+      trustProxy: getBoolEnv('TRUST_PROXY', false),
     },
   };
 }

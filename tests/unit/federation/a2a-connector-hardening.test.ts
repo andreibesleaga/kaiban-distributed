@@ -62,7 +62,7 @@ describe('A2AConnector — input validation & hardening', () => {
       if (result.ok) expect(result.value.result).toBeDefined();
     });
 
-    it('accepts wildcard agentId (*) — skips validation', async () => {
+    it('rejects wildcard agentId (*) — wildcard routing removed', async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
         jsonrpc: '2.0', id: 5, method: 'tasks.create',
@@ -70,8 +70,7 @@ describe('A2AConnector — input validation & hardening', () => {
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const r = result.value.result as { agentId: string };
-        expect(r.agentId).toBe('*');
+        expect(result.value.error?.code).toBe(-32602);
       }
     });
 

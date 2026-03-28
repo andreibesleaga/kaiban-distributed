@@ -71,11 +71,13 @@ describe('A2AConnector', () => {
     }));
   });
 
-  it('handleRpc() tasks.create without agentId defaults to wildcard queue', async () => {
+  it('handleRpc() tasks.create without agentId returns -32602 (wildcard removed)', async () => {
     const driver = makeMockDriver();
     const connector = new A2AConnector(testCard, driver);
-    await connector.handleRpc({ jsonrpc: '2.0', id: 6, method: 'tasks.create', params: {} });
-    expect(driver.publish).toHaveBeenCalledWith('kaiban-agents-*', expect.anything());
+    const result = await connector.handleRpc({ jsonrpc: '2.0', id: 6, method: 'tasks.create', params: {} });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.error?.code).toBe(-32602);
+    expect(driver.publish).not.toHaveBeenCalled();
   });
 
   it('handleRpc() with tasks.get with taskId param', async () => {
@@ -90,13 +92,29 @@ describe('A2AConnector', () => {
     if (result.ok) { const r = result.value.result as { taskId: null }; expect(r.taskId).toBeNull(); }
   });
 
-  it('handleRpc() tasks.create with driver and no params uses empty data (covers ?? {} branch)', async () => {
+  it('handleRpc() tasks.create with no params returns -32602 (agentId required)', async () => {
     const driver = makeMockDriver();
     const connector = new A2AConnector(testCard, driver);
-    await connector.handleRpc({ jsonrpc: '2.0', id: 9, method: 'tasks.create' });
-    expect(driver.publish).toHaveBeenCalledWith(
-      expect.stringContaining('kaiban-agents-'),
-      expect.objectContaining({ data: {} }),
-    );
+    const result = await connector.handleRpc({ jsonrpc: '2.0', id: 9, method: 'tasks.create' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.error?.code).toBe(-32602);
+    expect(driver.publish).not.toHaveBeenCalled();
+  });
+
+  it('handleRpc() tasks.create with explicit agentId publishes to correct queue', async () => {
+    const driver = makeMockDriver();
+    const connector = new A2AConnector(testCard, driver);
+    const result = await connector.handleRpc({
+      jsonrpc: '2.0', id: 10, method: 'tasks.create',
+      params: { agentId: 'writer', instruction: 'write the blog post' },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const r = result.value.result as { taskId: string; agentId: string };
+      expect(r.agentId).toBe('writer');
+    }
+    expect(driver.publish).toHaveBeenCalledWith('kaiban-agents-writer', expect.objectContaining({
+      agentId: 'writer',
+    }));
   });
 });

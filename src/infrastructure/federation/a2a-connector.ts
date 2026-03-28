@@ -89,17 +89,24 @@ export class A2AConnector {
   private validateCreateParams(
     params: Record<string, unknown> | undefined,
   ): { agentId: string } | { error: JsonRpcError } {
-    const agentId = String(params?.['agentId'] ?? '*');
+    const agentId = String(params?.['agentId'] ?? '');
 
-    if (agentId !== '*') {
-      if (agentId.length > MAX_AGENT_ID_LEN || !AGENT_ID_PATTERN.test(agentId)) {
-        return {
-          error: {
-            code: -32602,
-            message: `Invalid agentId: must be alphanumeric/hyphens, max ${MAX_AGENT_ID_LEN} chars`,
-          },
-        };
-      }
+    if (!agentId) {
+      return {
+        error: {
+          code: -32602,
+          message: 'agentId is required',
+        },
+      };
+    }
+
+    if (agentId.length > MAX_AGENT_ID_LEN || !AGENT_ID_PATTERN.test(agentId)) {
+      return {
+        error: {
+          code: -32602,
+          message: `Invalid agentId: must be alphanumeric/hyphens, max ${MAX_AGENT_ID_LEN} chars`,
+        },
+      };
     }
 
     const instruction = params?.['instruction'];

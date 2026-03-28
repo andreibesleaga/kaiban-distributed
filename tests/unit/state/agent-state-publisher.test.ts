@@ -84,13 +84,14 @@ describe('AgentStatePublisher', () => {
     expect(calls.find(c => c.tasks?.[0]?.status === 'DONE')?.tasks[0].result).toBe('');
   });
 
-  it('wrapHandler() JSON-stringifies object results (covers typeof !== string branch)', async () => {
+  it('wrapHandler() shows answer text when result is a KaibanHandlerResult (duck-typing)', async () => {
     publisher.publishIdle();
     const wrapped = publisher.wrapHandler(vi.fn().mockResolvedValue({ answer: 'hello', score: 9 }));
     await wrapped({ taskId: 't4', agentId: 'researcher', timestamp: 0, data: {} });
     const calls = mockPublish.mock.calls.map((c) => JSON.parse(c[1] as string));
     const doneTask = calls.find(c => c.tasks?.[0]?.status === 'DONE')?.tasks[0];
-    expect(doneTask.result).toBe('{"answer":"hello","score":9}');
+    // Duck-typing: result has 'answer' field → shows the answer text, not raw JSON
+    expect(doneTask.result).toBe('hello');
   });
 
   it('wrapHandler() publishes ERROR/BLOCKED on throw', async () => {

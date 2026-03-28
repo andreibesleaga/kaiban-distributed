@@ -18,7 +18,7 @@
 - Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
 
-[![Tests](https://img.shields.io/badge/tests-358%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-442%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
@@ -751,18 +751,35 @@ All responses: `{ data, meta, errors }` envelope.
 
 ## Security & Compliance
 
-A security audit was performed against the **OWASP Top 10 for Agentic AI (2026)** and **OWASP Top 10 for LLM Applications (2025)**. See [SECURITY_AUDIT.md](docs/security/SECURITY_AUDIT.md) for the full report.
+Three security audits have been performed against the **OWASP Top 10 for Agentic AI (2026)** and **OWASP Top 10 for LLM Applications (2025)**:
 
-### Security Features (opt-in via env flags)
+| Document | Scope |
+|----------|-------|
+| [SECURITY_AUDIT_V1.md](docs/security/SECURITY_AUDIT_V1.md) | Initial audit (March 11 2026) — STRIDE threat modelling, OWASP mapping, mTLS + firewall + circuit breaker remediation |
+| [SECURITY_AUDIT_V2.md](docs/security/SECURITY_AUDIT_V2.md) | Deep vulnerability assessment — 2 CRIT, 4 HIGH, 7 MED, 4 LOW findings with implementation blueprints |
+| [SECURITY_AUDIT.md](docs/security/SECURITY_AUDIT.md) | V3 audit (current) — full resolution status, code review of all security infrastructure, production checklist |
 
-| Feature | Component | OWASP | Description |
-|---------|-----------|-------|-------------|
-| **Semantic Firewall** | `HeuristicFirewall` | ASI01 | Regex-based prompt injection detection; blocks goal-hijacking attempts before they reach LLMs |
-| **mTLS** | `KafkaDriver` / `BullMQDriver` | ASI07 | TLS/mTLS for all messaging connections; self-signed certs via `scripts/generate-dev-certs.sh` |
-| **JIT Token Provider** | `EnvTokenProvider` | ASI03 | Abstracts API key retrieval; future implementations can fetch from Vault or Secrets Manager |
-| **Circuit Breaker** | `SlidingWindowBreaker` | ASI10 | Trips after configurable failures in a sliding window; auto-recovers; emits OTLP anomaly events |
+For a complete reference of every security feature, configuration option, and deployment checklist see **[SECURITY-FEATURES.md](docs/security/SECURITY-FEATURES.md)**.
 
-All features are **disabled by default**. Enable individually via environment variables (`SEMANTIC_FIREWALL_ENABLED`, `JIT_TOKENS_ENABLED`, `CIRCUIT_BREAKER_ENABLED`). When disabled, the system behaves identically to the pre-security baseline.
+### Security Features
+
+| Feature | Component | OWASP | Activation |
+|---------|-----------|-------|------------|
+| **Board Viewer JWT** | `board-auth.ts` + `SocketGateway` | CRIT-01 | `BOARD_JWT_SECRET` |
+| **A2A Bearer Token Auth** | `a2a-auth.ts` + `GatewayApp` | CRIT-02 | `A2A_JWT_SECRET` |
+| **Redis Channel Signing** | `channel-signing.ts` | HIGH-01 | `CHANNEL_SIGNING_SECRET` |
+| **CORS Allowlist** | `SocketGateway` | HIGH-03 | `SOCKET_CORS_ORIGINS` (required in production) |
+| **Token Expiry Enforcement** | `SocketGateway` | LOW-01 | automatic when `BOARD_JWT_SECRET` set |
+| **Semantic Firewall** | `HeuristicFirewall` | ASI01 | `SEMANTIC_FIREWALL_ENABLED=true` |
+| **mTLS** | `KafkaDriver` / `BullMQDriver` | ASI07 | `REDIS_TLS_*` / `KAFKA_SSL_*` |
+| **JIT Token Provider** | `EnvTokenProvider` | ASI03 | `JIT_TOKENS_ENABLED=true` |
+| **Circuit Breaker** | `SlidingWindowBreaker` | ASI10 | `CIRCUIT_BREAKER_ENABLED=true` |
+| **W3C Traceparent Validation** | `BullMQDriver` | MED-06 | always-on |
+| **HTTP Hardening** | `GatewayApp` (Helmet, rate limit, CSP, HSTS) | MED-04/05 | always-on |
+| **WebSocket Hardening** | `SocketGateway` (buffer limit, ping, HITL validation) | — | always-on |
+| **agentId Input Validation** | `A2AConnector` | HIGH-04 | always-on |
+
+Authentication and signing features are **env-var gated**: when the relevant secret is not set, the system behaves exactly as before (backwards-compatible). When set, full enforcement is active.
 
 ### Compliance Controls
 
@@ -770,12 +787,12 @@ All features are **disabled by default**. Enable individually via environment va
 |---------|----------------|
 | **GDPR — PII in logs** | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` |
 | **GDPR — State deltas** | `sanitizeDelta()` strips: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` |
-| **GDPR — Data minimisation** | `result` field capped at 800 chars in state events; outbound task-result data capped at 64 KB in published messages (`AgentActor`) |
-| **SOC2 — Non-root container** | Dockerfile: `USER kaiban` (non-root) |
+| **GDPR — Data minimisation** | `result` capped at 800 chars in state events; outbound data capped at 64 KB in `AgentActor` |
+| **SOC2 — Non-root container** | Dockerfile: `USER kaiban` |
 | **SOC2 — Secrets** | All secrets via env vars; `.env` gitignored; `.env.example` has no real values |
 | **ISO 27001 — Encryption** | mTLS for Redis/Kafka; HTTPS for LLM APIs; `scripts/generate-dev-certs.sh` for staging |
-| **Observability** | OpenTelemetry auto-instrumentation; W3C `traceparent` propagated across BullMQ/Kafka hops; `recordAnomalyEvent()` for circuit breaker events |
-| **Known CVE** | `kaibanjs ≥ 0.3.0` has 6 moderate CVEs via `@langchain/community` transitive deps; unfixable without `kaibanjs@0.0.1` downgrade (breaking) |
+| **Observability** | OpenTelemetry; W3C `traceparent` across BullMQ/Kafka hops; `recordAnomalyEvent()` OTLP spans |
+| **Known CVE** | `kaibanjs ≥ 0.3.0` — 6 moderate CVEs via `@langchain/community` transitives; unfixable without breaking downgrade |
 
 ---
 
@@ -800,7 +817,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 358 tests, 37 files | None (all mocked) |
+| Unit | `npm test` | 442 tests, 44 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 15 tests, 4 files | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
 

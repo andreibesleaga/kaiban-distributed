@@ -10,6 +10,7 @@
 import { Redis } from 'ioredis';
 import type { MessagePayload } from '../../infrastructure/messaging/interfaces';
 import { STATE_CHANNEL } from '../../infrastructure/messaging/channels';
+import { wrapSigned } from '../../infrastructure/security/channel-signing';
 
 export interface AgentInfo {
   agentId: string;
@@ -48,7 +49,7 @@ export class AgentStatePublisher {
     tasks?: TaskState[];
     teamWorkflowStatus?: string;
   }): void {
-    this.redis.publish(STATE_CHANNEL, JSON.stringify(delta)).catch((err: unknown) =>
+    this.redis.publish(STATE_CHANNEL, wrapSigned(delta as Record<string, unknown>)).catch((err: unknown) =>
       console.error('[StatePublisher] Failed to publish:', err),
     );
   }

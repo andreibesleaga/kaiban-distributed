@@ -3,6 +3,8 @@ import { Server as SocketIOServer, type Socket } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import type Redis from 'ioredis';
 import { STATE_CHANNEL, STATE_EVENT_UPDATE, STATE_EVENT_REQUEST, HITL_CHANNEL, HITL_SOCKET_EVENT } from '../../infrastructure/messaging/channels';
+import { verifyBoardToken } from '../../infrastructure/security/board-auth';
+import { unwrapVerified } from '../../infrastructure/security/channel-signing';
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
 
@@ -106,19 +108,47 @@ export class SocketGateway {
   // ─── Initialisation ───────────────────────────────────────────────────────
 
   public initialize(): void {
-    // SECURITY WARNING: The wildcard origin '*' is used here for local
-    // development convenience ONLY. In production, replace with an explicit
-    // allowlist of trusted origins, e.g.:
-    //   cors: { origin: ['https://your-dashboard.example.com'] }
+    const rawOrigins = process.env['SOCKET_CORS_ORIGINS'];
+    if (!rawOrigins && process.env['NODE_ENV'] === 'production') {
+      throw new Error('SOCKET_CORS_ORIGINS must be set in production — refusing wildcard CORS');
+    }
+    const allowedOrigins = rawOrigins?.split(',').map((s) => s.trim()) ?? ['*'];
+
     this.io = new SocketIOServer(this.httpServer, {
-      cors: { origin: '*' },
+      cors: { origin: allowedOrigins, credentials: true },
       maxHttpBufferSize: 1e6,       // 1 MB — prevent oversized WebSocket frames
       pingTimeout: 20_000,          // Disconnect dead clients after 20s without pong
       pingInterval: 25_000,         // Ping every 25s to detect dead connections
     });
     this.io.adapter(createAdapter(this.redisPublisher, this.redisSubscriber));
 
+    // Auth middleware — runs before any 'connection' handler.
+    // Gated: only enforced when BOARD_JWT_SECRET is set.
+    this.io.use((socket, next) => {
+      if (!process.env['BOARD_JWT_SECRET']) return next(); // auth disabled
+      try {
+        const token = socket.handshake.auth['token'] as string | undefined;
+        if (!token) return next(new Error('Missing board token'));
+        const payload = verifyBoardToken(token);
+        socket.data['exp'] = payload['exp'];
+        next();
+      } catch {
+        next(new Error('Invalid or expired board token'));
+      }
+    });
+
     this.io.on('connection', (socket: Socket) => {
+      // Enforce token expiry on long-running connections
+      const exp = socket.data['exp'] as number | undefined;
+      if (exp !== undefined) {
+        const msUntilExpiry = exp * 1000 - Date.now();
+        if (msUntilExpiry <= 0) {
+          socket.disconnect(true);
+          return;
+        }
+        setTimeout(() => socket.disconnect(true), msUntilExpiry);
+      }
+
       // Replay current full state to newly connected / reconnected client
       this.sendSnapshot(socket);
 
@@ -153,7 +183,11 @@ export class SocketGateway {
     this.redisSubscriber.subscribe(STATE_CHANNEL);
     this.redisSubscriber.on('message', (_channel: string, data: string) => {
       try {
-        const parsed = JSON.parse(data) as Record<string, unknown>;
+        const parsed = unwrapVerified(data);
+        if (!parsed) {
+          console.warn('[SocketGateway] Rejected unsigned/invalid channel message');
+          return;
+        }
         this.applyToSnapshot(parsed);          // keep snapshot current
         this.io?.emit(STATE_EVENT, parsed);    // broadcast incremental delta to all
       } catch {

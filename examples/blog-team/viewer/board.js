@@ -1,5 +1,17 @@
 /* global io */
 
+// ── XSS defence ──────────────────────────────────────────────────────────
+
+/** Escape HTML special characters before inserting server data into innerHTML. */
+function escHTML(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
 // ── Config ───────────────────────────────────────────────────────────────
 
 const GATEWAY_URL = window.GATEWAY_URL
@@ -30,8 +42,8 @@ function addLog(type, msg, highlight = false) {
   entry.className = 'log-entry';
   entry.innerHTML = [
     `<span class="log-time">${hh}:${mm}:${ss}</span>`,
-    `<span class="log-type lt-${type}">${type}</span>`,
-    `<span class="log-msg${highlight ? ' highlight' : ''}">${msg}</span>`,
+    `<span class="log-type lt-${escHTML(type)}">${escHTML(type)}</span>`,
+    `<span class="log-msg${highlight ? ' highlight' : ''}">${escHTML(msg)}</span>`,
   ].join('');
   box.insertBefore(entry, box.firstChild);
   if (box.children.length > 200) box.removeChild(box.lastChild);
@@ -60,15 +72,15 @@ function renderAgents() {
     return;
   }
   grid.innerHTML = state.agents.map(a => {
-    const statusClass = (a.status || 'idle').toLowerCase();
+    const statusClass = escHTML((a.status || 'idle').toLowerCase());
     const taskRef = a.currentTaskId
-      ? `<div class="agent-task">Task: ${a.currentTaskId.slice(-8)}</div>`
+      ? `<div class="agent-task">Task: ${escHTML(a.currentTaskId.slice(-8))}</div>`
       : '';
     return `
       <div class="agent-card">
-        <div class="agent-name">${a.name || a.agentId || 'Agent'}</div>
-        <div class="agent-role">${a.role || ''}</div>
-        <span class="agent-status status-${statusClass}">${a.status || 'IDLE'}</span>
+        <div class="agent-name">${escHTML(a.name || a.agentId || 'Agent')}</div>
+        <div class="agent-role">${escHTML(a.role || '')}</div>
+        <span class="agent-status status-${statusClass}">${escHTML(a.status || 'IDLE')}</span>
         ${taskRef}
       </div>`;
   }).join('');
@@ -88,16 +100,16 @@ function makeTaskCard(task) {
   const resultClass = isBlocked ? ' blocked' : isAwaiting ? ' awaiting' : '';
   const resultText  = parseTaskResult(task.result);
   const resultHtml  = resultText
-    ? `<div class="task-result${resultClass}">${resultText.slice(0, 500)}${resultText.length > 500 ? '…' : ''}</div>`
+    ? `<div class="task-result${resultClass}">${escHTML(resultText.slice(0, 500))}${resultText.length > 500 ? '…' : ''}</div>`
     : '';
 
   const title      = task.title || task.description?.slice(0, 40) || task.taskId || 'Task';
   const assignedTo = task.agent?.name || task.assignedToAgentId || '—';
 
   return `
-    <div class="task-card ${(task.status || 'todo').toLowerCase()}">
-      <div class="task-title">${title}${badge}</div>
-      <div class="task-agent">${assignedTo}</div>
+    <div class="task-card ${escHTML((task.status || 'todo').toLowerCase())}">
+      <div class="task-title">${escHTML(title)}${badge}</div>
+      <div class="task-agent">${escHTML(assignedTo)}</div>
       ${resultHtml}
     </div>`;
 }

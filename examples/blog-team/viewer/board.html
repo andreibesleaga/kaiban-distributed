@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' https://cdn.socket.io; style-src 'self'; connect-src ws: wss: http: https:; img-src 'none';">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta name="referrer" content="no-referrer">
   <title>Kaiban Distributed — Live Board</title>
   <link rel="stylesheet" href="board.css">
 </head>
@@ -113,7 +117,9 @@
   <span id="conn-detail">Connecting...</span>
 </div>
 
-<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
+<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"
+        integrity="sha384-OoIbkvzsFFQAG88r+IqMAjyOtYDPGO0cqK5HF5Uosdy/zUEGySeAzytENMDynREd"
+        crossorigin="anonymous"></script>
 <script src="board.js"></script>
 </body>
 </html>
