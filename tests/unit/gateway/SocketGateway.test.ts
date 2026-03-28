@@ -173,32 +173,58 @@ describe('SocketGateway', () => {
     expect(call![1]['teamWorkflowStatus']).toBe('RUNNING');
   });
 
+  type HitlHandler = (payload: unknown, ack?: (r: { ok: boolean; error?: string }) => void) => void;
+
+  function getHitlHandler(mockSocket: MockSocket): HitlHandler {
+    const socketOnCalls = mockSocket.on.mock.calls as Array<[string, HitlHandler]>;
+    const handler = socketOnCalls.find(([ev]) => ev === 'hitl:decision')?.[1];
+    expect(handler).toBeDefined();
+    return handler!;
+  }
+
   it('publishes valid hitl:decision to Redis', () => {
     sg.initialize();
     const mockSocket = makeMockSocket();
     connectionHandler!(mockSocket);
 
-    const socketOnCalls = mockSocket.on.mock.calls as Array<[string, (payload: unknown) => void]>;
-    const hitlHandler = socketOnCalls.find(([ev]) => ev === 'hitl:decision')?.[1];
-    expect(hitlHandler).toBeDefined();
-
-    hitlHandler!({ taskId: 'task-42', decision: 'PUBLISH' });
+    getHitlHandler(mockSocket)({ taskId: 'task-42', decision: 'PUBLISH' });
     expect(mockPublish).toHaveBeenCalledWith(
       'kaiban-hitl-decisions',
       JSON.stringify({ taskId: 'task-42', decision: 'PUBLISH' }),
     );
   });
 
-  it('ignores invalid hitl:decision payloads', () => {
+  it('calls ack with ok:true after successful Redis publish', async () => {
     sg.initialize();
     const mockSocket = makeMockSocket();
     connectionHandler!(mockSocket);
 
-    const socketOnCalls = mockSocket.on.mock.calls as Array<[string, (payload: unknown) => void]>;
-    const hitlHandler = socketOnCalls.find(([ev]) => ev === 'hitl:decision')?.[1];
+    const ack = vi.fn();
+    getHitlHandler(mockSocket)({ taskId: 'task-42', decision: 'REVISE' }, ack);
+    await Promise.resolve(); // flush microtasks (mockPublish resolves immediately)
+    expect(ack).toHaveBeenCalledWith({ ok: true });
+  });
 
-    hitlHandler!(null);
-    hitlHandler!({ taskId: 'task-1', decision: 'BADVALUE' });
+  it('calls ack with ok:false for invalid payload', () => {
+    sg.initialize();
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    const ack1 = vi.fn();
+    const ack2 = vi.fn();
+    getHitlHandler(mockSocket)(null, ack1);
+    getHitlHandler(mockSocket)({ taskId: 'task-1', decision: 'BADVALUE' }, ack2);
+    expect(ack1).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+    expect(ack2).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+  });
+
+  it('ignores invalid hitl:decision payloads without ack', () => {
+    sg.initialize();
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    getHitlHandler(mockSocket)(null);
+    getHitlHandler(mockSocket)({ taskId: 'task-1', decision: 'BADVALUE' });
     expect(mockPublish).not.toHaveBeenCalled();
   });
 });

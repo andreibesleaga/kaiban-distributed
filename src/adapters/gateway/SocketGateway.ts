@@ -126,12 +126,28 @@ export class SocketGateway {
       // Client can explicitly request a state refresh (e.g. after reconnect)
       socket.on(STATE_EVENT_REQUEST, () => this.sendSnapshot(socket));
 
-      // Forward HITL decisions from board → Redis → orchestrator
-      socket.on(HITL_SOCKET_EVENT, (payload: unknown) => {
-        if (typeof payload !== 'object' || payload === null) return;
+      // Forward HITL decisions from board → Redis → orchestrator.
+      // The optional ack callback lets the board confirm delivery end-to-end.
+      socket.on(HITL_SOCKET_EVENT, (payload: unknown, ack?: (response: { ok: boolean; error?: string }) => void) => {
+        if (typeof payload !== 'object' || payload === null) {
+          ack?.({ ok: false, error: 'invalid payload' });
+          return;
+        }
         const { taskId, decision } = payload as Record<string, unknown>;
-        if (typeof taskId !== 'string' || !['PUBLISH', 'REVISE', 'REJECT'].includes(String(decision))) return;
-        this.redisPublisher.publish(HITL_CHANNEL, JSON.stringify({ taskId, decision })).catch(() => {});
+        if (typeof taskId !== 'string' || !['PUBLISH', 'REVISE', 'REJECT'].includes(String(decision))) {
+          ack?.({ ok: false, error: 'invalid taskId or decision' });
+          return;
+        }
+        console.log(`[SocketGateway] HITL decision received: ${String(decision)} for task ${taskId.slice(-8)}`);
+        this.redisPublisher.publish(HITL_CHANNEL, JSON.stringify({ taskId, decision }))
+          .then(() => {
+            console.log(`[SocketGateway] HITL decision forwarded to Redis: ${String(decision)}`);
+            ack?.({ ok: true });
+          })
+          .catch((err: unknown) => {
+            console.error('[SocketGateway] Failed to publish HITL decision to Redis:', err);
+            ack?.({ ok: false, error: 'Redis publish failed' });
+          });
       });
     });
 

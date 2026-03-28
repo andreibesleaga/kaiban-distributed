@@ -61,12 +61,40 @@ export function initSocket(): void {
 /**
  * Emit a HITL decision from the board to the gateway.
  * The gateway publishes it to Redis; the orchestrator receives it and continues.
+ *
+ * Uses Socket.io acknowledgements so the board gets definitive confirmation that
+ * the gateway received the event AND successfully published it to Redis.
+ * If the socket is disconnected, a visible error is logged to the event panel.
  */
 export function sendHitlDecision(taskId: string, decision: HitlDecision): void {
+  const store = useBoardStore.getState();
+
   if (!socket?.connected) {
-    console.warn('[Board] Cannot send HITL decision: socket not connected');
+    store.addLog('ERROR', `Cannot send decision — not connected to gateway (${decision})`, true);
     return;
   }
-  socket.emit('hitl:decision', { taskId, decision });
-  useBoardStore.getState().addLog('HITL', `Decision sent: ${decision} for task ${taskId.slice(-8)}`, true);
+
+  store.addLog('HITL', `Sending decision: ${decision} for task ${taskId.slice(-8)}…`, false);
+
+  // Emit with ACK: gateway responds { ok: true } once it confirms Redis publish.
+  // 8-second timeout guards against a gateway that never calls the ack.
+  const ACK_TIMEOUT_MS = 8_000;
+  let ackReceived = false;
+
+  const timer = setTimeout(() => {
+    if (!ackReceived) {
+      useBoardStore.getState().addLog('ERROR', `Decision not confirmed by gateway within ${ACK_TIMEOUT_MS / 1000}s — try again`, true);
+    }
+  }, ACK_TIMEOUT_MS);
+
+  socket.emit('hitl:decision', { taskId, decision }, (response: { ok: boolean; error?: string }) => {
+    ackReceived = true;
+    clearTimeout(timer);
+    if (response?.ok) {
+      useBoardStore.getState().addLog('HITL', `Decision confirmed: ${decision} for task ${taskId.slice(-8)}`, true);
+    } else {
+      const reason = response?.error ?? 'gateway error';
+      useBoardStore.getState().addLog('ERROR', `Decision rejected by gateway: ${reason}`, true);
+    }
+  });
 }

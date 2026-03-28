@@ -398,7 +398,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 356 tests, 37 files, 100% coverage
+# → 358 tests, 37 files, 100% coverage
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
