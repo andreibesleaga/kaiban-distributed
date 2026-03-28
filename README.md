@@ -244,7 +244,7 @@ stateDiagram-v2
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker |
+| `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker; outbound message data capped at 64 KB |
 | `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS agent in a per-task `Team`; calls `team.start()`; returns token-tracked `KaibanHandlerResult`; optional JIT token provider |
 | `KaibanTeamBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync |
 | `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat |
@@ -705,7 +705,7 @@ All features are **disabled by default**. Enable individually via environment va
 |---------|----------------|
 | **GDPR — PII in logs** | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` |
 | **GDPR — State deltas** | `sanitizeDelta()` strips: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` |
-| **GDPR — Data minimisation** | `result` field capped at 800 chars in state events |
+| **GDPR — Data minimisation** | `result` field capped at 800 chars in state events; outbound task-result data capped at 64 KB in published messages (`AgentActor`) |
 | **SOC2 — Non-root container** | Dockerfile: `USER kaiban` (non-root) |
 | **SOC2 — Secrets** | All secrets via env vars; `.env` gitignored; `.env.example` has no real values |
 | **ISO 27001 — Encryption** | mTLS for Redis/Kafka; HTTPS for LLM APIs; `scripts/generate-dev-certs.sh` for staging |
@@ -845,6 +845,7 @@ kaiban-distributed/
 | KaibanJS ERRORED status throws | `team.start()` returns `{ status: 'ERRORED' }`; bridge throws so AgentActor retries (3×), then DLQs |
 | `forceFinalAnswer: true` on editor | Free 8B models reach max iterations without structured output |
 | SHA-256 hash prefix for agent IDs | 8-char prefix preserves debuggability while preventing PII leakage |
+| 64 KB cap on published message data | `AgentActor` truncates `result` before publishing to prevent oversized frames from overloading messaging layer |
 | `globalSetup` catches Redis port conflict | E2E tests are resilient when Redis is already running from another compose stack |
 | `healthcheck: disable: true` on workers | Workers are not HTTP servers; Dockerfile HEALTHCHECK checks port 3000 which is gateway-only |
 
