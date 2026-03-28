@@ -41,7 +41,7 @@ const basePayload: MessagePayload = {
   taskId: 'task-001', agentId: 'researcher', timestamp: Date.now(), data: {},
 };
 
-function makeSuccess(result = 'done') {
+function makeSuccess(result = 'done'): { status: string; result: string; stats: { llmUsageStats: { inputTokens: number; outputTokens: number; callsCount: number }; costDetails: { costInputTokens: number; costOutputTokens: number; totalCost: number } } } {
   return {
     status: 'FINISHED',
     result,

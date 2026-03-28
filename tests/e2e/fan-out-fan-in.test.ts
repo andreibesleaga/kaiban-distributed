@@ -30,7 +30,7 @@ import type { MessagePayload } from '../../src/infrastructure/messaging/interfac
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 
-function connConfig() {
+function connConfig(): { connection: { host: string; port: number } } {
   const url = new URL(REDIS_URL);
   return { connection: { host: url.hostname, port: parseInt(url.port || '6379', 10) } };
 }
@@ -127,7 +127,7 @@ async function runAutoApprover(
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function makeTaskId(prefix: string, i: number) {
+function makeTaskId(prefix: string, i: number): string {
   return `${prefix}-task-${i}`;
 }
 

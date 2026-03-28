@@ -37,41 +37,40 @@ export class SocketGateway {
 
   // ─── Snapshot helpers ────────────────────────────────────────────────────
 
-  private applyToSnapshot(delta: Record<string, unknown>): void {
+  private applyStatusUpdate(delta: Record<string, unknown>): void {
     const newStatus = typeof delta['teamWorkflowStatus'] === 'string'
       ? delta['teamWorkflowStatus'] : undefined;
-
-    if (newStatus !== undefined) {
-      // When a workflow restarts from a terminal state, clear stale tasks
-      const prev = this.snapshot.teamWorkflowStatus;
-      if (newStatus === 'RUNNING' && (prev === 'FINISHED' || prev === 'STOPPED' || prev === 'ERRORED')) {
-        this.snapshot.tasks.clear();
-      }
-      this.snapshot.teamWorkflowStatus = newStatus;
+    if (newStatus === undefined) return;
+    // When a workflow restarts from a terminal state, clear stale tasks
+    const prev = this.snapshot.teamWorkflowStatus;
+    if (newStatus === 'RUNNING' && (prev === 'FINISHED' || prev === 'STOPPED' || prev === 'ERRORED')) {
+      this.snapshot.tasks.clear();
     }
+    this.snapshot.teamWorkflowStatus = newStatus;
+  }
 
-    if (Array.isArray(delta['agents'])) {
-      for (const a of delta['agents'] as Record<string, unknown>[]) {
-        const id = a['agentId'];
-        if (typeof id === 'string') {
-          this.snapshot.agents.set(id, { ...(this.snapshot.agents.get(id) ?? {}), ...a });
-        }
-      }
-    }
-
-    if (Array.isArray(delta['tasks'])) {
-      for (const t of delta['tasks'] as Record<string, unknown>[]) {
-        const id = t['taskId'];
-        if (typeof id === 'string') {
-          this.snapshot.tasks.set(id, { ...(this.snapshot.tasks.get(id) ?? {}), ...t });
-        }
+  private applyMapDelta(
+    delta: Record<string, unknown>,
+    field: string,
+    idKey: string,
+    map: Map<string, Record<string, unknown>>,
+  ): void {
+    if (!Array.isArray(delta[field])) return;
+    for (const item of delta[field] as Record<string, unknown>[]) {
+      const id = item[idKey];
+      if (typeof id === 'string') {
+        map.set(id, { ...(map.get(id) ?? {}), ...item });
       }
     }
+  }
 
+  private applyToSnapshot(delta: Record<string, unknown>): void {
+    this.applyStatusUpdate(delta);
+    this.applyMapDelta(delta, 'agents', 'agentId', this.snapshot.agents);
+    this.applyMapDelta(delta, 'tasks', 'taskId', this.snapshot.tasks);
     if (delta['metadata'] !== null && typeof delta['metadata'] === 'object') {
       this.snapshot.metadata = { ...(this.snapshot.metadata ?? {}), ...(delta['metadata'] as Record<string, unknown>) };
     }
-
     if (delta['inputs'] !== null && typeof delta['inputs'] === 'object') {
       this.snapshot.inputs = { ...(this.snapshot.inputs ?? {}), ...(delta['inputs'] as Record<string, unknown>) };
     }

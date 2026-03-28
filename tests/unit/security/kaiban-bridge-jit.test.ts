@@ -28,7 +28,7 @@ const basePayload: MessagePayload = {
 
 const API_KEYS = ['OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'MISTRAL_API_KEY', 'GROQ_API_KEY'];
 
-function makeSuccess() {
+function makeSuccess(): { status: string; result: string; stats: { llmUsageStats: { inputTokens: number; outputTokens: number; callsCount: number }; costDetails: { costInputTokens: number; costOutputTokens: number; totalCost: number } } } {
   return {
     status: 'FINISHED', result: 'ok',
     stats: { llmUsageStats: { inputTokens: 10, outputTokens: 5, callsCount: 1 }, costDetails: { costInputTokens: 0, costOutputTokens: 0, totalCost: 0 } },

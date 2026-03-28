@@ -26,7 +26,7 @@ const basePayload: MessagePayload = {
 };
 
 /** Successful WorkflowResult with stats */
-function makeSuccess(result = 'done', inputTokens = 100, outputTokens = 50, totalCost = 0.001) {
+function makeSuccess(result = 'done', inputTokens = 100, outputTokens = 50, totalCost = 0.001): { status: string; result: string; stats: { llmUsageStats: { inputTokens: number; outputTokens: number; callsCount: number }; costDetails: { costInputTokens: number; costOutputTokens: number; totalCost: number } } } {
   return {
     status: 'FINISHED',
     result,

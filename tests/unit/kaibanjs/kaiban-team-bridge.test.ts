@@ -18,7 +18,7 @@ vi.mock('kaibanjs', () => ({
   Task: vi.fn().mockImplementation(function (params: Record<string, unknown>) { return params; }),
 }));
 
-function makeMockMiddleware() {
+function makeMockMiddleware(): IStateMiddleware & { attach: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> } {
   return { attach: vi.fn(), disconnect: vi.fn().mockResolvedValue(undefined) } as unknown as IStateMiddleware & { attach: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
 }
 
