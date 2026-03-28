@@ -111,14 +111,14 @@ The blog-team demonstrates a **pipeline actor topology** — actors are chained 
 │  Orchestrator (coordinator — not an actor)                      │
 │  examples/blog-team/orchestrator.ts                             │
 │                                                                 │
-│  1. publish(researcherQueue, {taskId, agentId:'researcher',...}) │
+│  1. publish(researcherQueue, {taskId, agentId:'researcher',...})│
 │  2. await CompletionRouter.wait(researchTaskId)                 │
 │  3. publish(writerQueue, {taskId, agentId:'writer', context:…}) │
 │  4. await CompletionRouter.wait(writeTaskId)                    │
 │  5. publish(editorQueue, {taskId, agentId:'editor', context:…}) │
 │  6. await CompletionRouter.wait(editTaskId)                     │
-│  7. waitForHITLDecision(editTaskId, rl, redis)  ← human input  │
-└──────┬───────────────────┬──────────────────────┬──────────────┘
+│  7. waitForHITLDecision(editTaskId, rl, redis)  ← human input   │
+└──────┬───────────────────┬──────────────────────┬───────────────┘
        │                   │                      │
        ▼ queue             ▼ queue                ▼ queue
 ┌──────────────┐  ┌────────────────┐  ┌───────────────────────┐
@@ -129,13 +129,13 @@ The blog-team demonstrates a **pipeline actor topology** — actors are chained 
 │ process:     │  │ process:       │  │ process:              │
 │ researcher-  │  │ writer-        │  │ editor-               │
 │ node.ts      │  │ node.ts        │  │ node.ts               │
-└──────┬───────┘  └────────┬───────┘  └────────────┬──────────┘
+└──────┬───────┘  └────────┬───────┘  └─────────────┬─────────┘
        │                   │                        │
        └───────────────────┴────────────────────────┘
                            │ publish(COMPLETED_CHANNEL, result)
                            ▼
                   ┌─────────────────┐
-                  │ CompletionRouter │
+                  │ CompletionRouter│
                   │ (orchestrator)  │
                   └─────────────────┘
 ```
