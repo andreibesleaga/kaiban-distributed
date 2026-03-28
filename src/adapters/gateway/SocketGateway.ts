@@ -1,10 +1,24 @@
 import { Server as HttpServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
+import { Server as SocketIOServer, type Socket } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import type Redis from 'ioredis';
-import { STATE_CHANNEL, STATE_EVENT_UPDATE } from '../../infrastructure/messaging/channels';
+import { STATE_CHANNEL, STATE_EVENT_UPDATE, STATE_EVENT_REQUEST, HITL_CHANNEL, HITL_SOCKET_EVENT } from '../../infrastructure/messaging/channels';
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
+
+/**
+ * Accumulated state snapshot.
+ * Merged from every delta received on kaiban-state-events since gateway start.
+ * Sent to each newly connected / reconnected board client so it sees the full
+ * current picture immediately — not just future incremental deltas.
+ */
+interface StateSnapshot {
+  teamWorkflowStatus?: string;
+  agents: Map<string, Record<string, unknown>>;
+  tasks: Map<string, Record<string, unknown>>;
+  metadata?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+}
 
 export class SocketGateway {
   private io: SocketIOServer | null = null;
@@ -12,11 +26,85 @@ export class SocketGateway {
   private redisPublisher: Redis;
   private redisSubscriber: Redis;
 
+  /** Running state snapshot — gate truth for reconnecting clients */
+  private snapshot: StateSnapshot = { agents: new Map(), tasks: new Map() };
+
   constructor(httpServer: HttpServer, redisPublisher: Redis, redisSubscriber: Redis) {
     this.httpServer = httpServer;
     this.redisPublisher = redisPublisher;
     this.redisSubscriber = redisSubscriber;
   }
+
+  // ─── Snapshot helpers ────────────────────────────────────────────────────
+
+  private applyToSnapshot(delta: Record<string, unknown>): void {
+    const newStatus = typeof delta['teamWorkflowStatus'] === 'string'
+      ? delta['teamWorkflowStatus'] : undefined;
+
+    if (newStatus !== undefined) {
+      // When a workflow restarts from a terminal state, clear stale tasks
+      const prev = this.snapshot.teamWorkflowStatus;
+      if (newStatus === 'RUNNING' && (prev === 'FINISHED' || prev === 'STOPPED' || prev === 'ERRORED')) {
+        this.snapshot.tasks.clear();
+      }
+      this.snapshot.teamWorkflowStatus = newStatus;
+    }
+
+    if (Array.isArray(delta['agents'])) {
+      for (const a of delta['agents'] as Record<string, unknown>[]) {
+        const id = a['agentId'];
+        if (typeof id === 'string') {
+          this.snapshot.agents.set(id, { ...(this.snapshot.agents.get(id) ?? {}), ...a });
+        }
+      }
+    }
+
+    if (Array.isArray(delta['tasks'])) {
+      for (const t of delta['tasks'] as Record<string, unknown>[]) {
+        const id = t['taskId'];
+        if (typeof id === 'string') {
+          this.snapshot.tasks.set(id, { ...(this.snapshot.tasks.get(id) ?? {}), ...t });
+        }
+      }
+    }
+
+    if (delta['metadata'] !== null && typeof delta['metadata'] === 'object') {
+      this.snapshot.metadata = { ...(this.snapshot.metadata ?? {}), ...(delta['metadata'] as Record<string, unknown>) };
+    }
+
+    if (delta['inputs'] !== null && typeof delta['inputs'] === 'object') {
+      this.snapshot.inputs = { ...(this.snapshot.inputs ?? {}), ...(delta['inputs'] as Record<string, unknown>) };
+    }
+  }
+
+  private buildSnapshot(): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    if (this.snapshot.teamWorkflowStatus !== undefined) {
+      out['teamWorkflowStatus'] = this.snapshot.teamWorkflowStatus;
+    }
+    if (this.snapshot.agents.size > 0) {
+      out['agents'] = Array.from(this.snapshot.agents.values());
+    }
+    if (this.snapshot.tasks.size > 0) {
+      out['tasks'] = Array.from(this.snapshot.tasks.values());
+    }
+    if (this.snapshot.metadata !== undefined) {
+      out['metadata'] = this.snapshot.metadata;
+    }
+    if (this.snapshot.inputs !== undefined) {
+      out['inputs'] = this.snapshot.inputs;
+    }
+    return out;
+  }
+
+  private sendSnapshot(socket: Socket): void {
+    const snap = this.buildSnapshot();
+    if (Object.keys(snap).length > 0) {
+      socket.emit(STATE_EVENT, snap);
+    }
+  }
+
+  // ─── Initialisation ───────────────────────────────────────────────────────
 
   public initialize(): void {
     // SECURITY WARNING: The wildcard origin '*' is used here for local
@@ -31,11 +119,28 @@ export class SocketGateway {
     });
     this.io.adapter(createAdapter(this.redisPublisher, this.redisSubscriber));
 
+    this.io.on('connection', (socket: Socket) => {
+      // Replay current full state to newly connected / reconnected client
+      this.sendSnapshot(socket);
+
+      // Client can explicitly request a state refresh (e.g. after reconnect)
+      socket.on(STATE_EVENT_REQUEST, () => this.sendSnapshot(socket));
+
+      // Forward HITL decisions from board → Redis → orchestrator
+      socket.on(HITL_SOCKET_EVENT, (payload: unknown) => {
+        if (typeof payload !== 'object' || payload === null) return;
+        const { taskId, decision } = payload as Record<string, unknown>;
+        if (typeof taskId !== 'string' || !['PUBLISH', 'REVISE', 'REJECT'].includes(String(decision))) return;
+        this.redisPublisher.publish(HITL_CHANNEL, JSON.stringify({ taskId, decision })).catch(() => {});
+      });
+    });
+
     this.redisSubscriber.subscribe(STATE_CHANNEL);
     this.redisSubscriber.on('message', (_channel: string, data: string) => {
       try {
         const parsed = JSON.parse(data) as Record<string, unknown>;
-        this.io?.emit(STATE_EVENT, parsed);
+        this.applyToSnapshot(parsed);          // keep snapshot current
+        this.io?.emit(STATE_EVENT, parsed);    // broadcast incremental delta to all
       } catch {
         console.error('[SocketGateway] Failed to parse state message');
       }

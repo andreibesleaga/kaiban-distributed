@@ -70,9 +70,16 @@ class OrchestratorStatePublisher {
     this.redis.publish('kaiban-state-events', JSON.stringify(delta)).catch(() => {});
   }
 
-  /** Call once when the orchestrator starts — board shows workflow is active */
-  workflowStarted(): void {
-    this.publish({ teamWorkflowStatus: 'RUNNING', agents: BLOG_AGENTS });
+  /** Call once when the orchestrator starts — board shows workflow is active with topic */
+  workflowStarted(topic: string): void {
+    this.publish({ teamWorkflowStatus: 'RUNNING', agents: BLOG_AGENTS, inputs: { topic } });
+  }
+
+  /** Publish a task immediately after it is queued — board shows it in TODO column */
+  taskQueued(taskId: string, title: string, agentId: string): void {
+    this.publish({
+      tasks: [{ taskId, title: title.slice(0, 60), status: 'TODO', assignedToAgentId: agentId }],
+    });
   }
 
   awaitingHITL(taskId: string, reviewTitle: string, recommendation: string, score: string): void {
@@ -198,8 +205,63 @@ async function rpc(method: string, params: Record<string, unknown>): Promise<Rec
   return body.result;
 }
 
-function ask(rl: readline.Interface, question: string): Promise<string> {
-  return new Promise((resolve) => rl.question(question, resolve));
+/**
+ * Wait for a HITL decision from either the terminal (readline) or the board (Socket.io → Redis).
+ * The first source to deliver a valid decision wins; the other is cleaned up.
+ *
+ * Terminal: [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW (re-prompts)
+ * Board:    emits hitl:decision → SocketGateway → kaiban-hitl-decisions Redis channel
+ */
+async function waitForHITLDecision(
+  taskId: string,
+  rl: readline.Interface,
+  redisUrl: string,
+  blogDraft: string,
+): Promise<'PUBLISH' | 'REVISE' | 'REJECT'> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finish = (decision: 'PUBLISH' | 'REVISE' | 'REJECT') => {
+      if (resolved) return;
+      resolved = true;
+      resolve(decision);
+    };
+
+    // ── Terminal path (preserves existing behaviour) ──────────────────────
+    const askTerminal = () => {
+      rl.question('\nYour decision [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW: ', (answer) => {
+        if (resolved) return;
+        const a = answer.trim();
+        if (a === '1') finish('PUBLISH');
+        else if (a === '2') finish('REVISE');
+        else if (a === '3') finish('REJECT');
+        else {
+          if (a === '4') {
+            console.log('\n─── FULL BLOG DRAFT ──────────────────────────────────');
+            console.log(blogDraft);
+            console.log('──────────────────────────────────────────────────────\n');
+          }
+          askTerminal();
+        }
+      });
+    };
+    askTerminal();
+
+    // ── Board path (new): subscribe to Redis HITL channel ────────────────
+    const sub = new Redis(redisUrl, { lazyConnect: false });
+    sub.subscribe('kaiban-hitl-decisions').then(() => {
+      sub.on('message', (_ch: string, msg: string) => {
+        if (resolved) { void sub.quit(); return; }
+        try {
+          const parsed = JSON.parse(msg) as { taskId: string; decision: string };
+          if (parsed.taskId === taskId && ['PUBLISH', 'REVISE', 'REJECT'].includes(parsed.decision)) {
+            console.log(`\n🖥  Board decision received: ${parsed.decision}`);
+            void sub.quit();
+            finish(parsed.decision as 'PUBLISH' | 'REVISE' | 'REJECT');
+          }
+        } catch { /* ignore malformed messages */ }
+      });
+    }).catch(() => { /* Redis unavailable — terminal-only fallback */ });
+  });
 }
 
 function parseRecommendation(review: string): 'PUBLISH' | 'REVISE' | 'REJECT' | 'UNKNOWN' {
@@ -263,6 +325,9 @@ async function main(): Promise<void> {
 
     console.log(`📋 Topic: "${TOPIC}"\n`);
 
+    // Broadcast workflow start — board shows RUNNING + topic + all agents IDLE
+    statePublisher.workflowStarted(TOPIC);
+
     // ──────────────────────────────────────────────────────────
     // STEP 1 — Research
     // ──────────────────────────────────────────────────────────
@@ -277,6 +342,8 @@ async function main(): Promise<void> {
       inputs: { topic: TOPIC },
     });
     const researchTaskId = String(researchTask['taskId']);
+    // Publish immediately — board shows task in TODO before researcher picks it up
+    statePublisher.taskQueued(researchTaskId, `Research: ${TOPIC}`, 'researcher');
     console.log(`  ↳ Task queued: ${researchTaskId}`);
     console.log(`  ↳ Waiting up to ${RESEARCH_WAIT_MS / 1000}s for research...\n`);
 
@@ -305,6 +372,7 @@ async function main(): Promise<void> {
       context: researchSummary,
     });
     const writeTaskId = String(writeTask['taskId']);
+    statePublisher.taskQueued(writeTaskId, `Write blog: ${TOPIC}`, 'writer');
     console.log(`  ↳ Task queued: ${writeTaskId}`);
     console.log(`  ↳ Waiting up to ${WRITE_WAIT_MS / 1000}s for draft...\n`);
 
@@ -333,6 +401,7 @@ async function main(): Promise<void> {
       context: `--- RESEARCH SUMMARY ---\n${researchSummary}\n\n--- BLOG DRAFT ---\n${blogDraft}`,
     });
     const editTaskId = String(editTask['taskId']);
+    statePublisher.taskQueued(editTaskId, 'Editorial Review', 'editor');
     console.log(`  ↳ Task queued: ${editTaskId}`);
     console.log(`  ↳ Waiting up to ${EDIT_WAIT_MS / 1000}s for editorial review...\n`);
 
@@ -368,17 +437,10 @@ async function main(): Promise<void> {
     console.log(`\n${icon} Editor recommends ${recommendation} (Accuracy: ${accuracyScore})\n`);
     console.log('Options:\n  [1] PUBLISH\n  [2] REVISE → send back to Kai with notes\n  [3] REJECT\n  [4] VIEW full draft\n');
 
-    let decision = '';
-    while (!['1', '2', '3'].includes(decision)) {
-      decision = (await ask(rl, 'Your decision [1/2/3/4]: ')).trim();
-      if (decision === '4') {
-        console.log('\n─── FULL BLOG DRAFT ──────────────────────────────────');
-        console.log(blogDraft);
-        console.log('──────────────────────────────────────────────────────\n');
-      }
-    }
+    console.log('  (Decide here or click Approve / Revise / Reject on the board)');
+    const decision = await waitForHITLDecision(editTaskId, rl, REDIS_URL, blogDraft);
 
-    if (decision === '1') {
+    if (decision === 'PUBLISH') {
       console.log('\n╔' + '═'.repeat(58) + '╗');
       console.log('║  🚀 PUBLISHED — FINAL BLOG POST' + ' '.repeat(26) + '║');
       console.log('╠' + '═'.repeat(58) + '╣');
@@ -387,8 +449,14 @@ async function main(): Promise<void> {
       console.log(`\n✅ Published. Accuracy: ${accuracyScore}\n`);
       statePublisher.workflowFinished(writeTaskId, TOPIC, editTaskId);
 
-    } else if (decision === '2') {
+    } else if (decision === 'REVISE') {
       console.log('\n🔄 Sending back to Kai with editorial notes...\n');
+
+      // Clear AWAITING_VALIDATION from the edit task so the board banner disappears
+      statePublisher.publish({
+        tasks: [{ taskId: editTaskId, title: 'Editorial Review', status: 'DOING',
+          assignedToAgentId: 'editor', result: '🔄 Revision requested — sending back to writer' }],
+      });
 
       const revisionTask = await rpc('tasks.create', {
         agentId: 'writer',
@@ -398,6 +466,7 @@ async function main(): Promise<void> {
         context: `--- ORIGINAL DRAFT ---\n${blogDraft}\n\n--- EDITORIAL FEEDBACK ---\n${editorialReview}\n\n--- RESEARCH ---\n${researchSummary}`,
       });
       const revisionTaskId = String(revisionTask['taskId']);
+      statePublisher.taskQueued(revisionTaskId, `Revision: ${TOPIC}`, 'writer');
       console.log(`  ↳ Revision task queued: ${revisionTaskId}`);
 
       const revisedDraft = await completionRouter.wait(revisionTaskId, WRITE_WAIT_MS, 'revision');
@@ -408,8 +477,17 @@ async function main(): Promise<void> {
       revisedDraft.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
       console.log('╚' + '═'.repeat(58) + '╝');
 
-      const pub = (await ask(rl, '\nPublish the revised draft? [y/n]: ')).trim().toLowerCase();
-      if (pub === 'y') {
+      // Show AWAITING_VALIDATION for the revised draft — board displays the banner again
+      statePublisher.awaitingHITL(revisionTaskId, 'Revised Draft — Approve for publication?', 'PUBLISH', 'N/A');
+
+      console.log('\n═'.repeat(60));
+      console.log(' REVISED DRAFT READY — HUMAN REVIEW REQUIRED (HITL)');
+      console.log('═'.repeat(60));
+      console.log('\nOptions:\n  [1] PUBLISH\n  [2] REVISE → save draft, stop\n  [3] REJECT\n  [4] VIEW full draft\n');
+      console.log('  (Decide here or click Approve / Revise / Reject on the board)');
+
+      const revisionDecision = await waitForHITLDecision(revisionTaskId, rl, REDIS_URL, revisedDraft);
+      if (revisionDecision === 'PUBLISH') {
         console.log('\n✅ Revised draft published.\n');
         statePublisher.workflowFinished(revisionTaskId, TOPIC, editTaskId);
       } else {
@@ -417,7 +495,7 @@ async function main(): Promise<void> {
         statePublisher.workflowStopped(revisionTaskId, 'Draft saved pending further review', editTaskId);
       }
 
-    } else {
+    } else { // REJECT
       console.log('\n🗑  Post rejected.\n');
       const rationaleMatch = /Rationale\s*\n([\s\S]+)$/i.exec(editorialReview);
       const rationale = rationaleMatch ? rationaleMatch[1].trim() : 'Rejected by human reviewer';

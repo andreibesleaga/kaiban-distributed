@@ -40,10 +40,16 @@ cd kaiban-distributed && npm install
 cp .env.example .env
 # Edit .env — add OPENROUTER_API_KEY or OPENAI_API_KEY + AGENT_IDS
 
-# 3. Start the full blog-team demo (Docker Compose, Orchestrator, UI Preview, and Monitor)
+# 3. Start the full blog-team demo (Docker Compose, workers, gateway, orchestrator, monitor)
 ./scripts/blog-team.sh start
+# → Script prints board URLs when the gateway is ready. Open one in a separate terminal/tab.
 
-# 4. Stop everything cleanly when done
+# 4. Open the board (choose one, in a separate terminal)
+cd board && npm install && npm run dev   # React board → http://localhost:5173
+#  — OR —
+# Open examples/blog-team/viewer/board.html in your browser (zero setup)
+
+# 5. Stop everything cleanly when done
 ./scripts/blog-team.sh stop
 ```
 
@@ -87,9 +93,12 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Board Viewer (browser)                                              │
-│  examples/blog-team/viewer/board.html                                │
-│  Socket.io client ──────────────────────────────────────────────┐    │
+│  Board Viewers (browser)                                             │
+│  A. board/  — React + Vite app  (npm run dev → :5173)               │
+│     Interactive HITL: Approve / Revise / Reject buttons              │
+│     socket.emit('hitl:decision') ───────────────────────────────┐   │
+│  B. examples/blog-team/viewer/board.html  (zero-setup)          │   │
+│  Socket.io client ──────────────────────────────────────────────┼───┘
 └─────────────────────────────────────────────────────────────────│────┘
                                                                   │ ws
 ┌─────────────────────────────────────────────────────────────────▼────┐
@@ -97,6 +106,8 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 │  GatewayApp:   GET /health · GET /.well-known/agent-card.json        │
 │                POST /a2a/rpc  (JSON-RPC 2.0 → routes to queue)       │
 │  SocketGateway: subscribes Redis kaiban-state-events → Socket.io     │
+│                 listens 'hitl:decision' → publishes kaiban-hitl-     │
+│                 decisions (Redis) → orchestrator picks up decision    │
 └──────────────────────────────────────────────────────────────────────┘
          │ BullMQ / Kafka task queues        │ Redis Pub/Sub
          │ kaiban-agents-{agentId}           │ kaiban-state-events
@@ -464,6 +475,54 @@ socket.on('state:update', (delta) => {
 });
 ```
 
+### Option D: React board app (modern UI, interactive HITL)
+
+The `board/` directory is a standalone React + Vite + TypeScript app that connects
+to the same Socket.io gateway and adds interactive Human-in-the-Loop controls:
+
+```bash
+cd board
+cp .env.example .env        # optional: set VITE_GATEWAY_URL
+npm install
+npm run dev                  # → http://localhost:5173
+```
+
+Or pass the gateway URL at runtime without rebuilding:
+
+```
+http://localhost:5173?gateway=http://my-gateway.example.com:3000
+```
+
+**Gateway URL resolution** (priority order):
+1. `?gateway=<url>` query param (runtime, no rebuild needed)
+2. `VITE_GATEWAY_URL` build-time env var (`.env` file)
+3. `http://localhost:3000` fallback
+
+**Layout** (top → bottom):
+- **Header** — logo, topic, gateway URL chip, workflow status pill, connection badge
+- **WorkflowBanner** — conditional banner: HITL Approve/Revise/Reject buttons (when any task is `AWAITING_VALIDATION`), FINISHED, STOPPED, or ERRORED states
+- **AgentGrid** — responsive 2–4 column grid with live status badges (IDLE / THINKING / EXECUTING + pulse / ERROR)
+- **KanbanBoard** — 5-column board: TODO · DOING · REVIEW · DONE · BLOCKED
+- **EconomicsPanel + EventLog** — tokens, cost, duration; reverse-chronological event stream (capped at 200)
+
+**HITL decision flow:**
+
+```
+Board clicks [Approve]
+  → socket.emit('hitl:decision', { taskId, decision: 'PUBLISH' })
+  → SocketGateway: publishes to Redis kaiban-hitl-decisions
+  → Orchestrator's waitForHITLDecision() races Redis vs terminal input
+  → First to respond wins → workflow continues
+```
+
+Both the board and the terminal prompt remain functional simultaneously — first response wins.
+
+**Production build:**
+
+```bash
+cd board && npm run build    # → board/dist/ (static files, serve anywhere)
+```
+
 ### Option C: KaibanTeamBridge (local Team + distributed workers)
 
 ```typescript
@@ -638,6 +697,7 @@ All responses: `{ data, meta, errors }` envelope.
 | Event | Direction | Payload |
 |-------|-----------|---------|
 | `state:update` | server → client | `StateDelta` (PII-sanitized) |
+| `hitl:decision` | client → server | `{ taskId: string, decision: 'PUBLISH' \| 'REVISE' \| 'REJECT' }` |
 
 ### Internal Channel Names
 
@@ -647,6 +707,7 @@ All responses: `{ data, meta, errors }` envelope.
 | `kaiban-events-completed` | BullMQ / Kafka | Successful task results |
 | `kaiban-events-failed` | BullMQ / Kafka | DLQ after 3 retry failures |
 | `kaiban-state-events` | Redis Pub/Sub | Agent/workflow state → board |
+| `kaiban-hitl-decisions` | Redis Pub/Sub | Board HITL decisions → orchestrator |
 
 ---
 
@@ -667,6 +728,12 @@ All responses: `{ data, meta, errors }` envelope.
 | `OPENAI_BASE_URL` | — | Optional | Custom OpenAI-compatible endpoint |
 | `LLM_MODEL` | `gpt-4o-mini` | No | Model (for OpenRouter: `meta-llama/llama-3.1-8b-instruct:free`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | No | OpenTelemetry OTLP endpoint (else console) |
+
+#### Board app (`board/.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_GATEWAY_URL` | `http://localhost:3000` | Gateway WebSocket URL (build-time; overridable via `?gateway=` query param at runtime) |
 
 #### Security (all opt-in, disabled by default)
 
@@ -824,6 +891,15 @@ kaiban-distributed/
 │   ├── blog-team.sh                       # Start/stop orchestration wrapper (all modes)
 │   ├── monitor.sh                         # Real-time terminal dashboard (all streams)
 │   └── generate-dev-certs.sh              # Self-signed CA + server/client certs for mTLS
+├── board/                                 # React + Vite + TypeScript board app (standalone)
+│   ├── src/
+│   │   ├── main.tsx / App.tsx             # Entry point + root layout
+│   │   ├── types/board.ts                 # StateDelta, AgentDelta, TaskDelta, BoardState
+│   │   ├── store/boardStore.ts            # Zustand: applyDelta, setConnectionStatus, addLog
+│   │   ├── socket/socketClient.ts         # Socket.io singleton + sendHitlDecision()
+│   │   └── components/                    # layout/ · workflow/ · agents/ · kanban/ · economics/ · log/
+│   ├── package.json                       # React 18, Vite 6, Tailwind, socket.io-client, zustand
+│   └── .env.example                       # VITE_GATEWAY_URL=http://localhost:3000
 ├── agents/                                # GABBE kit: guides, skills, memory, CONSTITUTION.md
 ├── docker-compose.yml                     # Full root stack (Redis + Kafka + single worker)
 ├── Dockerfile                             # Multi-stage: builder (npm ci + tsc) → runner (non-root)
@@ -848,6 +924,9 @@ kaiban-distributed/
 | 64 KB cap on published message data | `AgentActor` truncates `result` before publishing to prevent oversized frames from overloading messaging layer |
 | `globalSetup` catches Redis port conflict | E2E tests are resilient when Redis is already running from another compose stack |
 | `healthcheck: disable: true` on workers | Workers are not HTTP servers; Dockerfile HEALTHCHECK checks port 3000 which is gateway-only |
+| React board uses custom Socket.io client, not `kaiban-board` npm package | `kaiban-board@0.4.3` requires a KaibanJS `Team` instance; the distributed board consumes `state:update` events directly |
+| Board HITL races readline vs Redis | `waitForHITLDecision()` in orchestrator resolves from whichever arrives first — terminal or board click; both remain usable simultaneously |
+| `?gateway=` query param for runtime URL override | Allows the same static build to connect to any gateway without rebuilding |
 
 ---
 
@@ -855,7 +934,7 @@ kaiban-distributed/
 
 ### Unified Start/Stop Script
 
-The easiest way to run the full `blog-team` example is using the orchestration script. It handles Docker Compose, the API Gateway, worker nodes, the orchestrator, and automatically opens the live board in your browser. It then launches the real-time monitor.
+The easiest way to run the full `blog-team` example is using the orchestration script. It handles Docker Compose, the API Gateway, worker nodes, the orchestrator, and the terminal monitor. When the gateway is ready it prints board URLs — open one in a separate terminal or browser tab.
 
 ```bash
 # BullMQ/Redis — local orchestrator (default)
@@ -876,6 +955,30 @@ The easiest way to run the full `blog-team` example is using the orchestration s
 ```
 
 > **`--docker` mode** runs every component — including the orchestrator — as a Docker container. The orchestrator service (`docker compose run --rm orchestrator`) attaches your terminal for interactive HITL decisions [1/2/3/4]. Inside Docker it connects to gateway/Redis/Kafka via service-name hostnames. Without `--docker`, the orchestrator runs locally via `npx ts-node` (requires Node.js + project deps installed).
+
+### Opening a Board UI
+
+The script prints board URLs when the gateway is ready. Open **one or more** in a separate terminal or browser tab — they are all synchronized from the backend stream at all times:
+
+**A) React Board** — interactive HITL Approve / Revise / Reject, modern Kanban UI (requires Node.js):
+
+```bash
+# In a separate terminal, from the kaiban-distributed root:
+cd board && npm install && npm run dev
+# → http://localhost:5173
+
+# Point to a non-default gateway at runtime (no rebuild needed):
+# http://localhost:5173?gateway=http://my-gateway:3000
+```
+
+**B) Static HTML viewer** — zero setup, open directly in any browser:
+
+```
+examples/blog-team/viewer/board.html
+# Auto-connects to http://localhost:3000
+```
+
+> Multiple boards (React + HTML viewer + additional tabs) can all be open simultaneously and will all reflect the same live state. Each board receives a full state snapshot on connect and every incremental delta in real-time. HITL decisions can be sent from any connected board — the orchestrator accepts the first response.
 
 ### Standalone Real-Time Monitor
 

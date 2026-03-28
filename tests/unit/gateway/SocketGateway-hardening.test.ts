@@ -6,7 +6,7 @@ let capturedOptions: Record<string, unknown> | null = null;
 vi.mock('socket.io', () => ({
   Server: vi.fn().mockImplementation(function (_srv: unknown, opts: Record<string, unknown>) {
     capturedOptions = opts;
-    return { adapter: vi.fn(), emit: vi.fn(), close: vi.fn((cb?: () => void) => { if (cb) cb(); }) };
+    return { adapter: vi.fn(), emit: vi.fn(), close: vi.fn((cb?: () => void) => { if (cb) cb(); }), on: vi.fn() };
   }),
 }));
 vi.mock('@socket.io/redis-adapter', () => ({ createAdapter: vi.fn().mockReturnValue('mock-adapter') }));

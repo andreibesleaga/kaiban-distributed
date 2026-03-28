@@ -43,7 +43,9 @@ The post is mostly accurate with one unsupported claim.
 One HIGH-severity error must be corrected before publication.
 ```
 
-### HITL terminal prompt
+### HITL decision — terminal or board
+
+**Terminal prompt** (always available when orchestrator is running):
 
 ```
 ╔══════════════════════════════════════════════════════════╗
@@ -58,10 +60,14 @@ Options:
   [4] VIEW    — View full draft before deciding
 ```
 
+**React board** (if running — see Example 7): a cyan **Human-in-the-Loop Review Required** banner appears with **Approve / Revise / Reject** buttons. Clicking sends the decision directly to the orchestrator via Socket.io → Redis.
+
+Both inputs are active simultaneously — whichever responds first wins. The other is silently ignored.
+
 Outcomes on board:
-- `[1] PUBLISH` → `✅ WORKFLOW COMPLETE` green banner; all tasks DONE; agents IDLE
-- `[2] REVISE` → revision task appears as DOING; human confirms revised draft
-- `[3] REJECT` → `⏹ WORKFLOW ENDED` grey banner; editorial task BLOCKED
+- `PUBLISH` → `✅ WORKFLOW COMPLETE` green banner; all tasks DONE; agents IDLE
+- `REVISE` → revision task appears as DOING; human confirms revised draft
+- `REJECT` → `⏹ WORKFLOW ENDED` grey banner; editorial task BLOCKED
 
 ### Orchestrator environment variables
 
@@ -96,12 +102,22 @@ docker compose \
 ```
 Services: `redis` · `gateway` (port 3000) · `researcher` · `writer` · `editor`
 
-**Open the board:**
+**Open the board** — in a separate terminal or browser tab (choose one or both):
+
+*Option A — React board app (interactive HITL, modern UI):*
+```bash
+# Separate terminal, from kaiban-distributed root:
+cd board && npm install && npm run dev
+# Open: http://localhost:5173
+```
+
+*Option B — Static HTML viewer (zero setup):*
 ```
 Open: examples/blog-team/viewer/board.html in your browser
-→ Connects to http://localhost:3000
-→ Within 15 seconds: Ava, Kai, Morgan appear as IDLE
+→ Auto-connects to http://localhost:3000
 ```
+
+> Both can be open simultaneously alongside the terminal monitor. All views are synchronized from the backend stream at all times — each gets a full snapshot on connect and every delta in real-time.
 
 **Run the orchestrator** — choose one approach:
 
@@ -130,10 +146,11 @@ COMPOSE_FILE=examples/blog-team/docker-compose.yml ./scripts/monitor.sh
 ```
 
 **What you see on the board:**
-1. `RUNNING` — agents cycle IDLE → EXECUTING → IDLE as each step completes
-2. Tasks flow: `DOING` → `DONE` in Kanban columns
-3. Step 3: editorial task → `AWAITING_VALIDATION` — orange pulsing banner
-4. After your terminal decision: `✅ WORKFLOW COMPLETE` or `⏹ WORKFLOW ENDED`
+1. `RUNNING` — topic appears in header; research task immediately in `TODO` column
+2. Agents cycle IDLE → EXECUTING → IDLE; tasks move `TODO` → `DOING` → `DONE`
+3. Each task appears in `TODO` the moment it is queued, before the agent picks it up
+4. Step 3: editorial task → `AWAITING_VALIDATION` — cyan Human-in-the-Loop banner with Approve / Revise / Reject buttons
+5. After decision (board or terminal): `✅ WORKFLOW COMPLETE` or `⏹ WORKFLOW ENDED`
 
 ---
 
@@ -279,7 +296,11 @@ If running on Docker Desktop / Minikube:
 ```bash
 kubectl port-forward svc/kaiban-gateway 3000:3000
 ```
-Then open `examples/blog-team/viewer/board.html`.
+Then open `examples/blog-team/viewer/board.html`, or run the React board:
+```bash
+cd board && npm install && npm run dev
+# Open: http://localhost:5173
+```
 
 ---
 
@@ -504,5 +525,74 @@ full end-to-end scenarios covering:
 5. **Late-joining agent** — BullMQ delivers persisted jobs to late consumer
 6. **Duplicate task IDs** — aggregator counts each taskId exactly once
 7. **Approver threshold** — strict vs lenient ratio comparison
+
+---
+
+## Example 7 — React Board UI (Modern Kanban + Interactive HITL)
+
+The `board/` directory is a standalone React + Vite + TypeScript app that provides
+a modern real-time Kanban view of any running kaiban-distributed workflow, with
+interactive Human-in-the-Loop Approve / Revise / Reject controls.
+
+### Prerequisites
+
+- Any kaiban-distributed gateway running (e.g. `./scripts/blog-team.sh start`)
+- Node.js ≥ 18 (board only; gateway still needs ≥ 22)
+
+### Start
+
+```bash
+cd board
+cp .env.example .env          # optional: set VITE_GATEWAY_URL if gateway is not :3000
+npm install
+npm run dev                    # → http://localhost:5173
+```
+
+The board connects automatically. Within 15 seconds all running agents appear.
+
+### Runtime gateway override (no rebuild needed)
+
+```
+http://localhost:5173?gateway=http://remote-gateway.example.com:3000
+```
+
+### HITL workflow
+
+1. Run the blog-team orchestrator as normal (terminal or Docker).
+2. When Morgan's editorial review completes, a cyan **Human-in-the-Loop Review Required** banner appears on the board showing the task name.
+3. Click **Approve**, **Revise**, or **Reject** on the board.
+4. The orchestrator receives the decision via Redis (`kaiban-hitl-decisions`) and continues — no terminal input required.
+
+The terminal prompt (`[1] PUBLISH [2] REVISE [3] REJECT`) remains active simultaneously; whichever responds first wins.
+
+### What you see
+
+| Section | Content |
+|---------|---------|
+| **Header** | Logo · topic · gateway URL · workflow status pill · connection badge (LIVE / CONNECTING / OFFLINE) |
+| **WorkflowBanner** | HITL buttons when `AWAITING_VALIDATION`; FINISHED / STOPPED / ERRORED banners otherwise |
+| **AgentGrid** | One card per agent: name, role, status badge with pulse animation, current task chip |
+| **KanbanBoard** | 5 columns: TODO · DOING · REVIEW · DONE · BLOCKED; tasks move in real-time |
+| **EconomicsPanel** | Total tokens · estimated cost · start/end time · elapsed duration |
+| **EventLog** | Reverse-chronological event stream (WORKFLOW / AGENT / TASK / HITL / CONNECT), capped at 200 |
+
+### Production build (static files)
+
+```bash
+cd board && npm run build      # → board/dist/
+# Serve with any static host or CDN
+npx serve board/dist
+```
+
+Point to a remote gateway at runtime with `?gateway=`:
+```
+https://your-cdn.example.com/board/?gateway=https://gateway.example.com:3000
+```
+
+### Typecheck
+
+```bash
+cd board && npm run typecheck  # tsc --noEmit — strict mode
+```
 
 ---

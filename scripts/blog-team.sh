@@ -90,14 +90,25 @@ case "$COMMAND" in
     done
     echo -e "\033[1;32mGateway is up!\033[0m"
 
-    # Open the board preview
-    BOARD_URL="file://$(pwd)/examples/blog-team/viewer/board.html"
-    echo "Opening browser to $BOARD_URL"
-    if command -v xdg-open &> /dev/null; then xdg-open "$BOARD_URL" >/dev/null 2>&1 &
-    elif command -v open &> /dev/null; then open "$BOARD_URL" >/dev/null 2>&1 &
-    elif command -v start &> /dev/null; then start "" "$BOARD_URL" >/dev/null 2>&1 &
-    else echo "Please open $BOARD_URL manually in your browser."
-    fi
+    # Print board options — multiple boards can be open simultaneously,
+    # all synchronized from the backend stream in real-time.
+    echo ""
+    echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;37m  📊 BOARD — open in a separate terminal or browser\033[0m"
+    echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+    echo -e "  \033[1;36mA) React Board\033[0m (interactive HITL, modern UI):"
+    echo -e "     \033[0;32mcd board && npm install && npm run dev\033[0m"
+    echo -e "     Open: \033[4mhttp://localhost:5173\033[0m"
+    echo ""
+    echo -e "  \033[1;36mB) Static HTML viewer\033[0m (zero setup):"
+    echo -e "     Open: \033[4mfile://$(pwd)/examples/blog-team/viewer/board.html\033[0m"
+    echo ""
+    echo -e "  Multiple boards and the terminal monitor can run simultaneously"
+    echo -e "  — all are synchronized from the backend event stream at all times."
+    echo ""
+    echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
 
     # Start monitor in the background
     echo "Starting real-time monitor in background..."

@@ -3,18 +3,35 @@ import { createServer } from 'http';
 import { SocketGateway } from '../../../src/adapters/gateway/SocketGateway';
 
 const mockSubscribe = vi.fn().mockResolvedValue(undefined);
-const mockOn = vi.fn();
+const mockRedisOn = vi.fn();
 const mockQuit = vi.fn().mockResolvedValue(undefined);
-const mockRedisSubscriber = { subscribe: mockSubscribe, on: mockOn, quit: mockQuit };
-const mockRedisPublisher = { quit: mockQuit };
+const mockPublish = vi.fn().mockResolvedValue(1);
+const mockRedisSubscriber = { subscribe: mockSubscribe, on: mockRedisOn, quit: mockQuit };
+const mockRedisPublisher = { publish: mockPublish, quit: mockQuit };
 
 const mockEmit = vi.fn();
 const mockIoClose = vi.fn().mockImplementation((cb?: () => void) => { if (cb) cb(); });
 const mockAdapter = vi.fn();
 
+// Capture connection callbacks so tests can simulate socket connections
+let connectionHandler: ((socket: MockSocket) => void) | null = null;
+
+interface MockSocket {
+  emit: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+}
+
+function makeMockSocket(): MockSocket {
+  return { emit: vi.fn(), on: vi.fn() };
+}
+
+const mockIoOn = vi.fn().mockImplementation((event: string, cb: (socket: MockSocket) => void) => {
+  if (event === 'connection') connectionHandler = cb;
+});
+
 vi.mock('socket.io', () => ({
   Server: vi.fn().mockImplementation(function () {
-    return { adapter: mockAdapter, emit: mockEmit, close: mockIoClose };
+    return { adapter: mockAdapter, emit: mockEmit, close: mockIoClose, on: mockIoOn };
   }),
 }));
 vi.mock('@socket.io/redis-adapter', () => ({ createAdapter: vi.fn().mockReturnValue('mock-redis-adapter') }));
@@ -25,14 +42,15 @@ describe('SocketGateway', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    connectionHandler = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sg = new SocketGateway(httpServer, mockRedisPublisher as any, mockRedisSubscriber as any);
   });
 
   afterEach(async () => { await sg.shutdown(); });
 
-  function getMessageHandler(): (channel: string, data: string) => void {
-    const calls = mockOn.mock.calls as Array<[string, (...args: unknown[]) => void]>;
+  function getRedisMessageHandler(): (channel: string, data: string) => void {
+    const calls = mockRedisOn.mock.calls as Array<[string, (...args: unknown[]) => void]>;
     const onCall = calls.find((args) => args[0] === 'message');
     return onCall![1] as (channel: string, data: string) => void;
   }
@@ -49,23 +67,138 @@ describe('SocketGateway', () => {
 
   it('a Redis message triggers io.emit(state:update)', () => {
     sg.initialize();
-    getMessageHandler()('kaiban-state-events', JSON.stringify({ stateUpdate: { count: 1 } }));
+    getRedisMessageHandler()('kaiban-state-events', JSON.stringify({ stateUpdate: { count: 1 } }));
     expect(mockEmit).toHaveBeenCalledWith('state:update', { stateUpdate: { count: 1 } });
   });
 
   it('invalid JSON in Redis message is caught and logged', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     sg.initialize();
-    getMessageHandler()('kaiban-state-events', '{invalid}');
+    getRedisMessageHandler()('kaiban-state-events', '{invalid}');
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to parse'));
     errSpy.mockRestore();
   });
 
   it('shutdown() resolves without calling io.close when not initialized', async () => {
-    // sg is NOT initialized — io is null, should resolve via else branch
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const uninitSg = new SocketGateway(httpServer, mockRedisPublisher as any, mockRedisSubscriber as any);
     await expect(uninitSg.shutdown()).resolves.not.toThrow();
     expect(mockIoClose).not.toHaveBeenCalled();
+  });
+
+  it('sends accumulated snapshot to newly connected socket', () => {
+    sg.initialize();
+    // Simulate a delta arriving before the client connects
+    getRedisMessageHandler()('kaiban-state-events', JSON.stringify({
+      teamWorkflowStatus: 'RUNNING',
+      agents: [{ agentId: 'researcher', name: 'Ava', role: 'Researcher', status: 'EXECUTING', currentTaskId: 'task-1' }],
+    }));
+
+    // Simulate a new socket connection
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    expect(mockSocket.emit).toHaveBeenCalledWith('state:update', expect.objectContaining({
+      teamWorkflowStatus: 'RUNNING',
+      agents: expect.arrayContaining([expect.objectContaining({ agentId: 'researcher' })]),
+    }));
+  });
+
+  it('does not emit snapshot to socket when snapshot is empty', () => {
+    sg.initialize();
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+    expect(mockSocket.emit).not.toHaveBeenCalled();
+  });
+
+  it('responds to state:request with current snapshot', () => {
+    sg.initialize();
+    getRedisMessageHandler()('kaiban-state-events', JSON.stringify({
+      tasks: [{ taskId: 't-1', title: 'Research task', status: 'DOING', assignedToAgentId: 'researcher' }],
+    }));
+
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    // Find the state:request handler registered on the socket
+    const socketOnCalls = mockSocket.on.mock.calls as Array<[string, () => void]>;
+    const stateRequestHandler = socketOnCalls.find(([ev]) => ev === 'state:request')?.[1];
+    expect(stateRequestHandler).toBeDefined();
+
+    mockSocket.emit.mockClear();
+    stateRequestHandler!();
+
+    expect(mockSocket.emit).toHaveBeenCalledWith('state:update', expect.objectContaining({
+      tasks: expect.arrayContaining([expect.objectContaining({ taskId: 't-1' })]),
+    }));
+  });
+
+  it('merges multiple deltas into snapshot', () => {
+    sg.initialize();
+    const handle = getRedisMessageHandler();
+    handle('kaiban-state-events', JSON.stringify({
+      agents: [{ agentId: 'researcher', name: 'Ava', role: 'R', status: 'EXECUTING', currentTaskId: 't1' }],
+    }));
+    handle('kaiban-state-events', JSON.stringify({
+      agents: [{ agentId: 'writer', name: 'Kai', role: 'W', status: 'IDLE', currentTaskId: null }],
+    }));
+
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    const call = (mockSocket.emit.mock.calls as Array<[string, Record<string, unknown>]>)
+      .find(([ev]) => ev === 'state:update');
+    const agents = call![1]['agents'] as Record<string, unknown>[];
+    expect(agents).toHaveLength(2);
+    expect(agents.map((a) => a['agentId'])).toContain('researcher');
+    expect(agents.map((a) => a['agentId'])).toContain('writer');
+  });
+
+  it('clears tasks in snapshot when workflow restarts from a terminal state', () => {
+    sg.initialize();
+    const handle = getRedisMessageHandler();
+
+    handle('kaiban-state-events', JSON.stringify({
+      teamWorkflowStatus: 'FINISHED',
+      tasks: [{ taskId: 'old-task', title: 'Old', status: 'DONE', assignedToAgentId: 'writer' }],
+    }));
+    handle('kaiban-state-events', JSON.stringify({ teamWorkflowStatus: 'RUNNING' }));
+
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    const call = (mockSocket.emit.mock.calls as Array<[string, Record<string, unknown>]>)
+      .find(([ev]) => ev === 'state:update');
+    expect(call![1]['tasks']).toBeUndefined(); // tasks cleared
+    expect(call![1]['teamWorkflowStatus']).toBe('RUNNING');
+  });
+
+  it('publishes valid hitl:decision to Redis', () => {
+    sg.initialize();
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    const socketOnCalls = mockSocket.on.mock.calls as Array<[string, (payload: unknown) => void]>;
+    const hitlHandler = socketOnCalls.find(([ev]) => ev === 'hitl:decision')?.[1];
+    expect(hitlHandler).toBeDefined();
+
+    hitlHandler!({ taskId: 'task-42', decision: 'PUBLISH' });
+    expect(mockPublish).toHaveBeenCalledWith(
+      'kaiban-hitl-decisions',
+      JSON.stringify({ taskId: 'task-42', decision: 'PUBLISH' }),
+    );
+  });
+
+  it('ignores invalid hitl:decision payloads', () => {
+    sg.initialize();
+    const mockSocket = makeMockSocket();
+    connectionHandler!(mockSocket);
+
+    const socketOnCalls = mockSocket.on.mock.calls as Array<[string, (payload: unknown) => void]>;
+    const hitlHandler = socketOnCalls.find(([ev]) => ev === 'hitl:decision')?.[1];
+
+    hitlHandler!(null);
+    hitlHandler!({ taskId: 'task-1', decision: 'BADVALUE' });
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 });
