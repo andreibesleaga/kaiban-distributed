@@ -106,6 +106,12 @@ export class AgentStatePublisher {
         // → DONE
         this.currentStatus = 'IDLE';
         this.currentTaskId = null;
+        // If the handler returned a KaibanHandlerResult, show just the answer text on the board
+        const displayResult = (
+          result !== null &&
+          typeof result === 'object' &&
+          'answer' in (result as Record<string, unknown>)
+        ) ? String((result as Record<string, unknown>)['answer'] ?? '') : result;
         pub({
           agents: [{ agentId, name, role, status: 'IDLE', currentTaskId: null }],
           tasks: [{
@@ -113,7 +119,7 @@ export class AgentStatePublisher {
             title,
             status: 'DONE',
             assignedToAgentId: agentId,
-            result: (result == null ? '' : typeof result === 'string' ? result : JSON.stringify(result)).slice(0, MAX_RESULT_LEN),
+            result: (displayResult == null ? '' : typeof displayResult === 'string' ? displayResult : JSON.stringify(displayResult)).slice(0, MAX_RESULT_LEN),
           }],
         });
 

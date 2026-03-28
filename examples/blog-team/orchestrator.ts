@@ -74,7 +74,12 @@ class OrchestratorStatePublisher {
 
   /** Call once when the orchestrator starts — board shows workflow is active with topic */
   workflowStarted(topic: string): void {
-    this.publish({ teamWorkflowStatus: 'RUNNING', agents: BLOG_AGENTS, inputs: { topic } });
+    this.publish({ teamWorkflowStatus: 'RUNNING', agents: BLOG_AGENTS, inputs: { topic }, metadata: { startTime: Date.now() } });
+  }
+
+  /** Publish a running-total metadata delta so the board updates in real time */
+  publishMetadata(meta: { totalTokens: number; estimatedCost: number }): void {
+    this.publish({ metadata: meta });
   }
 
   /** Publish a task immediately after it is queued — board shows it in TODO column */
@@ -106,25 +111,25 @@ class OrchestratorStatePublisher {
   }
 
   /** Publish FINISHED state — resets all agents to IDLE and clears all pending tasks */
-  workflowFinished(finalTaskId: string, topic: string, editTaskId?: string): void {
+  workflowFinished(finalTaskId: string, topic: string, totalTokens: number, estimatedCost: number, editTaskId?: string): void {
     const tasks: Array<Record<string, unknown>> = [
       { taskId: finalTaskId, title: topic.slice(0, 60), status: 'DONE', assignedToAgentId: 'writer', result: '✅ Published' },
     ];
     if (editTaskId) {
       tasks.push({ taskId: editTaskId, title: 'Editorial Review', status: 'DONE', assignedToAgentId: 'editor', result: '✅ Approved for publication' });
     }
-    this.publish({ teamWorkflowStatus: 'FINISHED', agents: BLOG_AGENTS, tasks });
+    this.publish({ teamWorkflowStatus: 'FINISHED', agents: BLOG_AGENTS, tasks, metadata: { totalTokens, estimatedCost, endTime: Date.now() } });
   }
 
   /** Publish STOPPED state — clears all pending tasks including editorial review */
-  workflowStopped(taskId: string, reason: string, editTaskId?: string): void {
+  workflowStopped(taskId: string, reason: string, totalTokens: number, estimatedCost: number, editTaskId?: string): void {
     const tasks: Array<Record<string, unknown>> = [
       { taskId, title: 'Workflow ended', status: 'BLOCKED', assignedToAgentId: 'editor', result: `🗑 ${reason.slice(0, 200)}` },
     ];
     if (editTaskId && editTaskId !== taskId) {
       tasks.push({ taskId: editTaskId, title: 'Editorial Review', status: 'BLOCKED', assignedToAgentId: 'editor', result: '⏹ Workflow stopped' });
     }
-    this.publish({ teamWorkflowStatus: 'STOPPED', agents: BLOG_AGENTS, tasks });
+    this.publish({ teamWorkflowStatus: 'STOPPED', agents: BLOG_AGENTS, tasks, metadata: { totalTokens, estimatedCost, endTime: Date.now() } });
   }
 
   async disconnect(): Promise<void> { await this.redis.quit(); }
@@ -266,6 +271,22 @@ async function waitForHITLDecision(
   });
 }
 
+/** Parse the structured KaibanHandlerResult returned by the bridge. Falls back to plain text. */
+function parseHandlerResult(raw: string): { answer: string; inputTokens: number; outputTokens: number; estimatedCost: number } {
+  try {
+    const parsed = JSON.parse(raw) as { answer?: string; inputTokens?: number; outputTokens?: number; estimatedCost?: number };
+    if (typeof parsed === 'object' && parsed !== null && 'answer' in parsed) {
+      return {
+        answer:        String(parsed.answer ?? ''),
+        inputTokens:   Number(parsed.inputTokens  ?? 0),
+        outputTokens:  Number(parsed.outputTokens ?? 0),
+        estimatedCost: Number(parsed.estimatedCost ?? 0),
+      };
+    }
+  } catch { /* not JSON — treat as plain text */ }
+  return { answer: raw, inputTokens: 0, outputTokens: 0, estimatedCost: 0 };
+}
+
 function parseRecommendation(review: string): 'PUBLISH' | 'REVISE' | 'REJECT' | 'UNKNOWN' {
   // Handle plain, bold (**Recommendation:**), and variations
   const match = /\*{0,2}Recommendation:?\*{0,2}\s*\*{0,2}(PUBLISH|REVISE|REJECT)\*{0,2}/i.exec(review);
@@ -327,7 +348,11 @@ async function main(): Promise<void> {
 
     console.log(`📋 Topic: "${TOPIC}"\n`);
 
-    // Broadcast workflow start — board shows RUNNING + topic + all agents IDLE
+    // Running totals for EconomicsPanel on the board
+    let totalTokens = 0;
+    let totalCost = 0;
+
+    // Broadcast workflow start — board shows RUNNING + topic + all agents IDLE + startTime
     statePublisher.workflowStarted(TOPIC);
 
     // ──────────────────────────────────────────────────────────
@@ -349,11 +374,16 @@ async function main(): Promise<void> {
     console.log(`  ↳ Task queued: ${researchTaskId}`);
     console.log(`  ↳ Waiting up to ${RESEARCH_WAIT_MS / 1000}s for research...\n`);
 
-    const researchSummary = await completionRouter.wait(researchTaskId, RESEARCH_WAIT_MS, 'research')
+    const researchRaw = await completionRouter.wait(researchTaskId, RESEARCH_WAIT_MS, 'research')
       .catch((err: Error) => {
         statePublisher.taskFailed(researchTaskId, 'researcher', 'Research task', err.message);
         throw err;
       });
+    const researchParsed = parseHandlerResult(researchRaw);
+    const researchSummary = researchParsed.answer;
+    totalTokens += researchParsed.inputTokens + researchParsed.outputTokens;
+    totalCost   += researchParsed.estimatedCost;
+    statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
 
     console.log('\n✅ RESEARCH COMPLETE');
     console.log('─'.repeat(60));
@@ -378,11 +408,16 @@ async function main(): Promise<void> {
     console.log(`  ↳ Task queued: ${writeTaskId}`);
     console.log(`  ↳ Waiting up to ${WRITE_WAIT_MS / 1000}s for draft...\n`);
 
-    const blogDraft = await completionRouter.wait(writeTaskId, WRITE_WAIT_MS, 'writing')
+    const writeRaw = await completionRouter.wait(writeTaskId, WRITE_WAIT_MS, 'writing')
       .catch((err: Error) => {
         statePublisher.taskFailed(writeTaskId, 'writer', 'Writing task', err.message);
         throw err;
       });
+    const writeParsed = parseHandlerResult(writeRaw);
+    const blogDraft = writeParsed.answer;
+    totalTokens += writeParsed.inputTokens + writeParsed.outputTokens;
+    totalCost   += writeParsed.estimatedCost;
+    statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
 
     console.log('\n✅ DRAFT COMPLETE');
     console.log('─'.repeat(60));
@@ -407,11 +442,16 @@ async function main(): Promise<void> {
     console.log(`  ↳ Task queued: ${editTaskId}`);
     console.log(`  ↳ Waiting up to ${EDIT_WAIT_MS / 1000}s for editorial review...\n`);
 
-    const editorialReview = await completionRouter.wait(editTaskId, EDIT_WAIT_MS, 'editorial review')
+    const editRaw = await completionRouter.wait(editTaskId, EDIT_WAIT_MS, 'editorial review')
       .catch((err: Error) => {
         statePublisher.taskFailed(editTaskId, 'editor', 'Editorial review', err.message);
         throw err;
       });
+    const editParsed = parseHandlerResult(editRaw);
+    const editorialReview = editParsed.answer;
+    totalTokens += editParsed.inputTokens + editParsed.outputTokens;
+    totalCost   += editParsed.estimatedCost;
+    statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
 
     const recommendation = parseRecommendation(editorialReview);
     const accuracyScore  = parseAccuracyScore(editorialReview);
@@ -449,7 +489,7 @@ async function main(): Promise<void> {
       blogDraft.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
       console.log('╚' + '═'.repeat(58) + '╝');
       console.log(`\n✅ Published. Accuracy: ${accuracyScore}\n`);
-      statePublisher.workflowFinished(writeTaskId, TOPIC, editTaskId);
+      statePublisher.workflowFinished(writeTaskId, TOPIC, totalTokens, totalCost, editTaskId);
 
     } else if (decision === 'REVISE') {
       console.log('\n🔄 Sending back to Kai with editorial notes...\n');
@@ -471,7 +511,12 @@ async function main(): Promise<void> {
       statePublisher.taskQueued(revisionTaskId, `Revision: ${TOPIC}`, 'writer');
       console.log(`  ↳ Revision task queued: ${revisionTaskId}`);
 
-      const revisedDraft = await completionRouter.wait(revisionTaskId, WRITE_WAIT_MS, 'revision');
+      const revisionRaw = await completionRouter.wait(revisionTaskId, WRITE_WAIT_MS, 'revision');
+      const revisionParsed = parseHandlerResult(revisionRaw);
+      const revisedDraft = revisionParsed.answer;
+      totalTokens += revisionParsed.inputTokens + revisionParsed.outputTokens;
+      totalCost   += revisionParsed.estimatedCost;
+      statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
 
       console.log('╔' + '═'.repeat(58) + '╗');
       console.log('║  ✏️  REVISED DRAFT' + ' '.repeat(40) + '║');
@@ -491,10 +536,10 @@ async function main(): Promise<void> {
       const revisionDecision = await waitForHITLDecision(revisionTaskId, rl, REDIS_URL, revisedDraft);
       if (revisionDecision === 'PUBLISH') {
         console.log('\n✅ Revised draft published.\n');
-        statePublisher.workflowFinished(revisionTaskId, TOPIC, editTaskId);
+        statePublisher.workflowFinished(revisionTaskId, TOPIC, totalTokens, totalCost, editTaskId);
       } else {
         console.log('\n⏸  Draft saved. Run again to review further.\n');
-        statePublisher.workflowStopped(revisionTaskId, 'Draft saved pending further review', editTaskId);
+        statePublisher.workflowStopped(revisionTaskId, 'Draft saved pending further review', totalTokens, totalCost, editTaskId);
       }
 
     } else { // REJECT
@@ -502,7 +547,7 @@ async function main(): Promise<void> {
       const rationaleMatch = /Rationale\s*\n([\s\S]+)$/i.exec(editorialReview);
       const rationale = rationaleMatch ? rationaleMatch[1].trim() : 'Rejected by human reviewer';
       if (rationaleMatch) console.log(rationale);
-      statePublisher.workflowStopped(editTaskId, rationale, editTaskId);
+      statePublisher.workflowStopped(editTaskId, rationale, totalTokens, totalCost, editTaskId);
     }
 
     console.log('─'.repeat(60));
