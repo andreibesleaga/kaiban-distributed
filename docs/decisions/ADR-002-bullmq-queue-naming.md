@@ -33,6 +33,5 @@ Exception: SocketGateway uses ioredis pub/sub directly, which **does** support c
 
 ## Consequences
 
-- All queue names defined as constants in `examples/blog-team/team-config.ts` and `src/application/actor/AgentActor.ts`
-- CONTINUITY.md updated with this failure pattern to prevent future regressions
+- All queue names defined as constants in `examples/blog-team/team-config.ts` and `src/infrastructure/messaging/channels.ts`
 - SocketGateway state channel (`kaiban-state-events`) uses same convention even though ioredis permits colons

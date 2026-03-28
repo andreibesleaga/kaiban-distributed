@@ -67,7 +67,9 @@ class OrchestratorStatePublisher {
   }
 
   publish(delta: Record<string, unknown>): void {
-    this.redis.publish('kaiban-state-events', JSON.stringify(delta)).catch(() => {});
+    this.redis.publish('kaiban-state-events', JSON.stringify(delta)).catch((err: unknown) =>
+      console.error('[OrchestratorStatePublisher] Publish failed:', err),
+    );
   }
 
   /** Call once when the orchestrator starts — board shows workflow is active with topic */

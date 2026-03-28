@@ -4,11 +4,9 @@
 >
 > Run multiple AI agents teams with independently deployed Node.js processes, real-time visibility and multi-agent orchestration via Redis/Kafka pub/sub, A2A, and MCP.
 >
-> For running the example system see [EXAMPLES.md](EXAMPLES.md).
+> For running the examples see [EXAMPLES.md](EXAMPLES.md). For technical documentation, check the files in [docs/](docs/).
 >
-> System based on [KaibanJS](https://kaibanjs.com). For integrating KaibanJS, Board, and [KaibanJS Examples](https://www.kaibanjs.com/examples), follow documents in [KAIBANJS_INTEGRATION.md](KAIBANJS_INTEGRATION.md).
->
-> (For more documentation and system build flow, check files in [docs/](docs/)).
+> *(System based on [KaibanJS](https://kaibanjs.com). For integrating KaibanJS, follow documents in [docs/KAIBANJS_INTEGRATION.md](docs/KAIBANJS_INTEGRATION.md)).*
 >
 
 - The very first project in the world to combine Enterprise Messaging (Kafka/Redis), Actor-Model Isolation, AI Multi-Agent Orchestration, and Kanban Visualization, into a JavaScript ecosystem, for agents and humans.
@@ -20,7 +18,7 @@
 - Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
 
-[![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-356%20passing-brightgreen)](#testing)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
 [![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
@@ -85,7 +83,7 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 
 ## Running example
 (Blog team of: researcher, writer, editor - nodes distributed locally over docker services with Redis/Kafka messaging between them and their processes tasks status and results)
-![(running example gif)](docs/blogTeam.gif)
+![(running example gif)](docs/images/blogTeam.gif)
 
 ---
 
@@ -475,7 +473,7 @@ socket.on('state:update', (delta) => {
 });
 ```
 
-### Option D: React board app (modern UI, interactive HITL)
+### Option C: React board app (modern UI, interactive HITL)
 
 The `board/` directory is a standalone React + Vite + TypeScript app that connects
 to the same Socket.io gateway and adds interactive Human-in-the-Loop controls:
@@ -523,7 +521,7 @@ Both the board and the terminal prompt remain functional simultaneously — firs
 cd board && npm run build    # → board/dist/ (static files, serve anywhere)
 ```
 
-### Option C: KaibanTeamBridge (local Team + distributed workers)
+### Option D: KaibanTeamBridge (local Team + distributed workers)
 
 ```typescript
 import { Agent, Task } from 'kaibanjs';
@@ -788,7 +786,7 @@ All features are **disabled by default**. Enable individually via environment va
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 349 unit tests (no external deps)
+npm run test           # 356 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -802,7 +800,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 349 tests, 37 files | None (all mocked) |
+| Unit | `npm test` | 356 tests, 37 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 15 tests, 4 files | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
 
@@ -861,7 +859,7 @@ kaiban-distributed/
 │       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 349 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 356 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
@@ -900,11 +898,12 @@ kaiban-distributed/
 │   │   └── components/                    # layout/ · workflow/ · agents/ · kanban/ · economics/ · log/
 │   ├── package.json                       # React 18, Vite 6, Tailwind, socket.io-client, zustand
 │   └── .env.example                       # VITE_GATEWAY_URL=http://localhost:3000
-├── agents/                                # GABBE kit: guides, skills, memory, CONSTITUTION.md
 ├── docker-compose.yml                     # Full root stack (Redis + Kafka + single worker)
 ├── Dockerfile                             # Multi-stage: builder (npm ci + tsc) → runner (non-root)
 └── .env.example                           # All env vars documented with examples
 ```
+
+> **Distributed Actor Model documentation**: see [`docs/architecture/ACTOR_MODEL.md`](docs/architecture/ACTOR_MODEL.md) for a full explanation of how actor isolation, mailboxes, message-passing, fault containment, and horizontal scaling are implemented.
 
 ### Architecture Decisions
 
@@ -1033,7 +1032,7 @@ Built with help from [**GABBE Agentic Engineering Kit**](https://github.com/andr
 | S01 | PRD.md — requirements | ✅ |
 | S02 | PLAN.md — C4 architecture diagrams | ✅ |
 | S03 | SPEC.md — domain models, API schemas | ✅ |
-| S04 | TASKS.md — decomposition | ✅ |
+| S04 | Task decomposition | ✅ |
 | S05 | Core implementation (6 modules) | ✅ |
 | S06 | Unit test suite — 100% coverage | ✅ |
 | S07 | KaibanJS integration, blog-team pipeline, Kafka, README | ✅ |
