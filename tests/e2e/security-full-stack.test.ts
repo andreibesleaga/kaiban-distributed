@@ -281,10 +281,13 @@ describe('2. Circuit Breaker (real BullMQ + Redis)', () => {
 
     let dlqCount = 0;
     const dlqReasons: string[] = [];
+    const dlqTaskIds: string[] = [];
+    // Single subscription — BullMQDriver creates only one Worker per queue name
     await pub.subscribe(DLQ, async (p) => {
       if (p.agentId === id) {
-        dlqCount++;
+        dlqTaskIds.push(p.taskId);
         dlqReasons.push(String((p.data as Record<string, unknown>)['error'] ?? ''));
+        dlqCount++;
       }
     });
 
@@ -302,14 +305,8 @@ describe('2. Circuit Breaker (real BullMQ + Redis)', () => {
     await waitFor(() => dlqCount >= 3, 10_000);
     expect(breaker.isOpen()).toBe(true);
 
-    // Now send another task — should be rejected immediately by the open breaker
-    let openRejection: string | null = null;
-    await pub.subscribe(DLQ, async (p) => {
-      if (p.taskId === `cb-open-${id}`) {
-        openRejection = String((p.data as Record<string, unknown>)['error'] ?? '');
-      }
-    });
-
+    // Now send another task — should be rejected immediately by the open breaker.
+    // Reuse same DLQ subscription (second subscribe() would be a no-op).
     await pub.publish(`sec-cb-fail-${id}`, {
       taskId: `cb-open-${id}`,
       agentId: id,
@@ -317,7 +314,8 @@ describe('2. Circuit Breaker (real BullMQ + Redis)', () => {
       timestamp: Date.now(),
     });
 
-    await waitFor(() => openRejection !== null, 5000);
+    await waitFor(() => dlqTaskIds.includes(`cb-open-${id}`), 5000);
+    const openRejection = dlqReasons[dlqTaskIds.indexOf(`cb-open-${id}`)];
     expect(openRejection).toBe('circuit_breaker_open');
   });
 
@@ -672,9 +670,11 @@ describe('5. Redis Password Auth', () => {
       client.disconnect();
     }
 
-    // Redis returns NOAUTH when requirepass is set and no password provided
+    // Redis returns NOAUTH when requirepass is set and no password provided.
+    // ioredis surfaces this as "Connection is closed." because it disconnects
+    // after receiving the NOAUTH error from Redis.
     expect(error).not.toBeNull();
-    expect(error!.message).toMatch(/NOAUTH|ERR AUTH|ERR WRONGPASS|Redis connection/i);
+    expect(error!.message).toMatch(/NOAUTH|ERR AUTH|ERR WRONGPASS|Redis connection|Connection is closed/i);
   });
 
   it('BullMQDriver with correct password URL can publish and consume tasks', async () => {
