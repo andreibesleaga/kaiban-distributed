@@ -759,7 +759,7 @@ Three security audits have been performed against the **OWASP Top 10 for Agentic
 | [SECURITY_AUDIT_V2.md](docs/security/SECURITY_AUDIT_V2.md) | Deep vulnerability assessment — 2 CRIT, 4 HIGH, 7 MED, 4 LOW findings with implementation blueprints |
 | [SECURITY_AUDIT.md](docs/security/SECURITY_AUDIT.md) | V3 audit (current) — full resolution status, code review of all security infrastructure, production checklist |
 
-For a complete reference of every security feature, configuration option, and deployment checklist see **[SECURITY-FEATURES.md](docs/security/SECURITY-FEATURES.md)**.
+For a complete reference of every security feature, configuration option, and deployment checklist see **[SECURITY_FEATURES.md](docs/security/SECURITY_FEATURES.md)**.
 
 ### Security Features
 
