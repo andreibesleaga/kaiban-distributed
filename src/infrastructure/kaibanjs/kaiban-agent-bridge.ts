@@ -123,10 +123,21 @@ export function createKaibanTaskHandler(
     const inputs = (payload.data['inputs'] as Record<string, unknown>) ?? {};
     const result = await team.start(inputs);
 
+    // Compute cost before the ERRORED check so we can log it regardless.
+    // KaibanJS's own summary box shows $-1 when the model isn't in its private
+    // pricing table — this line prints the correct value from our MODEL_PRICING.
+    const model = agentConfig.llmConfig?.model ?? 'default';
+    const handlerResult = toHandlerResult(result, model);
+    console.log(
+      `[Cost] model=${model} ` +
+      `input=${handlerResult.inputTokens} output=${handlerResult.outputTokens} ` +
+      `cost=$${handlerResult.estimatedCost.toFixed(6)}`,
+    );
+
     if (result.status === 'ERRORED') {
       throw new Error(`KaibanJS workflow error: ${String(result.result ?? 'unknown')}`);
     }
 
-    return toHandlerResult(result, agentConfig.llmConfig?.model ?? 'default');
+    return handlerResult;
   };
 }

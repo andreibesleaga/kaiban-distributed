@@ -198,6 +198,12 @@ header h1 { font-size: 1.4rem; font-weight: 700; }
 }
 .task-result.blocked  { border-left: 2px solid #ef4444; color: #fca5a5; }
 .task-result.awaiting { border-left: 2px solid #f97316; color: #fed7aa; }
+/* Collapsible long results (e.g. blog posts) */
+details.task-result summary { cursor: pointer; list-style: none; }
+details.task-result summary::-webkit-details-marker { display: none; }
+details.task-result summary::before { content: '▶ '; font-size: 0.65rem; }
+details.task-result[open] summary::before { content: '▼ '; }
+.task-result-full { white-space: pre-wrap; margin-top: 6px; }
 
 .task-badge {
   font-size: 0.65rem;

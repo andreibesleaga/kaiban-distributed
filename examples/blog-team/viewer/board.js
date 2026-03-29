@@ -99,8 +99,15 @@ function makeTaskCard(task) {
 
   const resultClass = isBlocked ? ' blocked' : isAwaiting ? ' awaiting' : '';
   const resultText  = parseTaskResult(task.result);
+  // Long results (e.g. blog posts) use a collapsible <details> so the card stays compact
+  // but the full text is always accessible without truncation.
   const resultHtml  = resultText
-    ? `<div class="task-result${resultClass}">${escHTML(resultText.slice(0, 500))}${resultText.length > 500 ? '…' : ''}</div>`
+    ? resultText.length > 400
+      ? `<details class="task-result${resultClass}">
+           <summary>${escHTML(resultText.slice(0, 120))}…</summary>
+           <div class="task-result-full">${escHTML(resultText)}</div>
+         </details>`
+      : `<div class="task-result${resultClass}">${escHTML(resultText)}</div>`
     : '';
 
   const title      = task.title || task.description?.slice(0, 40) || task.taskId || 'Task';

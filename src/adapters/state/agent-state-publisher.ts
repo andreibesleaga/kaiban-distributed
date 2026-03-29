@@ -32,7 +32,8 @@ interface TaskState {
 }
 
 
-const MAX_RESULT_LEN = 800;
+// 20 KB — large enough for a full blog post (typically 3–6 KB), still bounds message size
+const MAX_RESULT_LEN = 20_000;
 
 export class AgentStatePublisher {
   private redis: Redis;
@@ -108,11 +109,18 @@ export class AgentStatePublisher {
         this.currentStatus = 'IDLE';
         this.currentTaskId = null;
         // If the handler returned a KaibanHandlerResult, show just the answer text on the board
-        const displayResult = (
-          result !== null &&
-          typeof result === 'object' &&
-          'answer' in (result as Record<string, unknown>)
-        ) ? String((result as Record<string, unknown>)['answer'] ?? '') : result;
+        const kaibanResult = result !== null && typeof result === 'object'
+          ? result as Record<string, unknown>
+          : null;
+        const displayResult = kaibanResult && 'answer' in kaibanResult
+          ? String(kaibanResult['answer'] ?? '')
+          : result;
+        // If token data is present, publish it so the board shows costs immediately
+        // (without waiting for the orchestrator's accumulated publishMetadata() call)
+        const tokenMeta = kaibanResult && 'inputTokens' in kaibanResult ? {
+          totalTokens: Number(kaibanResult['inputTokens'] ?? 0) + Number(kaibanResult['outputTokens'] ?? 0),
+          estimatedCost: Number(kaibanResult['estimatedCost'] ?? 0),
+        } : undefined;
         pub({
           agents: [{ agentId, name, role, status: 'IDLE', currentTaskId: null }],
           tasks: [{
@@ -122,6 +130,7 @@ export class AgentStatePublisher {
             assignedToAgentId: agentId,
             result: (displayResult == null ? '' : typeof displayResult === 'string' ? displayResult : JSON.stringify(displayResult)).slice(0, MAX_RESULT_LEN),
           }],
+          ...(tokenMeta ? { metadata: tokenMeta } : {}),
         });
 
         return result;

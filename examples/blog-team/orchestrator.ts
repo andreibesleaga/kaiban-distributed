@@ -434,7 +434,7 @@ async function main(): Promise<void> {
 
     console.log('\n✅ DRAFT COMPLETE');
     console.log('─'.repeat(60));
-    console.log(blogDraft.slice(0, 800) + (blogDraft.length > 800 ? '\n  [...full draft sent to editor...]' : ''));
+    console.log(blogDraft);
     console.log('─'.repeat(60) + '\n');
 
     // ──────────────────────────────────────────────────────────
