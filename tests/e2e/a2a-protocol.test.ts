@@ -67,7 +67,7 @@ describe('E2E: A2A Protocol', () => {
         jsonrpc: '2.0',
         id: 2,
         method: 'tasks.create',
-        params: { instruction: 'Analyze data', expectedOutput: 'Summary' },
+        params: { agentId: 'kaiban-e2e-worker', instruction: 'Analyze data', expectedOutput: 'Summary' },
       }),
     });
     expect(res.status).toBe(200);

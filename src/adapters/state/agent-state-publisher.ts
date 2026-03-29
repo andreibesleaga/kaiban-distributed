@@ -81,6 +81,31 @@ export class AgentStatePublisher {
     }, heartbeatIntervalMs);
   }
 
+  private formatDisplayResult(result: unknown): string {
+    const kaibanResult = result !== null && typeof result === 'object'
+      ? (result as Record<string, unknown>)
+      : null;
+    const displayResult = kaibanResult && 'answer' in kaibanResult
+      ? String(kaibanResult['answer'] ?? '')
+      : result;
+
+    if (displayResult == null) return '';
+    return (typeof displayResult === 'string' ? displayResult : JSON.stringify(displayResult)).slice(0, MAX_RESULT_LEN);
+  }
+
+  private extractTokenMetadata(result: unknown): { totalTokens: number; estimatedCost: number } | undefined {
+    if (result !== null && typeof result === 'object') {
+      const kaibanResult = result as Record<string, unknown>;
+      if ('inputTokens' in kaibanResult && 'outputTokens' in kaibanResult) {
+        return {
+          totalTokens: Number(kaibanResult['inputTokens'] ?? 0) + Number(kaibanResult['outputTokens'] ?? 0),
+          estimatedCost: Number(kaibanResult['estimatedCost'] ?? 0),
+        };
+      }
+    }
+    return undefined;
+  }
+
   /**
    * Wraps a task handler to publish EXECUTING → DONE/ERROR state transitions.
    * The original handler's return value (LLM result) is preserved.
@@ -108,19 +133,9 @@ export class AgentStatePublisher {
         // → DONE
         this.currentStatus = 'IDLE';
         this.currentTaskId = null;
-        // If the handler returned a KaibanHandlerResult, show just the answer text on the board
-        const kaibanResult = result !== null && typeof result === 'object'
-          ? result as Record<string, unknown>
-          : null;
-        const displayResult = kaibanResult && 'answer' in kaibanResult
-          ? String(kaibanResult['answer'] ?? '')
-          : result;
-        // If token data is present, publish it so the board shows costs immediately
-        // (without waiting for the orchestrator's accumulated publishMetadata() call)
-        const tokenMeta = kaibanResult && 'inputTokens' in kaibanResult ? {
-          totalTokens: Number(kaibanResult['inputTokens'] ?? 0) + Number(kaibanResult['outputTokens'] ?? 0),
-          estimatedCost: Number(kaibanResult['estimatedCost'] ?? 0),
-        } : undefined;
+        const resultStr = this.formatDisplayResult(result);
+        const tokenMeta = this.extractTokenMetadata(result);
+        
         pub({
           agents: [{ agentId, name, role, status: 'IDLE', currentTaskId: null }],
           tasks: [{
@@ -128,7 +143,7 @@ export class AgentStatePublisher {
             title,
             status: 'DONE',
             assignedToAgentId: agentId,
-            result: (displayResult == null ? '' : typeof displayResult === 'string' ? displayResult : JSON.stringify(displayResult)).slice(0, MAX_RESULT_LEN),
+            result: resultStr,
           }],
           ...(tokenMeta ? { metadata: tokenMeta } : {}),
         });

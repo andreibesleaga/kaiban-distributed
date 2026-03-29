@@ -38,13 +38,13 @@ import { A2AConnector, type AgentCard } from '../../src/infrastructure/federatio
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+const getRedisUrl = (): string => process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const COMPLETED = 'kaiban-events-completed';
 const DLQ = 'kaiban-events-failed';
 
 /** BullMQ connection config derived from REDIS_URL (password included). */
-function makeConnConfig() {
-  const url = new URL(REDIS_URL);
+function makeConnConfig(): { connection: { host: string; port: number; password?: string } } {
+  const url = new URL(getRedisUrl());
   return {
     connection: {
       host: url.hostname,
@@ -85,7 +85,7 @@ describe('1. Semantic Firewall (real BullMQ + Redis)', () => {
     drivers.length = 0;
   });
 
-  async function setupFirewallActor(queueId: string) {
+  async function setupFirewallActor(queueId: string): Promise<{ pub: BullMQDriver, queueName: string }> {
     const cfg = makeConnConfig();
     const pub = new BullMQDriver(cfg);
     const sub = new BullMQDriver(cfg);
@@ -492,8 +492,8 @@ describe('4. Channel Signing (real Redis pub/sub)', () => {
     clients.length = 0;
   });
 
-  function makeRedis() {
-    const r = new Redis(REDIS_URL, { lazyConnect: false });
+  function makeRedis(): Redis {
+    const r = new Redis(getRedisUrl(), { lazyConnect: false });
     clients.push(r);
     return r;
   }
@@ -639,7 +639,7 @@ describe('4. Channel Signing (real Redis pub/sub)', () => {
 
 describe('5. Redis Password Auth', () => {
   it('connection with correct password can SET/GET keys', async () => {
-    const client = new Redis(REDIS_URL, { lazyConnect: true });
+    const client = new Redis(getRedisUrl(), { lazyConnect: true });
     await client.connect();
     const key = `sec-e2e-pw-${randomUUID()}`;
     await client.set(key, 'value', 'EX', 5);
@@ -650,13 +650,13 @@ describe('5. Redis Password Auth', () => {
 
   it('connection without password is rejected (NOAUTH)', async () => {
     // Extract host/port without the password
-    const url = new URL(REDIS_URL);
+    const url = new URL(getRedisUrl());
     const noAuthUrl = `redis://${url.hostname}:${url.port || 6379}`;
 
     const client = new Redis(noAuthUrl, {
       lazyConnect: true,
       maxRetriesPerRequest: 0,
-      retryStrategy: () => null, // disable reconnect
+      retryStrategy: (): null => null, // disable reconnect
       enableOfflineQueue: false,
     });
 
@@ -712,14 +712,14 @@ describe('5. Redis Password Auth', () => {
 // ─── 6. Rate Limiting ─────────────────────────────────────────────────────────
 
 describe('6. Rate Limiting (real HTTP server)', () => {
-  async function startServer() {
+  async function startServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
     const connector = new A2AConnector(agentCard);
     const gateway = new GatewayApp(connector);
     const server = createServer(gateway.app);
     await new Promise<void>((resolve) => server.listen(0, () => resolve()));
     const addr = server.address() as { port: number };
     const baseUrl = `http://localhost:${addr.port}`;
-    const close = () => new Promise<void>((res, rej) =>
+    const close = (): Promise<void> => new Promise<void>((res, rej) =>
       server.close((e) => (e ? rej(e) : res())));
     return { baseUrl, close };
   }
@@ -745,7 +745,7 @@ describe('6. Rate Limiting (real HTTP server)', () => {
       const token = issueA2AToken('rate-limit-tester');
       const rpcBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'agent.status' });
 
-      const makeReq = () => fetch(`${baseUrl}/a2a/rpc`, {
+      const makeReq = (): Promise<Response> => fetch(`${baseUrl}/a2a/rpc`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -796,13 +796,13 @@ describe('7. A2A Auth Enforcement (production mode, real HTTP)', () => {
     await new Promise<void>((resolve) => server.listen(0, () => resolve()));
     const addr = server.address() as { port: number };
     baseUrl = `http://localhost:${addr.port}`;
-    closeServer = () => new Promise<void>((res, rej) =>
+    closeServer = (): Promise<void> => new Promise<void>((res, rej) =>
       server.close((e) => (e ? rej(e) : res())));
   });
 
   afterEach(async () => { await closeServer(); });
 
-  const rpc = (headers: Record<string, string> = {}) =>
+  const rpc = (headers: Record<string, string> = {}): Promise<Response> =>
     fetch(`${baseUrl}/a2a/rpc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
@@ -888,13 +888,13 @@ describe('8. AgentStatePublisher: signed state over real Redis pub/sub', () => {
     const { AgentStatePublisher } = await import('../../src/adapters/state/agent-state-publisher');
 
     const agentId = `ase2e-${randomUUID().slice(0, 6)}`;
-    const publisher = new AgentStatePublisher(REDIS_URL, {
+    const publisher = new AgentStatePublisher(getRedisUrl(), {
       agentId,
       name: 'TestAgent',
       role: 'Tester',
     });
 
-    const sub = new Redis(REDIS_URL);
+    const sub = new Redis(getRedisUrl());
     const receivedDeltas: Record<string, unknown>[] = [];
     await sub.subscribe('kaiban-state-events');
     sub.on('message', (_ch: string, raw: string) => {
@@ -927,7 +927,7 @@ describe('8. AgentStatePublisher: signed state over real Redis pub/sub', () => {
   });
 
   it('unsigned state message injected directly to Redis is rejected by unwrapVerified', async () => {
-    const pub = new Redis(REDIS_URL);
+    const pub = new Redis(getRedisUrl());
 
     // Inject an unsigned fake state message directly
     const fakeState = JSON.stringify({
@@ -969,7 +969,7 @@ describe('9. Full Stack: A2A auth + signing + firewall + circuit breaker', () =>
     await new Promise((r) => setTimeout(r, 200));
 
     // Set up signed state subscriber
-    const stateClient = new Redis(REDIS_URL);
+    const stateClient = new Redis(getRedisUrl());
     const verifiedDeltas: Record<string, unknown>[] = [];
     await stateClient.subscribe('kaiban-state-events');
     stateClient.on('message', (_ch: string, raw: string) => {
@@ -979,7 +979,7 @@ describe('9. Full Stack: A2A auth + signing + firewall + circuit breaker', () =>
 
     // Publish AgentStatePublisher IDLE to trigger signed state
     const { AgentStatePublisher } = await import('../../src/adapters/state/agent-state-publisher');
-    const statePublisher = new AgentStatePublisher(REDIS_URL, { agentId: id, name: 'FullStackAgent', role: 'Tester' });
+    const statePublisher = new AgentStatePublisher(getRedisUrl(), { agentId: id, name: 'FullStackAgent', role: 'Tester' });
     statePublisher.publishIdle();
 
     // Wait for the signed IDLE state to arrive
