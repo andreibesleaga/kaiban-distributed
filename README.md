@@ -81,6 +81,33 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 
 ---
 
+## React Board (`board/`)
+
+The `board/` subdirectory is a **standalone React + Vite + TypeScript** dashboard that visualises distributed agent activity in real time via **Socket.io**.
+
+| Feature | Detail |
+|---|---|
+| **Tech stack** | React 18 · Vite · TypeScript · Tailwind CSS · Zustand · Socket.io client |
+| **Gateway URL** | `http://localhost:3000` (override with `?gateway=<url>` query param or `VITE_GATEWAY_URL`) |
+| **State source** | `SocketGateway` backend subscribes to Redis `kaiban-state-events` and fans out `state:update` events to all connected boards |
+| **Agent Grid** | Live status badges per agent — IDLE / THINKING / EXECUTING (pulse) / ERROR |
+| **Kanban Board** | 5-column task view: TODO · DOING · REVIEW · DONE · BLOCKED |
+| **HITL controls** | Approve / Revise / Reject buttons when a task is `AWAITING_VALIDATION`; emits `hitl:decision` back through the socket |
+| **Economics panel** | Aggregate token count, cost, and duration; reverse-chronological event log (capped at 200 entries) |
+
+**Start the board (dev):**
+
+```bash
+cd board
+cp .env.example .env      # optional: set VITE_GATEWAY_URL
+npm install
+npm run dev               # → http://localhost:5173
+```
+
+**Production build** outputs static files to `board/dist/` — deploy anywhere (nginx, CDN, etc.).
+
+---
+
 ## Running example
 (Blog team of: researcher, writer, editor - nodes distributed locally over docker services with Redis/Kafka messaging between them and their processes tasks status and results)
 ![(running example gif)](docs/images/blogTeam.gif)
