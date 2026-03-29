@@ -780,13 +780,7 @@ All responses: `{ data, meta, errors }` envelope.
 
 ## Security & Compliance
 
-Three security audits have been performed against the **OWASP Top 10 for Agentic AI (2026)** and **OWASP Top 10 for LLM Applications (2025)**:
-
-| Document | Scope |
-|----------|-------|
-| [SECURITY_AUDIT_V1.md](docs/security/SECURITY_AUDIT_V1.md) | Initial audit (March 11 2026) — STRIDE threat modelling, OWASP mapping, mTLS + firewall + circuit breaker remediation |
-| [SECURITY_AUDIT_V2.md](docs/security/SECURITY_AUDIT_V2.md) | Deep vulnerability assessment — 2 CRIT, 4 HIGH, 7 MED, 4 LOW findings with implementation blueprints |
-| [SECURITY_AUDIT.md](docs/security/SECURITY_AUDIT.md) | V3 audit (current) — full resolution status, code review of all security infrastructure, production checklist |
+Security audits have been performed against the **OWASP Top 10 for Agentic AI (2026)** and **OWASP Top 10 for LLM Applications (2025)**.
 
 For a complete reference of every security feature, configuration option, and deployment checklist see **[SECURITY_FEATURES.md](docs/security/SECURITY_FEATURES.md)**.
 

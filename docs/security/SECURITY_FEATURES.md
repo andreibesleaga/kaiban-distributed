@@ -1,8 +1,6 @@
 # Kaiban Distributed: Security Features Reference
 
 > Complete reference for every security feature in kaiban-distributed — what it does, where it lives, how to configure it, and how to verify it works.
->
-> For the full vulnerability history and audit trail see: [SECURITY_AUDIT.md](SECURITY_AUDIT.md)
 
 ---
 
@@ -557,5 +555,3 @@ echo "REDIS_PASSWORD=$(openssl rand -base64 24)"
 ```
 
 ---
-
-*See [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for the full vulnerability history and audit trail.*
