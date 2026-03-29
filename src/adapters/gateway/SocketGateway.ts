@@ -163,7 +163,7 @@ export class SocketGateway {
           return;
         }
         const { taskId, decision } = payload as Record<string, unknown>;
-        if (typeof taskId !== 'string' || !['PUBLISH', 'REVISE', 'REJECT'].includes(String(decision))) {
+        if (typeof taskId !== 'string' || typeof decision !== 'string') {
           ack?.({ ok: false, error: 'invalid taskId or decision' });
           return;
         }
