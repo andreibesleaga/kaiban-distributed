@@ -28,7 +28,7 @@ describe('E2E: KafkaDriver', () => {
     await consumer.subscribe(topic, async (payload) => { received.push(payload); });
 
     // Give consumer time to join the group
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 5000));
 
     const msg: MessagePayload = {
       taskId: 'kafka-e2e-task-001',
@@ -39,7 +39,7 @@ describe('E2E: KafkaDriver', () => {
     await producer.publish(topic, msg);
 
     // Wait for message delivery
-    await new Promise((r) => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 5000));
 
     expect(received.length).toBeGreaterThanOrEqual(1);
     expect(received[0].taskId).toBe('kafka-e2e-task-001');

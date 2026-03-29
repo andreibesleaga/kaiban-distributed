@@ -34,6 +34,7 @@ export async function setup(): Promise<void> {
     execSync(`docker compose -f ${COMPOSE_FILE} up -d redis`, {
       stdio: 'pipe',
       timeout: 30000,
+      env: { ...process.env, REDIS_PASSWORD: process.env['REDIS_PASSWORD'] || '' }
     });
   } catch {
     // Port already in use — Redis is already running (e.g. from another compose stack)

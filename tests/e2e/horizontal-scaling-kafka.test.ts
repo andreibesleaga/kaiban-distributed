@@ -16,7 +16,7 @@ describe('E2E: Horizontal Scaling & Concurrency (Kafka)', () => {
 
   it('distributes tasks across multiple cloned instances exactly once (Kafka Consumer Groups)', async () => {
     // 1. Setup global publisher/subscriber for observing the test
-    const oracleDriver = new KafkaDriver({ clientId: 'oracle', brokers: KAFKA_BROKERS, groupId: 'oracle-group' });
+    const oracleDriver = new KafkaDriver({ clientId: `oracle-${randomUUID()}`, brokers: KAFKA_BROKERS, groupId: `oracle-group-${randomUUID()}` });
     drivers.push(oracleDriver);
 
     const completedTasks = new Set<string>();

@@ -38,6 +38,7 @@ export async function setup(): Promise<void> {
   execSync(`docker compose -f ${COMPOSE_FILE} up -d redis zookeeper kafka`, {
     stdio: 'inherit',
     timeout: 60000,
+    env: { ...process.env, REDIS_PASSWORD: process.env['REDIS_PASSWORD'] || '' }
   });
   await waitForKafka();
 }
@@ -47,5 +48,6 @@ export async function teardown(): Promise<void> {
   execSync(`docker compose -f ${COMPOSE_FILE} down`, {
     stdio: 'inherit',
     timeout: 30000,
+    env: { ...process.env, REDIS_PASSWORD: process.env['REDIS_PASSWORD'] || '' }
   });
 }

@@ -745,7 +745,7 @@ describe('6. Rate Limiting (real HTTP server)', () => {
       const token = issueA2AToken('rate-limit-tester');
       const rpcBody = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'agent.status' });
 
-      const makeReq = (): Promise<Response> => fetch(`${baseUrl}/a2a/rpc`, {
+      const makeReq = (): Promise<number> => fetch(`${baseUrl}/a2a/rpc`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
