@@ -1,5 +1,7 @@
 # Kaiban Distributed - Multi-Agent Distributed AI System
 
+A production-grade implementation of the Distributed Actor Model for AI swarms using TypeScript, Redis/Kafka, and OpenTelemetry.
+
 > Distributed horizontally-scalable Actor-Model Multi-Agent System Runtime.
 >
 > Run multiple AI agents teams with independently deployed Node.js processes, real-time visibility and multi-agent orchestration via Redis/Kafka pub/sub, A2A, and MCP.
