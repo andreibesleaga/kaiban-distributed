@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kaiban-global-research.fullname" . }}-config
+  labels:
+    {{- include "kaiban-global-research.labels" . | nindent 4 }}
+data:
+  REDIS_URL: "redis://{{ include "kaiban-global-research.fullname" . }}-redis:6379"
+  MESSAGING_DRIVER: {{ .Values.config.MESSAGING_DRIVER | quote }}
+  GATEWAY_PORT: {{ .Values.gateway.port | quote }}
+  SERVICE_NAME: "kaiban-gateway"
+  AGENT_IDS: "gateway"
+  LLM_MODEL: {{ .Values.config.LLM_MODEL | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "kaiban-global-research.fullname" . }}-secrets
+  labels:
+    {{- include "kaiban-global-research.labels" . | nindent 4 }}
+type: Opaque
+data:
+  OPENAI_API_KEY: {{ .Values.secrets.OPENAI_API_KEY | b64enc | quote }}
+  OPENROUTER_API_KEY: {{ .Values.secrets.OPENROUTER_API_KEY | b64enc | quote }}

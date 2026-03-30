@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kaiban-redis
+  labels:
+    app: kaiban-redis
+spec:
+  serviceName: kaiban-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kaiban-redis
+  template:
+    metadata:
+      labels:
+        app: kaiban-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 2
+          periodSeconds: 3
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kaiban-redis
+  labels:
+    app: kaiban-redis
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    app: kaiban-redis
+  clusterIP: None  # Headless service for StatefulSet

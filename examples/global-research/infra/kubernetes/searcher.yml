@@ -1,0 +1,55 @@
+# Searcher Agent — Fan-Out node (competing consumers)
+# Scale up to handle more parallel search tasks
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kaiban-research-searcher
+  labels:
+    app: kaiban-research-searcher
+spec:
+  replicas: 4  # Default: 4 parallel searchers for fan-out
+  selector:
+    matchLabels:
+      app: kaiban-research-searcher
+  template:
+    metadata:
+      labels:
+        app: kaiban-research-searcher
+    spec:
+      containers:
+      - name: searcher
+        image: kaiban-distributed:latest
+        imagePullPolicy: IfNotPresent
+        command: ["node", "dist/examples/global-research/searcher-node.js"]
+        envFrom:
+        - configMapRef:
+            name: kaiban-research-config
+        - secretRef:
+            name: kaiban-research-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+---
+# HPA: auto-scale searcher fleet based on CPU load
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kaiban-research-searcher-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kaiban-research-searcher
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

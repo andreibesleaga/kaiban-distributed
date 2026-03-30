@@ -40,6 +40,12 @@ cp .env.example .env
 
 # 3. Start the full blog-team demo (Docker Compose, workers, gateway, orchestrator, monitor)
 ./scripts/blog-team.sh start
+
+# or the Global Research Distributed Team
+./scripts/global-research.sh start
+# use flags for chaos (20% searcher crash rate) and number of parallel instances
+# ./scripts/blog-team.sh start --chaos --searchers 6
+
 # → Script prints board URLs when the gateway is ready. Open one in a separate terminal/tab.
 
 # 4. Open the board (choose one, in a separate terminal)
@@ -49,9 +55,10 @@ cd board && npm install && npm run dev   # React board → http://localhost:5173
 
 # 5. Stop everything cleanly when done
 ./scripts/blog-team.sh stop
+# ./scripts/global-research.sh stop
 ```
 
-To wire your own KaibanJS agent into a distributed worker node:
+To wire your own agent into a distributed worker node:
 
 ```typescript
 import { BullMQDriver } from './src/infrastructure/messaging/bullmq-driver';
@@ -81,7 +88,7 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 
 ---
 
-## Running example
+## Running example - blog-team
 (Blog team of: researcher, writer, editor - nodes distributed locally over docker services with Redis/Kafka messaging between them and their processes tasks status and results)
 ![(running example gif)](docs/images/blogTeam.gif)
 

@@ -1,0 +1,45 @@
+{{- if .Values.redis.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kaiban-global-research.fullname" . }}-redis
+  labels:
+    {{- include "kaiban-global-research.labels" . | nindent 4 }}
+    app: {{ include "kaiban-global-research.fullname" . }}-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kaiban-global-research.selectorLabels" . | nindent 6 }}
+      app: {{ include "kaiban-global-research.fullname" . }}-redis
+  template:
+    metadata:
+      labels:
+        {{- include "kaiban-global-research.selectorLabels" . | nindent 8 }}
+        app: {{ include "kaiban-global-research.fullname" . }}-redis
+    spec:
+      containers:
+      - name: redis
+        image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+        ports:
+        - containerPort: 6379
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kaiban-global-research.fullname" . }}-redis
+  labels:
+    {{- include "kaiban-global-research.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    {{- include "kaiban-global-research.selectorLabels" . | nindent 4 }}
+    app: {{ include "kaiban-global-research.fullname" . }}-redis
+{{- end }}

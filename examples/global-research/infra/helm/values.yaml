@@ -1,0 +1,36 @@
+image:
+  repository: kaiban-distributed
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+
+gateway:
+  replicas: 1
+  port: 3000
+  service:
+    type: NodePort
+    nodePort: 30000
+
+agents:
+  searcher:
+    replicas: 3
+  writer:
+    replicas: 1
+  reviewer:
+    replicas: 1
+  editor:
+    replicas: 1
+
+config:
+  MESSAGING_DRIVER: "bullmq"
+  LLM_MODEL: "gpt-4o-mini"
+
+secrets:
+  # Base64 encode these values or replace them in production using --set or external secret managers
+  OPENAI_API_KEY: ""
+  OPENROUTER_API_KEY: ""

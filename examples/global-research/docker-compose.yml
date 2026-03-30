@@ -1,0 +1,202 @@
+# Global Research Swarm — Docker Compose (BullMQ/Redis)
+#
+# Start:  docker compose -f examples/global-research/docker-compose.yml --env-file .env up --build
+# Scale:  docker compose -f examples/global-research/docker-compose.yml --env-file .env up --scale searcher=8
+# Board:  open examples/global-research/viewer/board.html
+#
+# Local orchestrator (default):
+#   GATEWAY_URL=http://localhost:3000 REDIS_URL=redis://localhost:6379 \
+#   QUERY="The Future of AI Agents" NUM_SEARCHERS=4 \
+#   npx ts-node examples/global-research/orchestrator.ts
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: bullmq
+      PORT: '3000'
+      SERVICE_NAME: kaiban-gateway
+      AGENT_IDS: gateway
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    restart: on-failure
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  searcher:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ['node', 'dist/examples/global-research/searcher-node.js']
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      CHAOS_MODE: ${CHAOS_MODE:-false}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+    restart: on-failure
+    healthcheck:
+      disable: true
+    deploy:
+      replicas: 4
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  writer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ['node', 'dist/examples/global-research/writer-node.js']
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+    restart: on-failure
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  reviewer:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ['node', 'dist/examples/global-research/reviewer-node.js']
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+    restart: on-failure
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  editor:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ['node', 'dist/examples/global-research/editor-node.js']
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+    restart: on-failure
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ── Orchestrator (--docker mode) ────────────────────────────────────────
+  # Not started automatically. Use: docker compose run --rm orchestrator
+  # This gives you an interactive terminal for HITL decisions [1/2/3/4].
+  orchestrator:
+    profiles: ['cli-only']
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ['node', 'dist/examples/global-research/orchestrator.js']
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      GATEWAY_URL: http://gateway:3000
+      REDIS_URL: redis://redis:6379
+      MESSAGING_DRIVER: bullmq
+      QUERY: ${QUERY:-The Future of AI Agents}
+      NUM_SEARCHERS: ${NUM_SEARCHERS:-4}
+      SEARCH_WAIT_MS: ${SEARCH_WAIT_MS:-120000}
+      WRITE_WAIT_MS: ${WRITE_WAIT_MS:-240000}
+      REVIEW_WAIT_MS: ${REVIEW_WAIT_MS:-180000}
+      EDIT_WAIT_MS: ${EDIT_WAIT_MS:-300000}
+    stdin_open: true
+    tty: true
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M

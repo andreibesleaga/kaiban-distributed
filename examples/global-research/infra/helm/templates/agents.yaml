@@ -1,0 +1,32 @@
+{{- range $agentName, $agentConfig := .Values.agents }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kaiban-global-research.fullname" $ }}-{{ $agentName }}
+  labels:
+    {{- include "kaiban-global-research.labels" $ | nindent 4 }}
+    app: {{ include "kaiban-global-research.fullname" $ }}-{{ $agentName }}
+spec:
+  replicas: {{ $agentConfig.replicas }}
+  selector:
+    matchLabels:
+      {{- include "kaiban-global-research.selectorLabels" $ | nindent 6 }}
+      app: {{ include "kaiban-global-research.fullname" $ }}-{{ $agentName }}
+  template:
+    metadata:
+      labels:
+        {{- include "kaiban-global-research.selectorLabels" $ | nindent 8 }}
+        app: {{ include "kaiban-global-research.fullname" $ }}-{{ $agentName }}
+    spec:
+      containers:
+      - name: {{ $agentName }}
+        image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+        imagePullPolicy: {{ $.Values.image.pullPolicy }}
+        command: ["node", "dist/examples/global-research/{{ $agentName }}-node.js"]
+        envFrom:
+        - configMapRef:
+            name: {{ include "kaiban-global-research.fullname" $ }}-config
+        - secretRef:
+            name: {{ include "kaiban-global-research.fullname" $ }}-secrets
+---
+{{- end }}

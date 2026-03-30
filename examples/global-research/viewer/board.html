@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kaiban Distributed — Global Research Swarm</title>
+  <link rel="stylesheet" href="board.css">
+</head>
+<body>
+
+<header>
+  <h1>Kaiban Distributed — Global Research Swarm</h1>
+  <span class="badge badge-connecting" id="conn-badge">Connecting...</span>
+  <span id="workflow-badge" style="font-size:0.75rem; color:#475569"></span>
+</header>
+
+<!-- Banners (shown dynamically by board.js) -->
+<div id="banner-hitl" class="banner banner-hitl">
+  <div class="banner-title">HUMAN DECISION REQUIRED</div>
+  <div class="banner-msg" id="banner-hitl-msg"></div>
+</div>
+<div id="banner-error" class="banner banner-error">
+  <div class="banner-title">TASK FAILED</div>
+  <div class="banner-msg" id="banner-error-msg"></div>
+</div>
+<div id="banner-finished" class="banner banner-finished">
+  <div class="banner-title">RESEARCH PUBLISHED</div>
+  <div class="banner-msg" id="banner-finished-msg"></div>
+</div>
+<div id="banner-stopped" class="banner banner-stopped">
+  <div class="banner-title">RESEARCH WORKFLOW ENDED</div>
+  <div class="banner-msg" id="banner-stopped-msg"></div>
+</div>
+
+<!-- Workflow status bar -->
+<div class="workflow-bar">
+  <span class="workflow-label">Workflow:</span>
+  <span class="workflow-status ws-initial" id="workflow-status">INITIAL</span>
+  <span id="query-label" style="font-size:0.8rem; color:#475569; margin-left:8px"></span>
+</div>
+
+<!-- Swarm agents -->
+<div class="agents-section">
+  <span class="section-label">Swarm Agents</span>
+  <div class="agents-grid" id="agents-grid">
+    <div class="empty">Waiting for agent state...</div>
+  </div>
+</div>
+
+<!-- Kanban board -->
+<span class="section-label">Research Tasks</span>
+<div class="board">
+  <div class="column col-todo">
+    <div class="column-header">TODO <span id="cnt-todo">0</span></div>
+    <div id="col-todo"></div>
+  </div>
+  <div class="column col-doing">
+    <div class="column-header"><span class="task-pulse"></span>DOING <span id="cnt-doing">0</span></div>
+    <div id="col-doing"></div>
+  </div>
+  <div class="column col-await">
+    <div class="column-header">AWAITING <span id="cnt-await">0</span></div>
+    <div id="col-await"></div>
+  </div>
+  <div class="column col-done">
+    <div class="column-header">DONE <span id="cnt-done">0</span></div>
+    <div id="col-done"></div>
+  </div>
+  <div class="column col-blocked">
+    <div class="column-header">BLOCKED <span id="cnt-blocked">0</span></div>
+    <div id="col-blocked"></div>
+  </div>
+</div>
+
+<!-- Swarm metadata panel -->
+<div class="swarm-meta">
+  <span class="section-label">Swarm Metadata</span>
+  <div class="swarm-meta-grid">
+    <div class="meta-item">
+      <span class="meta-label">Active Nodes</span>
+      <div class="meta-nodes" id="meta-nodes">
+        <span style="color:#475569; font-size:0.8rem">Waiting...</span>
+      </div>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Total Tokens</span>
+      <span class="meta-value" id="meta-tokens">—</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Estimated Cost</span>
+      <span class="meta-value" id="meta-cost">—</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Start Time</span>
+      <span class="meta-value" id="meta-start">—</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">End Time</span>
+      <span class="meta-value" id="meta-end">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- Event log -->
+<div class="log-section">
+  <span class="section-label">Event Stream</span>
+  <div class="log-box" id="log-box">
+    <div class="log-entry">
+      <span class="log-time">--:--:--</span>
+      <span class="log-type">INIT</span>
+      <span class="log-msg">Waiting for connection to gateway...</span>
+    </div>
+  </div>
+</div>
+
+<!-- Connection info -->
+<div id="connection-info">
+  <strong id="gateway-url-display">Gateway</strong>
+  <span id="conn-detail">Connecting...</span>
+</div>
+
+<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
+<script src="board.js"></script>
+</body>
+</html>

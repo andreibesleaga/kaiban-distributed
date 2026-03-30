@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kaiban-research-gateway
+  labels:
+    app: kaiban-research-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kaiban-research-gateway
+  template:
+    metadata:
+      labels:
+        app: kaiban-research-gateway
+    spec:
+      containers:
+      - name: gateway
+        image: kaiban-distributed:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: kaiban-research-config
+        - secretRef:
+            name: kaiban-research-secrets
+        env:
+        - name: AGENT_IDS
+          value: "searcher,writer,reviewer,editor"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kaiban-research-gateway
+  labels:
+    app: kaiban-research-gateway
+spec:
+  type: NodePort  # Use LoadBalancer for cloud providers
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30001
+  selector:
+    app: kaiban-research-gateway
