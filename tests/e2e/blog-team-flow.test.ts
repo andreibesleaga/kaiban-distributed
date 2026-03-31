@@ -63,7 +63,7 @@ function createOracle(driver: BullMQDriver): {
   return {
     success,
     failed,
-    async waitFor(taskIds: string[], timeoutMs: number) {
+    async waitFor(taskIds: string[], timeoutMs: number): Promise<{ success: Map<string, unknown>; failed: Set<string> }> {
       await waitUntil(
         () => taskIds.every(id => success.has(id) || failed.has(id)),
         timeoutMs,
@@ -128,8 +128,8 @@ async function createStateWatcher(): Promise<{
     deltas,
     // Use disconnect() (immediate) rather than quit() to avoid "Connection is closed"
     // race when messages are still in-flight during teardown.
-    cleanup: async () => { redis.disconnect(); },
-    waitForStatus: async (status: string, timeoutMs: number) => {
+    cleanup: async (): Promise<void> => { redis.disconnect(); },
+    waitForStatus: async (status: string, timeoutMs: number): Promise<boolean> => {
       return waitUntil(
         () => deltas.some(d => d['teamWorkflowStatus'] === status),
         timeoutMs,
@@ -487,8 +487,6 @@ describe('E2E: Blog Team Full Flow (BullMQ + HITL)', () => {
   // Scenario 5 — State metadata: totalTokens, estimatedCost, startTime, endTime
   // ─────────────────────────────────────────────────────────────────
   it('Scenario 5 — State metadata: tokens, cost, and timestamps published correctly', async () => {
-    const wfId = `wf-meta-${randomUUID()}`;
-
     const stateWatcher = await createStateWatcher();
     stateWatchers.push(stateWatcher);
 

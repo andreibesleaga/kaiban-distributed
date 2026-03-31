@@ -63,7 +63,7 @@ function createOracle(driver: BullMQDriver): {
   return {
     success,
     failed,
-    async waitFor(taskIds: string[], timeoutMs: number) {
+    async waitFor(taskIds: string[], timeoutMs: number): Promise<{ success: Map<string, unknown>; failed: Set<string> }> {
       await waitUntil(
         () => taskIds.every(id => success.has(id) || failed.has(id)),
         timeoutMs,
@@ -135,8 +135,8 @@ async function createStateWatcher(): Promise<{
 
   return {
     deltas,
-    cleanup: async () => { redis.disconnect(); },
-    waitForStatus: async (status: string, timeoutMs: number) => {
+    cleanup: async (): Promise<void> => { redis.disconnect(); },
+    waitForStatus: async (status: string, timeoutMs: number): Promise<boolean> => {
       return waitUntil(
         () => deltas.some(d => d['teamWorkflowStatus'] === status),
         timeoutMs,
@@ -593,7 +593,6 @@ describe('E2E: Global Research Swarm Full Flow (BullMQ + HITL)', () => {
     const oracle = createOracle(oracleDriver);
 
     const searchCompletionTimestamps: number[] = [];
-    let writerDispatchTimestamp = -1;
 
     await spawnAgents(drivers, NUM, 'searcher', SEARCHER_Q, async (p) => {
       // Simulate variable latency to stress-test fan-in ordering
@@ -620,7 +619,7 @@ describe('E2E: Global Research Swarm Full Flow (BullMQ + HITL)', () => {
     expect(searchPhase.success.size).toBe(NUM);
 
     // Record when writer is dispatched — must be AFTER all searches complete
-    writerDispatchTimestamp = Date.now();
+    const writerDispatchTimestamp = Date.now();
 
     await oracleDriver.publish(WRITER_Q, {
       taskId: writeTaskId, agentId: 'writer', timestamp: Date.now(),
