@@ -1,6 +1,9 @@
-# Kaiban Distributed - Multi-Agent Distributed AI System
+# Kaiban Distributed - Multi-Agent AI System
 
-> Distributed horizontally-scalable Actor-Model Multi-Agent System Runtime.
+#### Implementation of Distributed Actor Model for AI swarms using TypeScript, Redis/Kafka, OpenTelemetry.
+
+
+> Distributed horizontally-scalable Actor-Model Multi-Agent System Runtime, using Kanban style visualization for workflows.
 >
 > Run multiple AI agents teams with independently deployed Node.js processes, real-time visibility and multi-agent orchestration via Redis/Kafka pub/sub, A2A, and MCP.
 >
@@ -27,7 +30,7 @@
 
 ---
 
-## Summary — Use in Another Project (30 seconds)
+## Summary
 
 ```bash
 # 1. Clone and install
@@ -918,6 +921,7 @@ kaiban-distributed/
 │           ├── globalSetup.ts             # Docker Redis auto-start; resilient to existing Redis
 │           └── kafkaSetup.ts              # Docker Kafka + Zookeeper + Redis auto-start
 ├── examples/
+│   └── global-research/                   # Multi-agent distributed researchers pipeline example
 │   └── blog-team/                         # Three-agent editorial pipeline
 │       ├── team-config.ts                 # Agent configs (Ava, Kai, Morgan) + LLM factory
 │       ├── driver-factory.ts              # createDriver(suffix) — BullMQ or Kafka from env

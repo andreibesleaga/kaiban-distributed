@@ -1,6 +1,8 @@
 # Examples (running the distributed blog team instructions)
 
 > All runnable examples collected in one place. Each is self-contained.
+>
+> For detailed information on Distributed Global Research Team implementation - see [examples/global-research/README.md](examples/global-research/README.md)
 
 ---
 
