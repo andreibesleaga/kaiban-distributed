@@ -40,6 +40,7 @@ services:
       PORT: "3000"
       SERVICE_NAME: kaiban-gateway
       AGENT_IDS: gateway
+      VALID_HITL_DECISIONS: ${VALID_HITL_DECISIONS:-PUBLISH,REVISE,REJECT,VIEW}
     restart: on-failure
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]

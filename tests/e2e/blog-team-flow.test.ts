@@ -144,7 +144,7 @@ async function createStateWatcher(): Promise<{
 async function injectHITL(taskId: string, decision: string): Promise<void> {
   const redis = new Redis(REDIS_URL);
   await redis.publish(HITL_CHANNEL, JSON.stringify({ taskId, decision }));
-  await redis.quit();
+  redis.disconnect();
 }
 
 /**
@@ -153,7 +153,7 @@ async function injectHITL(taskId: string, decision: string): Promise<void> {
 async function publishState(delta: Record<string, unknown>): Promise<void> {
   const redis = new Redis(REDIS_URL);
   await redis.publish(STATE_CHANNEL, wrapSigned(delta));
-  await redis.quit();
+  redis.disconnect();
 }
 
 // ── Mock handler builders ──────────────────────────────────────────────

@@ -527,6 +527,67 @@ async function runEditorialPhase(
   return { taskId: editTaskId, recommendation, score, text };
 }
 
+/**
+ * Wait for a HITL decision from either the terminal (readline) or the board (Socket.io → Redis).
+ * The first source to deliver a valid decision wins; the other is cleaned up.
+ *
+ * Terminal: [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW (re-prompts)
+ * Board:    emits hitl:decision → SocketGateway → kaiban-hitl-decisions Redis channel
+ *
+ * Returns '1', '2', or '3' matching the terminal numbering.
+ */
+async function waitForHITLDecision(
+  taskId: string,
+  rl: readline.Interface | null,
+  redisUrl: string,
+  onView: () => void,
+): Promise<'1' | '2' | '3'> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finish = (d: '1' | '2' | '3') => {
+      if (resolved) return;
+      resolved = true;
+      resolve(d);
+    };
+
+    // ── Terminal path ────────────────────────────────────────────────────────
+    if (rl) {
+      const askTerminal = () => {
+        rl.question('\nYour decision [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW: ', (answer) => {
+          if (resolved) return;
+          const a = answer.trim();
+          if (a === '1') finish('1');
+          else if (a === '2') finish('2');
+          else if (a === '3') finish('3');
+          else {
+            if (a === '4') onView();
+            askTerminal();
+          }
+        });
+      };
+      askTerminal();
+    }
+
+    // ── Board path: subscribe to Redis HITL channel ──────────────────────────
+    const BOARD_MAP: Record<string, '1' | '2' | '3'> = { PUBLISH: '1', REVISE: '2', REJECT: '3' };
+    const sub = new Redis(redisUrl, { lazyConnect: false });
+    sub.subscribe('kaiban-hitl-decisions').then(() => {
+      sub.on('message', (_ch: string, msg: string) => {
+        if (resolved) { void sub.quit(); return; }
+        try {
+          const parsed = JSON.parse(msg) as { taskId: string; decision: string };
+          const mapped = BOARD_MAP[parsed.decision];
+          if (parsed.taskId === taskId && mapped) {
+            console.log(`\n🖥  Board decision received: ${parsed.decision}`);
+            void sub.quit();
+            finish(mapped);
+          }
+        } catch { /* ignore malformed messages */ }
+      });
+    }).catch(() => { /* Redis unavailable — terminal-only fallback */ });
+  });
+}
+
 /** STEP 5 — Human Decision: present options and handle PUBLISH / REVISE / REJECT. */
 async function handleDecision(
   ctx: ResearchContext,
@@ -537,7 +598,7 @@ async function handleDecision(
   rl: readline.Interface | null,
 ): Promise<void> {
   console.log('═'.repeat(70));
-  console.log(' HUMAN DECISION REQUIRED (HOTL)');
+  console.log(' HUMAN DECISION REQUIRED (HITL)');
   console.log('═'.repeat(70));
 
   const icon = (edit.recommendation === 'PUBLISH' || edit.recommendation === 'APPROVED') ? '[APPROVED]'
@@ -553,14 +614,16 @@ async function handleDecision(
     decision = '1';
     console.log('[AUTO_PUBLISH] Skipping human prompt — auto-approving as PUBLISH.');
   } else {
-    while (!['1', '2', '3'].includes(decision)) {
-      decision = (await ask(rl!, 'Your decision [1/2/3/4]: ')).trim();
-      if (decision === '4') {
+    decision = await waitForHITLDecision(
+      edit.taskId,
+      rl,
+      REDIS_URL,
+      () => {
         console.log('\n─── FULL RESEARCH REPORT ─────────────────────────────────────────────');
         console.log(ctx.consolidatedDraft);
         console.log('──────────────────────────────────────────────────────────────────────\n');
-      }
-    }
+      },
+    );
   }
 
   ctx.metadata.endTime = new Date().toISOString();
