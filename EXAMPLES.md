@@ -4,6 +4,13 @@
 >
 > For detailed information on Distributed Global Research Team implementation - see [examples/global-research/README.md](examples/global-research/README.md)
 
+> **Important:** Run only **one example at a time** on the same Redis instance.
+> Both examples share the same Redis pub/sub channels (`kaiban-state-events`,
+> `kaiban-events-completed`, `kaiban-hitl-decisions`). Running blog-team and
+> global-research simultaneously will cause cross-contaminated state on the board
+> and potentially misrouted HITL decisions. Use `docker compose down` between
+> switching examples.
+
 ---
 
 ## Example 1 — Blog Team Pipeline (Three-Agent Editorial)

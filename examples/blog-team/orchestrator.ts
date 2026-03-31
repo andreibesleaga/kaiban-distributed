@@ -234,13 +234,34 @@ async function waitForHITLDecision(
 ): Promise<'PUBLISH' | 'REVISE' | 'REJECT'> {
   return new Promise((resolve) => {
     let resolved = false;
+
+    // ── Board path: subscribe to Redis HITL channel ─────────────────────
+    // Register handler BEFORE subscribe to avoid race where a message
+    // arrives between subscribe completing and .then() firing.
+    const sub = new Redis(redisUrl, { lazyConnect: false });
+    sub.on('message', (_ch: string, msg: string) => {
+      if (resolved) return;
+      try {
+        const parsed = JSON.parse(msg) as { taskId: string; decision: string };
+        if (parsed.taskId === taskId && ['PUBLISH', 'REVISE', 'REJECT'].includes(parsed.decision)) {
+          console.log(`\n🖥  Board decision received: ${parsed.decision}`);
+          finish(parsed.decision as 'PUBLISH' | 'REVISE' | 'REJECT');
+        }
+      } catch { /* ignore malformed messages */ }
+    });
+    sub.subscribe('kaiban-hitl-decisions').catch(() => { /* Redis unavailable — terminal-only */ });
+
     const finish = (decision: 'PUBLISH' | 'REVISE' | 'REJECT') => {
       if (resolved) return;
       resolved = true;
+      sub.disconnect();
+      // Feed empty line to release any pending rl.question callback so the
+      // readline interface is ready for a potential second HITL round (REVISE).
+      rl.write('\n');
       resolve(decision);
     };
 
-    // ── Terminal path (preserves existing behaviour) ──────────────────────
+    // ── Terminal path ───────────────────────────────────────────────────
     const askTerminal = () => {
       rl.question('\nYour decision [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW: ', (answer) => {
         if (resolved) return;
@@ -259,22 +280,6 @@ async function waitForHITLDecision(
       });
     };
     askTerminal();
-
-    // ── Board path (new): subscribe to Redis HITL channel ────────────────
-    const sub = new Redis(redisUrl, { lazyConnect: false });
-    sub.subscribe('kaiban-hitl-decisions').then(() => {
-      sub.on('message', (_ch: string, msg: string) => {
-        if (resolved) { sub.disconnect(); return; }
-        try {
-          const parsed = JSON.parse(msg) as { taskId: string; decision: string };
-          if (parsed.taskId === taskId && ['PUBLISH', 'REVISE', 'REJECT'].includes(parsed.decision)) {
-            console.log(`\n🖥  Board decision received: ${parsed.decision}`);
-            sub.disconnect();
-            finish(parsed.decision as 'PUBLISH' | 'REVISE' | 'REJECT');
-          }
-        } catch { /* ignore malformed messages */ }
-      });
-    }).catch(() => { /* Redis unavailable — terminal-only fallback */ });
   });
 }
 

@@ -81,4 +81,22 @@ describe('loadConfig', () => {
     const config = loadConfig();
     expect(config.otelEndpoint).toBe('http://otel:4318/v1/traces');
   });
+
+  it('validHitlDecisions defaults to PUBLISH,REVISE,REJECT,VIEW', () => {
+    delete process.env['VALID_HITL_DECISIONS'];
+    const config = loadConfig();
+    expect(config.validHitlDecisions).toEqual(['PUBLISH', 'REVISE', 'REJECT', 'VIEW']);
+  });
+
+  it('validHitlDecisions reads from env and splits on comma', () => {
+    process.env['VALID_HITL_DECISIONS'] = 'APPROVE,DENY';
+    const config = loadConfig();
+    expect(config.validHitlDecisions).toEqual(['APPROVE', 'DENY']);
+  });
+
+  it('validHitlDecisions trims whitespace and filters empty entries', () => {
+    process.env['VALID_HITL_DECISIONS'] = ' PUBLISH , REJECT , , ';
+    const config = loadConfig();
+    expect(config.validHitlDecisions).toEqual(['PUBLISH', 'REJECT']);
+  });
 });

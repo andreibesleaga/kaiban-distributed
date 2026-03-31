@@ -243,10 +243,6 @@ async function rpc(method: string, params: Record<string, unknown>): Promise<Rec
   return body.result;
 }
 
-function ask(rl: readline.Interface, question: string): Promise<string> {
-  return new Promise((resolve) => rl.question(question, resolve));
-}
-
 /** Parse the structured KaibanHandlerResult returned by the bridge. Falls back gracefully for plain text. */
 function parseHandlerResult(raw: string): { answer: string; inputTokens: number; outputTokens: number; estimatedCost: number } {
   try {
@@ -544,13 +540,36 @@ async function waitForHITLDecision(
 ): Promise<'1' | '2' | '3'> {
   return new Promise((resolve) => {
     let resolved = false;
+
+    // ── Board path: subscribe to Redis HITL channel ──────────────────────
+    // Register handler BEFORE subscribe to avoid race where a message
+    // arrives between subscribe completing and .then() firing.
+    const BOARD_MAP: Record<string, '1' | '2' | '3'> = { PUBLISH: '1', REVISE: '2', REJECT: '3' };
+    const sub = new Redis(redisUrl, { lazyConnect: false });
+    sub.on('message', (_ch: string, msg: string) => {
+      if (resolved) return;
+      try {
+        const parsed = JSON.parse(msg) as { taskId: string; decision: string };
+        const mapped = BOARD_MAP[parsed.decision];
+        if (parsed.taskId === taskId && mapped) {
+          console.log(`\n🖥  Board decision received: ${parsed.decision}`);
+          finish(mapped);
+        }
+      } catch { /* ignore malformed messages */ }
+    });
+    sub.subscribe('kaiban-hitl-decisions').catch(() => { /* Redis unavailable — terminal-only */ });
+
     const finish = (d: '1' | '2' | '3') => {
       if (resolved) return;
       resolved = true;
+      sub.disconnect();
+      // Feed empty line to release any pending rl.question callback so the
+      // readline interface is ready for a potential second HITL round (REVISE).
+      if (rl) rl.write('\n');
       resolve(d);
     };
 
-    // ── Terminal path ────────────────────────────────────────────────────────
+    // ── Terminal path ────────────────────────────────────────────────────
     if (rl) {
       const askTerminal = () => {
         rl.question('\nYour decision [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW: ', (answer) => {
@@ -567,24 +586,6 @@ async function waitForHITLDecision(
       };
       askTerminal();
     }
-
-    // ── Board path: subscribe to Redis HITL channel ──────────────────────────
-    const BOARD_MAP: Record<string, '1' | '2' | '3'> = { PUBLISH: '1', REVISE: '2', REJECT: '3' };
-    const sub = new Redis(redisUrl, { lazyConnect: false });
-    sub.subscribe('kaiban-hitl-decisions').then(() => {
-      sub.on('message', (_ch: string, msg: string) => {
-        if (resolved) { sub.disconnect(); return; }
-        try {
-          const parsed = JSON.parse(msg) as { taskId: string; decision: string };
-          const mapped = BOARD_MAP[parsed.decision];
-          if (parsed.taskId === taskId && mapped) {
-            console.log(`\n🖥  Board decision received: ${parsed.decision}`);
-            sub.disconnect();
-            finish(mapped);
-          }
-        } catch { /* ignore malformed messages */ }
-      });
-    }).catch(() => { /* Redis unavailable — terminal-only fallback */ });
   });
 }
 
@@ -663,9 +664,33 @@ async function handleDecision(
     ctx.consolidatedDraft = revisedParsed.answer || revisedRaw;
     ctx.metadata.activeNodes.push('writer-revision');
 
-    // Guard: AUTO_PUBLISH or no readline — auto-publish the revision
-    const pubChoice = (AUTO_PUBLISH || !rl) ? 'y' : (await ask(rl, '\nPublish the revised report? [y/n]: ')).trim().toLowerCase();
-    if (pubChoice === 'y') {
+    // Full HITL gate for revision (board + terminal), not just a y/n prompt
+    pub.awaitingHITL(revisionTaskId, 'PUBLISH', 'N/A');
+
+    console.log('\n' + '═'.repeat(70));
+    console.log(' REVISED REPORT READY — HUMAN REVIEW REQUIRED (HITL)');
+    console.log('═'.repeat(70));
+    console.log('\nOptions:\n  [1] PUBLISH\n  [2] REVISE → save draft, stop\n  [3] REJECT\n  [4] VIEW full report\n');
+    console.log('  (Decide here or click Approve / Revise / Reject on the board)');
+
+    let revisionDecision: string;
+    if (AUTO_PUBLISH) {
+      revisionDecision = '1';
+      console.log('[AUTO_PUBLISH] Auto-approving revision.');
+    } else {
+      revisionDecision = await waitForHITLDecision(
+        revisionTaskId,
+        rl,
+        REDIS_URL,
+        () => {
+          console.log('\n─── REVISED REPORT ──────────────────────────────────────────────────');
+          console.log(ctx.consolidatedDraft);
+          console.log('─────────────────────────────────────────────────────────────────────\n');
+        },
+      );
+    }
+
+    if (revisionDecision === '1') {
       ctx.status = 'COMPLETED';
       ctx.editorApproval = true;
       pub.workflowFinished(ctx, edit.taskId);

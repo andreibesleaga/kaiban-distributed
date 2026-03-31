@@ -61,13 +61,13 @@ export class GatewayApp {
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
   private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 5);
 
-  constructor(connector: A2AConnector) {
+  constructor(connector: A2AConnector, opts?: { trustProxy?: boolean }) {
     this.connector = connector;
     this.app = express();
 
     // Trust proxy — enables correct req.ip behind reverse proxies (Railway, Kubernetes, Nginx).
     // Must be set before any middleware that reads req.ip.
-    if (process.env['TRUST_PROXY'] === 'true') this.app.set('trust proxy', 1);
+    if (opts?.trustProxy) this.app.set('trust proxy', 1);
 
     this.app.use(helmet({
       contentSecurityPolicy: { directives: { defaultSrc: ["'none'"] } },

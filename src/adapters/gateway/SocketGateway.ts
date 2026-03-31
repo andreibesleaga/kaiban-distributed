@@ -7,9 +7,7 @@ import { verifyBoardToken } from '../../infrastructure/security/board-auth';
 import { unwrapVerified } from '../../infrastructure/security/channel-signing';
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
-const VALID_DECISIONS: string[] = (
-  process.env['VALID_HITL_DECISIONS'] ?? 'PUBLISH,REVISE,REJECT,VIEW'
-).split(',').map((s) => s.trim()).filter(Boolean);
+const DEFAULT_DECISIONS = ['PUBLISH', 'REVISE', 'REJECT', 'VIEW'];
 
 /**
  * Accumulated state snapshot.
@@ -30,14 +28,21 @@ export class SocketGateway {
   private httpServer: HttpServer;
   private redisPublisher: Redis;
   private redisSubscriber: Redis;
+  private validDecisions: string[];
 
   /** Running state snapshot — gate truth for reconnecting clients */
   private snapshot: StateSnapshot = { agents: new Map(), tasks: new Map() };
 
-  constructor(httpServer: HttpServer, redisPublisher: Redis, redisSubscriber: Redis) {
+  constructor(
+    httpServer: HttpServer,
+    redisPublisher: Redis,
+    redisSubscriber: Redis,
+    opts?: { validHitlDecisions?: string[] },
+  ) {
     this.httpServer = httpServer;
     this.redisPublisher = redisPublisher;
     this.redisSubscriber = redisSubscriber;
+    this.validDecisions = opts?.validHitlDecisions ?? DEFAULT_DECISIONS;
   }
 
   // ─── Snapshot helpers ────────────────────────────────────────────────────
@@ -170,7 +175,7 @@ export class SocketGateway {
           ack?.({ ok: false, error: 'invalid taskId or decision' });
           return;
         }
-        if (!VALID_DECISIONS.includes(decision)) {
+        if (!this.validDecisions.includes(decision)) {
           ack?.({ ok: false, error: `invalid decision value: ${decision}` });
           return;
         }

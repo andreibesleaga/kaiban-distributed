@@ -146,14 +146,13 @@ describe('GatewayApp — A2A auth middleware', () => {
 
   // ─── Trust proxy ──────────────────────────────────────────────────────────
 
-  it('sets trust proxy when TRUST_PROXY=true', () => {
-    process.env['TRUST_PROXY'] = 'true';
-    const gw = new GatewayApp(new A2AConnector(testCard));
+  it('sets trust proxy when trustProxy option is true', () => {
+    const gw = new GatewayApp(new A2AConnector(testCard), { trustProxy: true });
     // Express stores trust proxy as 1 when enabled
     expect(gw.app.get('trust proxy')).toBe(1);
   });
 
-  it('does not set trust proxy when TRUST_PROXY is unset', () => {
+  it('does not set trust proxy when trustProxy option is omitted', () => {
     const gw = new GatewayApp(new A2AConnector(testCard));
     expect(gw.app.get('trust proxy')).toBeFalsy();
   });

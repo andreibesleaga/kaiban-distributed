@@ -27,6 +27,7 @@ export interface AppConfig {
     ssl?: TlsConfig;
   };
   agentIds: string[];
+  validHitlDecisions: string[];
   security: {
     semanticFirewallEnabled: boolean;
     semanticFirewallLlmUrl?: string;
@@ -104,6 +105,8 @@ export function loadConfig(): AppConfig {
       ),
     },
     agentIds: agentIdsRaw.split(',').map((id) => id.trim()).filter(Boolean),
+    validHitlDecisions: getEnv('VALID_HITL_DECISIONS', 'PUBLISH,REVISE,REJECT,VIEW')
+      .split(',').map((s) => s.trim()).filter(Boolean),
     security: {
       semanticFirewallEnabled: getBoolEnv('SEMANTIC_FIREWALL_ENABLED', false),
       semanticFirewallLlmUrl: process.env['SEMANTIC_FIREWALL_LLM_URL'],

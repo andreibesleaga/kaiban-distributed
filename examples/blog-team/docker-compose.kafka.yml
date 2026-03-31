@@ -125,10 +125,16 @@ services:
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-researcher
       KAFKA_GROUP_ID: kaiban-group
+      AGENT_ID: researcher
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
     restart: on-failure
     # Worker nodes do not expose /health — disable inherited Dockerfile HEALTHCHECK
     healthcheck:
@@ -155,10 +161,16 @@ services:
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-writer
       KAFKA_GROUP_ID: kaiban-group
+      AGENT_ID: writer
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
     restart: on-failure
     healthcheck:
       disable: true
@@ -184,10 +196,16 @@ services:
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-editor
       KAFKA_GROUP_ID: kaiban-group
+      AGENT_ID: editor
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
     restart: on-failure
     healthcheck:
       disable: true

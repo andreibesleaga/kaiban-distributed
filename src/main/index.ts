@@ -96,9 +96,11 @@ async function main(): Promise<void> {
   };
 
   const connector = new A2AConnector(agentCard, messagingDriver);
-  const gateway = new GatewayApp(connector);
+  const gateway = new GatewayApp(connector, { trustProxy: config.security.trustProxy });
   const httpServer = createServer(gateway.app);
-  const socketGateway = new SocketGateway(httpServer, redisSocketPub, redisSocketSub);
+  const socketGateway = new SocketGateway(httpServer, redisSocketPub, redisSocketSub, {
+    validHitlDecisions: config.validHitlDecisions,
+  });
 
   socketGateway.initialize();
 
