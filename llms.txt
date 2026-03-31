@@ -1,0 +1,70 @@
+# Kaiban Distributed: Distributed Actor-Model Runtime for Agentic AI
+
+> This repository contains the official implementation of the "Distributed Actor Model for Agentic AI" (as featured in *Agentic AI Architectures*). It provides a horizontally scalable, fault-tolerant runtime for AI swarms using TypeScript, KaibanJS, Enterprise Messaging (Redis/Kafka), and React.
+
+## 1. Core Philosophy & Architecture
+This project abandons standard sequential LLM chains (DAGs) in favor of the **Distributed Actor Model**. 
+- **No Shared State:** Agents operate in isolated worker nodes.
+- **Message-Driven:** Agents communicate exclusively via asynchronous messages.
+- **"Let it Crash":** Relies on message brokers for retries, exponential backoff, and Dead Letter Queues (DLQs).
+- **Clean Architecture:** Strictly enforces Domain, Application, Adapters, and Infrastructure layers.
+
+### 1.1 The Two-Channel Strategy (CRITICAL)
+When writing or analyzing code for this repo, you must respect the dual-channel network design:
+1. **Durable Tasks (MAL):** Handled by `BullMQDriver` or `KafkaDriver`. Used for actual agent workflows (TODO -> DOING -> DONE).
+2. **Ephemeral State:** Handled EXCLUSIVELY by Redis Pub/Sub (`AgentStatePublisher` / `SocketGateway`). Used for real-time UI updates to the Kanban board. **Never use Kafka for state events.**
+
+## 2. Key Technologies
+- **Language:** TypeScript (Node.js/Bun)
+- **Agent Framework:** KaibanJS
+- **Messaging Drivers:** BullMQ (Redis 7), Kafka (kafkajs)
+- **Observability:** OpenTelemetry (OTLP), W3C TraceContext
+- **Frontend Board:** React 18, Vite, Zustand, Socket.io-client
+- **API Federation:** Express, JSON-RPC 2.0 (A2A Protocol)
+
+## 3. Repository Structure
+- `/src/domain`: Pure business logic, `DistributedTask`, `DistributedAgentState`, `Result<T,E>`, security interfaces. **NO external framework imports allowed here.**
+- `/src/application`: The `AgentActor` use cases, task consumption, and retry lifecycle.
+- `/src/adapters`: `GatewayApp` (A2A HTTP REST/JSON-RPC), `SocketGateway` (WebSockets), `AgentStatePublisher`.
+- `/src/infrastructure`: Framework implementations (KaibanJS bridges, BullMQ/Kafka drivers, Heuristic Firewalls, Telemetry).
+- `/board`: Standalone React + Vite dashboard for real-time Distributed Kanban visualization.
+- `/examples`: Reference implementations (`blog-team` and the flagship `global-research` swarm).
+- `/docs`: Architecture Decision Records (ADRs), deployment manifests (Helm/K8s/Docker), and API specs.
+
+## 4. Core Data Contracts
+All agent-to-agent communication strictly adheres to `MessagePayload` (`src/infrastructure/messaging/interfaces.ts`):
+```typescript
+interface MessagePayload {
+  taskId: string;
+  agentId: string;
+  data: Record<string, unknown>;
+  timestamp: number;
+  traceHeaders?: Record<string, string>; // W3C traceparent for OpenTelemetry
+}
+```
+
+## 5. The Task Lifecycle (State Machine)
+Tasks move through specific states mirrored on the React Board:
+1. `TODO`: Task created (API: status='QUEUED').
+2. `DOING`: Worker claims task.
+3. `DONE`: Inference success (Published to `kaiban-events-completed`).
+4. `BLOCKED`: Max retries exceeded, firewall triggered, or breaker open (Published to `kaiban-events-failed` DLQ).
+5. `AWAITING_VALIDATION`: Human-in-the-Loop (HITL) required.
+
+## 6. Security Boundaries (OWASP AI Aligned)
+When modifying execution logic, ensure tasks pass through these opt-in infrastructure guards:
+- **Semantic Firewall (`HeuristicFirewall`):** Regex-based prompt injection detection.
+- **Circuit Breaker (`SlidingWindowBreaker`):** Prevents cascading LLM provider failures (default: opens after 10 fails/60s).
+- **JIT Tokens (`EnvTokenProvider`):** API keys are fetched *per-task* execution, not loaded globally.
+
+## 7. Federation & Interoperability
+- **A2A Protocol:** External systems interact with the swarm via JSON-RPC 2.0 at `POST /a2a/rpc` on port 3000.
+- **MCP (Model Context Protocol):** Handled via `MCPFederationClient` utilizing stdio transports.
+
+## 8. Instructions for AI Coding Assistants
+When contributing to this codebase, you MUST follow these rules:
+1. **Strict Type Safety:** Never use `any`. Use `unknown` with runtime validation if necessary. Use the internal `Result<T, E>` type for domain error handling instead of throwing raw exceptions where possible.
+2. **Infrastructure Agnosticism:** Never hardcode BullMQ or Kafka logic directly into an Agent or Actor. Always use the `IMessagingDriver` interface.
+3. **Stateless Workers:** Worker nodes (`examples/.../*-node.ts`) must never hold workflow state in memory. All state belongs on the message bus or in the payload.
+4. **Environment Variables:** For new features, always provide configuration via `process.env` with sensible defaults, and update `.env.example`.
+5. **No Visual Formatting in Payloads:** When generating state payloads for the React Board, do not embed CSS or UI styling. Pass raw JSON strings/objects; let the UI handle the formatting.

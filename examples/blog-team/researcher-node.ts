@@ -7,15 +7,16 @@ import { researcherConfig, RESEARCHER_QUEUE } from './team-config';
 import { buildSecurityDeps } from './build-security-deps';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = createDriver('researcher');
+const AGENT_ID = process.env['AGENT_ID'] ?? 'researcher';
+const driver = createDriver(AGENT_ID);
 const { actorDeps, tokenProvider } = buildSecurityDeps();
 
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
-  agentId: 'researcher', name: 'Ava', role: 'News Researcher',
+  agentId: AGENT_ID, name: 'Ava', role: 'News Researcher',
 });
 
 const handler = statePublisher.wrapHandler(createKaibanTaskHandler(researcherConfig, driver, tokenProvider));
-const actor = new AgentActor('researcher', driver, RESEARCHER_QUEUE, handler, actorDeps);
+const actor = new AgentActor(AGENT_ID, driver, RESEARCHER_QUEUE, handler, actorDeps);
 
 actor.start()
   .then(() => { console.log('[Researcher] Ava started →', RESEARCHER_QUEUE); statePublisher.publishIdle(); })

@@ -7,7 +7,9 @@ import { verifyBoardToken } from '../../infrastructure/security/board-auth';
 import { unwrapVerified } from '../../infrastructure/security/channel-signing';
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
-const VALID_HITL_DECISIONS = new Set(['PUBLISH', 'REVISE', 'REJECT']);
+const VALID_DECISIONS: string[] = (
+  process.env['VALID_HITL_DECISIONS'] ?? 'PUBLISH,REVISE,REJECT,VIEW'
+).split(',').map((s) => s.trim()).filter(Boolean);
 
 /**
  * Accumulated state snapshot.
@@ -168,8 +170,8 @@ export class SocketGateway {
           ack?.({ ok: false, error: 'invalid taskId or decision' });
           return;
         }
-        if (!VALID_HITL_DECISIONS.has(decision)) {
-          ack?.({ ok: false, error: 'unknown decision value' });
+        if (!VALID_DECISIONS.includes(decision)) {
+          ack?.({ ok: false, error: `invalid decision value: ${decision}` });
           return;
         }
         console.log(`[SocketGateway] HITL decision received: ${String(decision)} for task ${taskId.slice(-8)}`);

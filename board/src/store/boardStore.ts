@@ -39,6 +39,7 @@ interface BoardActions {
   applyDelta: (delta: StateDelta) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
   addLog: (type: string, message: string, highlight?: boolean) => void;
+  resetState: () => void;
 }
 
 const initialState: BoardState = {
@@ -166,5 +167,18 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
       const entry: LogEntry = { id: ++logIdCounter, time: nowTime(), type, message, highlight };
       return { log: [entry, ...state.log].slice(0, MAX_LOG_ENTRIES) };
     });
+  },
+
+  resetState() {
+    set((state) => ({
+      agents: new Map(),
+      tasks: new Map(),
+      workflowStatus: 'INITIAL',
+      metadata: null,
+      topic: '',
+      // Preserve connectionStatus and log — they track the socket lifecycle, not workflow state
+      connectionStatus: state.connectionStatus,
+      log: state.log,
+    }));
   },
 }));

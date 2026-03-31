@@ -44,6 +44,8 @@ export function initSocket(): void {
 
   socket.on('connect', () => {
     store.setConnectionStatus('live');
+    // Clear stale state from any previous run before the gateway snapshot arrives
+    store.resetState();
     // Request current state snapshot so reconnecting boards aren't stale
     socket!.emit('state:request'); // matches STATE_EVENT_REQUEST = 'state:request'
   });

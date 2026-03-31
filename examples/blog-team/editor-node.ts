@@ -7,15 +7,16 @@ import { editorConfig, EDITOR_QUEUE } from './team-config';
 import { buildSecurityDeps } from './build-security-deps';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = createDriver('editor');
+const AGENT_ID = process.env['AGENT_ID'] ?? 'editor';
+const driver = createDriver(AGENT_ID);
 const { actorDeps, tokenProvider } = buildSecurityDeps();
 
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
-  agentId: 'editor', name: 'Morgan', role: 'Editorial Fact-Checker',
+  agentId: AGENT_ID, name: 'Morgan', role: 'Editorial Fact-Checker',
 });
 
 const handler = statePublisher.wrapHandler(createKaibanTaskHandler(editorConfig, driver, tokenProvider));
-const actor = new AgentActor('editor', driver, EDITOR_QUEUE, handler, actorDeps);
+const actor = new AgentActor(AGENT_ID, driver, EDITOR_QUEUE, handler, actorDeps);
 
 actor.start()
   .then(() => { console.log('[Editor] Morgan started →', EDITOR_QUEUE); statePublisher.publishIdle(); })

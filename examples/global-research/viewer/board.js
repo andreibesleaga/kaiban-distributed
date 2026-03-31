@@ -29,6 +29,12 @@ const state = {
   metadata: null,
 };
 
+// Current HITL task ID (module-level so button closures can always read latest value)
+let hitlTaskId = null;
+
+// Live-duration timer — active while workflow is RUNNING
+let durationTimer = null;
+
 // ── Log ──────────────────────────────────────────────────────────────────
 
 function addLog(type, msg, highlight = false) {
@@ -47,6 +53,41 @@ function addLog(type, msg, highlight = false) {
   ].join('');
   box.insertBefore(entry, box.firstChild);
   if (box.children.length > 200) box.removeChild(box.lastChild);
+}
+
+// ── HITL Decision ────────────────────────────────────────────────────────
+
+/**
+ * Send a HITL decision to the gateway via Socket.io.
+ * Mirrors the React board's sendHitlDecision() in socketClient.ts.
+ * Uses acknowledgement callback with 8-second timeout guard.
+ */
+function sendHitlDecision(taskId, decision) {
+  if (!socket.connected) {
+    addLog('ERROR', `Cannot send decision — not connected (${decision})`, true);
+    return;
+  }
+  addLog('HITL', `Sending decision: ${decision} for task ${taskId.slice(-8)}…`, false);
+
+  const ACK_TIMEOUT_MS = 8000;
+  let ackReceived = false;
+
+  const timer = setTimeout(() => {
+    if (!ackReceived) {
+      addLog('ERROR', `Decision not confirmed by gateway within ${ACK_TIMEOUT_MS / 1000}s — try again`, true);
+    }
+  }, ACK_TIMEOUT_MS);
+
+  socket.emit('hitl:decision', { taskId, decision }, (response) => {
+    ackReceived = true;
+    clearTimeout(timer);
+    if (response?.ok) {
+      addLog('HITL', `Decision confirmed: ${decision} for task ${taskId.slice(-8)}`, true);
+    } else {
+      const reason = response?.error ?? 'gateway error';
+      addLog('ERROR', `Decision rejected by gateway: ${reason}`, true);
+    }
+  });
 }
 
 // ── Result parser ────────────────────────────────────────────────────────
@@ -150,31 +191,8 @@ function renderWorkflow() {
   el.className   = 'workflow-status ws-' + ws.toLowerCase().replace(/_/g, '-');
 }
 
-function renderSwarmMetadata() {
-  const meta = state.metadata;
-  if (!meta) return;
-
-  const nodesEl = document.getElementById('meta-nodes');
-  if (meta.activeNodes?.length) {
-    nodesEl.innerHTML = meta.activeNodes.map(n => `<span class="node-badge">${n}</span>`).join('');
-  }
-
-  if (meta.totalTokens !== undefined) {
-    document.getElementById('meta-tokens').textContent = Number(meta.totalTokens).toLocaleString();
-  }
-  if (meta.estimatedCost !== undefined) {
-    document.getElementById('meta-cost').textContent = `$${Number(meta.estimatedCost).toFixed(4)}`;
-  }
-  if (meta.startTime) {
-    document.getElementById('meta-start').textContent = new Date(meta.startTime).toLocaleTimeString();
-  }
-  if (meta.endTime) {
-    document.getElementById('meta-end').textContent = new Date(meta.endTime).toLocaleTimeString();
-  }
-}
-
 function renderBanners() {
-  const ws           = (state.workflowStatus || '').toUpperCase();
+  const ws            = (state.workflowStatus || '').toUpperCase();
   const awaitingTasks = state.tasks.filter(t => (t.status || '').toUpperCase() === 'AWAITING_VALIDATION');
   const blockedTasks  = state.tasks.filter(t => (t.status || '').toUpperCase() === 'BLOCKED' && String(t.result || '').includes('ERROR:'));
   const doneTasks     = state.tasks.filter(t => (t.status || '').toUpperCase() === 'DONE');
@@ -199,14 +217,84 @@ function renderBanners() {
       stopped ? String(stopped.result || '').slice(0, 200) : 'Research workflow ended';
 
   } else if (awaitingTasks.length > 0) {
+    hitlTaskId = awaitingTasks[0].taskId;
     bannerHitl.style.display = 'block';
     document.getElementById('banner-hitl-msg').textContent =
-      awaitingTasks[0].result || 'Check the orchestrator terminal for options [1/2/3/4]';
+      awaitingTasks[0].result || 'Awaiting human decision';
+
+    // Add HITL buttons once — guard against duplicates on re-renders
+    if (!document.getElementById('hitl-buttons')) {
+      const btns = document.createElement('div');
+      btns.id = 'hitl-buttons';
+      btns.className = 'hitl-buttons';
+
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'btn-hitl btn-approve';
+      approveBtn.textContent = 'Approve';
+      approveBtn.addEventListener('click', () => sendHitlDecision(hitlTaskId, 'PUBLISH'));
+
+      const reviseBtn = document.createElement('button');
+      reviseBtn.className = 'btn-hitl btn-revise';
+      reviseBtn.textContent = 'Revise';
+      reviseBtn.addEventListener('click', () => sendHitlDecision(hitlTaskId, 'REVISE'));
+
+      const rejectBtn = document.createElement('button');
+      rejectBtn.className = 'btn-hitl btn-reject';
+      rejectBtn.textContent = 'Reject';
+      rejectBtn.addEventListener('click', () => sendHitlDecision(hitlTaskId, 'REJECT'));
+
+      btns.appendChild(approveBtn);
+      btns.appendChild(reviseBtn);
+      btns.appendChild(rejectBtn);
+      bannerHitl.appendChild(btns);
+    }
 
   } else if (blockedTasks.length > 0) {
+    hitlTaskId = null;
+    const oldBtns = document.getElementById('hitl-buttons');
+    if (oldBtns) oldBtns.remove();
+
     bannerError.style.display = 'block';
     document.getElementById('banner-error-msg').textContent =
-      blockedTasks.map(t => `* ${t.title}: ${String(t.result || '').replace('ERROR:', '').trim().slice(0, 200)}`).join('\n');
+      blockedTasks.map(t => `• ${t.title}: ${String(t.result || '').replace('ERROR:', '').trim().slice(0, 200)}`).join('\n');
+
+  } else {
+    hitlTaskId = null;
+    const oldBtns = document.getElementById('hitl-buttons');
+    if (oldBtns) oldBtns.remove();
+  }
+}
+
+function renderSwarmMetadata() {
+  const meta = state.metadata;
+  if (!meta) return;
+
+  const nodesEl = document.getElementById('meta-nodes');
+  if (nodesEl && meta.activeNodes?.length) {
+    nodesEl.innerHTML = meta.activeNodes.map(n => `<span class="node-badge">${escHTML(n)}</span>`).join('');
+  }
+
+  if (meta.totalTokens !== undefined) {
+    document.getElementById('meta-tokens').textContent = Number(meta.totalTokens).toLocaleString();
+  }
+  if (meta.estimatedCost !== undefined) {
+    document.getElementById('meta-cost').textContent = `$${Number(meta.estimatedCost).toFixed(4)}`;
+  }
+  if (meta.startTime) {
+    document.getElementById('meta-start').textContent = new Date(meta.startTime).toLocaleTimeString();
+  }
+  if (meta.endTime) {
+    document.getElementById('meta-end').textContent = new Date(meta.endTime).toLocaleTimeString();
+  }
+  // Duration — live while running, fixed once ended
+  const durEl = document.getElementById('meta-duration');
+  if (durEl && meta.startTime) {
+    const startMs  = Number(new Date(meta.startTime));
+    const endMs    = meta.endTime ? Number(new Date(meta.endTime)) : Date.now();
+    const totalSec = Math.floor((endMs - startMs) / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    durEl.textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
   }
 }
 
@@ -222,7 +310,25 @@ function render() {
 
 function applyDelta(delta) {
   if (delta.teamWorkflowStatus) {
-    state.workflowStatus = delta.teamWorkflowStatus;
+    const incoming = delta.teamWorkflowStatus;
+    const prev = state.workflowStatus;
+
+    // New workflow run: clear tasks and metadata from previous run so board starts fresh
+    if (incoming === 'RUNNING' &&
+        (prev === 'FINISHED' || prev === 'STOPPED' || prev === 'ERRORED')) {
+      state.tasks    = [];
+      state.metadata = null;
+    }
+
+    // Manage live-duration timer
+    if (incoming === 'RUNNING' && !durationTimer) {
+      durationTimer = setInterval(() => renderSwarmMetadata(), 1000);
+    } else if (incoming !== 'RUNNING' && durationTimer) {
+      clearInterval(durationTimer);
+      durationTimer = null;
+    }
+
+    state.workflowStatus = incoming;
   }
 
   if (Array.isArray(delta.agents)) {
@@ -253,8 +359,8 @@ function applyDelta(delta) {
 
 // ── Log delta events ─────────────────────────────────────────────────────
 
-const AGENT_ICONS = { IDLE: '[IDLE]', EXECUTING: '[EXEC]', THINKING: '[THINK]', ERROR: '[ERR]' };
-const TASK_ICONS  = { DOING: '[DO]', DONE: '[DONE]', BLOCKED: '[FAIL]', AWAITING_VALIDATION: '[WAIT]' };
+const AGENT_ICONS = { IDLE: '⚪', EXECUTING: '🟢', THINKING: '🔵', ERROR: '🔴' };
+const TASK_ICONS  = { DOING: '🔵', DONE: '✅', BLOCKED: '🔴', AWAITING_VALIDATION: '⏸' };
 
 function logDelta(delta) {
   if (delta.teamWorkflowStatus) {
@@ -263,19 +369,19 @@ function logDelta(delta) {
 
   if (Array.isArray(delta.agents)) {
     for (const a of delta.agents) {
-      const icon    = AGENT_ICONS[a.status] || '[?]';
+      const icon    = AGENT_ICONS[a.status] || '⬡';
       const taskRef = a.currentTaskId ? ` [${a.currentTaskId.slice(-8)}]` : '';
       const hi      = a.status === 'EXECUTING' || a.status === 'ERROR';
-      addLog('AGENT', `${icon} ${a.name || a.agentId} -> ${a.status}${taskRef}`, hi);
+      addLog('AGENT', `${icon} ${a.name || a.agentId} → ${a.status}${taskRef}`, hi);
     }
   }
 
   if (Array.isArray(delta.tasks)) {
     for (const t of delta.tasks) {
-      const icon    = TASK_ICONS[t.status] || '[?]';
+      const icon    = TASK_ICONS[t.status] || '📋';
       const preview = parseTaskResult(t.result) ? ` — ${parseTaskResult(t.result).slice(0, 80)}` : '';
       const hi      = t.status === 'DONE' || t.status === 'BLOCKED' || t.status === 'AWAITING_VALIDATION';
-      addLog('TASK', `${icon} ${(t.title || t.taskId).slice(0, 50)} -> ${t.status}${preview}`, hi);
+      addLog('TASK', `${icon} ${(t.title || t.taskId).slice(0, 50)} → ${t.status}${preview}`, hi);
     }
   }
 
@@ -296,10 +402,21 @@ const socket = io(GATEWAY_URL, {
 });
 
 socket.on('connect', () => {
+  // Reset all workflow state before the gateway snapshot arrives — prevents stale leftovers
+  state.agents = [];
+  state.tasks  = [];
+  state.workflowStatus = 'INITIAL';
+  state.metadata = null;
+  hitlTaskId = null;
+  if (durationTimer) { clearInterval(durationTimer); durationTimer = null; }
+  // Request full snapshot replay from gateway
+  socket.emit('state:request');
+
   document.getElementById('conn-badge').className   = 'badge badge-live';
   document.getElementById('conn-badge').textContent = '● LIVE';
   document.getElementById('conn-detail').textContent = `id: ${socket.id?.slice(0, 8)}`;
   addLog('CONNECT', `Connected to ${GATEWAY_URL}`, true);
+  render();
 });
 
 socket.on('disconnect', reason => {

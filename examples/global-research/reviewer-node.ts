@@ -7,15 +7,16 @@ import { reviewerConfig, REVIEWER_QUEUE } from './team-config';
 import { buildSecurityDeps } from './build-security-deps';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = createDriver('reviewer');
+const AGENT_ID = process.env['AGENT_ID'] ?? 'reviewer';
+const driver = createDriver(AGENT_ID);
 const { actorDeps, tokenProvider } = buildSecurityDeps();
 
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
-  agentId: 'reviewer', name: 'Sage', role: 'AI Ethics & Compliance Officer',
+  agentId: AGENT_ID, name: 'Sage', role: 'AI Ethics & Compliance Officer',
 });
 
 const handler = statePublisher.wrapHandler(createKaibanTaskHandler(reviewerConfig, driver, tokenProvider));
-const actor = new AgentActor('reviewer', driver, REVIEWER_QUEUE, handler, actorDeps);
+const actor = new AgentActor(AGENT_ID, driver, REVIEWER_QUEUE, handler, actorDeps);
 
 actor.start()
   .then(() => { console.log('[Reviewer] Sage started →', REVIEWER_QUEUE); statePublisher.publishIdle(); })

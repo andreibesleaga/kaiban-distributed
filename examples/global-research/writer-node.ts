@@ -7,15 +7,16 @@ import { writerConfig, WRITER_QUEUE } from './team-config';
 import { buildSecurityDeps } from './build-security-deps';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = createDriver('writer');
+const AGENT_ID = process.env['AGENT_ID'] ?? 'writer';
+const driver = createDriver(AGENT_ID);
 const { actorDeps, tokenProvider } = buildSecurityDeps();
 
 const statePublisher = new AgentStatePublisher(REDIS_URL, {
-  agentId: 'writer', name: 'Atlas', role: 'Research Synthesiser',
+  agentId: AGENT_ID, name: 'Atlas', role: 'Research Synthesiser',
 });
 
 const handler = statePublisher.wrapHandler(createKaibanTaskHandler(writerConfig, driver, tokenProvider));
-const actor = new AgentActor('writer', driver, WRITER_QUEUE, handler, actorDeps);
+const actor = new AgentActor(AGENT_ID, driver, WRITER_QUEUE, handler, actorDeps);
 
 actor.start()
   .then(() => { console.log('[Writer] Atlas started →', WRITER_QUEUE); statePublisher.publishIdle(); })

@@ -95,6 +95,7 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      AGENT_ID: writer
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -123,6 +124,7 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      AGENT_ID: reviewer
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -151,6 +153,7 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      AGENT_ID: editor
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}

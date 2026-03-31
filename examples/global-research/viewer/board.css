@@ -297,3 +297,11 @@ details.task-result[open] summary::before { content: '▼ '; }
   0%, 100% { opacity: 1; transform: scale(1); }
   50%      { opacity: 0.5; transform: scale(1.4); }
 }
+
+/* ── HITL decision buttons ── */
+.hitl-buttons { display: flex; gap: 10px; margin-top: 10px; justify-content: center; flex-wrap: wrap; }
+.btn-hitl { padding: 8px 18px; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+.btn-hitl:hover { opacity: 0.85; }
+.btn-approve { background: #16a34a; color: #fff; }
+.btn-revise  { background: #d97706; color: #fff; }
+.btn-reject  { background: #dc2626; color: #fff; }

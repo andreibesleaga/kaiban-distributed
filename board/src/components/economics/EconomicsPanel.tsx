@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useBoardStore } from '../../store/boardStore';
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -27,6 +28,14 @@ export default function EconomicsPanel() {
   const workflowStatus = useBoardStore((s) => s.workflowStatus);
 
   const isRunning = workflowStatus === 'RUNNING';
+
+  // Re-render every second while running so the duration field updates live.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1_000);
+    return () => clearInterval(id);
+  }, [isRunning]);
 
   return (
     <div className="rounded-xl border border-slate-800 bg-[#1e293b] p-4">
