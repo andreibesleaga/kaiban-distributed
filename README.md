@@ -30,7 +30,7 @@
 
 ---
 
-## Summary — Use in Another Project (30 seconds)
+## Summary
 
 ```bash
 # 1. Clone and install
@@ -921,6 +921,7 @@ kaiban-distributed/
 │           ├── globalSetup.ts             # Docker Redis auto-start; resilient to existing Redis
 │           └── kafkaSetup.ts              # Docker Kafka + Zookeeper + Redis auto-start
 ├── examples/
+│   └── global-research/                   # Multi-agent distributed researchers pipeline example
 │   └── blog-team/                         # Three-agent editorial pipeline
 │       ├── team-config.ts                 # Agent configs (Ava, Kai, Morgan) + LLM factory
 │       ├── driver-factory.ts              # createDriver(suffix) — BullMQ or Kafka from env
