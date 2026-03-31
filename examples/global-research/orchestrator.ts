@@ -573,13 +573,13 @@ async function waitForHITLDecision(
     const sub = new Redis(redisUrl, { lazyConnect: false });
     sub.subscribe('kaiban-hitl-decisions').then(() => {
       sub.on('message', (_ch: string, msg: string) => {
-        if (resolved) { void sub.quit(); return; }
+        if (resolved) { sub.disconnect(); return; }
         try {
           const parsed = JSON.parse(msg) as { taskId: string; decision: string };
           const mapped = BOARD_MAP[parsed.decision];
           if (parsed.taskId === taskId && mapped) {
             console.log(`\n🖥  Board decision received: ${parsed.decision}`);
-            void sub.quit();
+            sub.disconnect();
             finish(mapped);
           }
         } catch { /* ignore malformed messages */ }

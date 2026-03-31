@@ -66,11 +66,6 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
-      # SEARCHER_ID is intentionally not set here so each replica falls back to its
-      # container hostname (see searcher-node.ts), producing unique IDs like
-      # "searcher-abc12" instead of all replicas sharing the same ID.
-      # Override with SEARCHER_ID=searcher-0 when running a single searcher locally.
-      SEARCHER_ID: ${SEARCHER_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}

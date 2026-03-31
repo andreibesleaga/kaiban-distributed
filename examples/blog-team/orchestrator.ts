@@ -264,12 +264,12 @@ async function waitForHITLDecision(
     const sub = new Redis(redisUrl, { lazyConnect: false });
     sub.subscribe('kaiban-hitl-decisions').then(() => {
       sub.on('message', (_ch: string, msg: string) => {
-        if (resolved) { void sub.quit(); return; }
+        if (resolved) { sub.disconnect(); return; }
         try {
           const parsed = JSON.parse(msg) as { taskId: string; decision: string };
           if (parsed.taskId === taskId && ['PUBLISH', 'REVISE', 'REJECT'].includes(parsed.decision)) {
             console.log(`\n🖥  Board decision received: ${parsed.decision}`);
-            void sub.quit();
+            sub.disconnect();
             finish(parsed.decision as 'PUBLISH' | 'REVISE' | 'REJECT');
           }
         } catch { /* ignore malformed messages */ }

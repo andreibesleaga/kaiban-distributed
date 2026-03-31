@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import os from 'os';
 import { AgentActor } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
@@ -10,9 +9,10 @@ import { buildSecurityDeps } from './build-security-deps';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const CHAOS_MODE = process.env['CHAOS_MODE'] === 'true';
-// When running multiple Docker Compose replicas, SEARCHER_ID is not set so each
-// replica falls back to its container hostname — producing unique IDs automatically.
-const SEARCHER_ID = process.env['SEARCHER_ID'] || `searcher-${os.hostname()}`;
+// Each replica uses the same agentId 'searcher' so they compete on the same queue
+// and merge to one entry in the board snapshot (matching the orchestrator's view).
+// Set SEARCHER_ID explicitly to override (e.g. for a single local searcher process).
+const SEARCHER_ID = process.env['SEARCHER_ID'] ?? 'searcher';
 
 const driver = createDriver(SEARCHER_ID);
 const { actorDeps, tokenProvider } = buildSecurityDeps();
