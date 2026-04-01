@@ -193,8 +193,8 @@ interface ResearchContext {
   metadata: {
     totalTokens: number;         // LLM token usage (economics)
     estimatedCost: number;       // Estimated USD cost
-    startTime: string;           // ISO timestamp
-    endTime?: string;            // ISO timestamp (set on completion)
+    startTime: number;           // Unix timestamp (ms) — set when workflow starts
+    endTime?: number;            // Unix timestamp (ms) — set on completion/stop
     activeNodes: string[];       // IDs of nodes that processed this context
   };
 }

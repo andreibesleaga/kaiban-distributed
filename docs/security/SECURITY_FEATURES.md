@@ -169,11 +169,16 @@ if (!parsed) {
 CHANNEL_SIGNING_SECRET=<random 32+ bytes, base64>   # activates signing
 ```
 
-**All publishers:**
+**All publishers (state + HITL channels):**
 - `AgentStatePublisher.publish()` — `src/adapters/state/agent-state-publisher.ts`
-- `OrchestratorStatePublisher.publish()` — `examples/blog-team/orchestrator.ts`
+- `OrchestratorStatePublisher.publish()` — `examples/blog-team/orchestrator.ts`, `examples/global-research/orchestrator.ts`
+- `SocketGateway` HITL publisher — `src/adapters/gateway/SocketGateway.ts` (publishes `wrapSigned({ taskId, decision })` to `kaiban-hitl-decisions`)
 
-**Tests:** `tests/unit/security/channel-signing.test.ts`, `tests/unit/state/agent-state-publisher-signing.test.ts`, `tests/e2e/security-integration.test.ts`
+**All consumers (via `unwrapVerified`):**
+- `SocketGateway.initialize()` — verifies inbound `kaiban-state-events` messages before forwarding to Socket.io
+- `waitForHITLDecision()` in both orchestrators — verifies inbound `kaiban-hitl-decisions` messages from the board
+
+**Tests:** `tests/unit/security/channel-signing.test.ts`, `tests/unit/state/agent-state-publisher-signing.test.ts`, `tests/unit/gateway/SocketGateway.test.ts`, `tests/e2e/security-integration.test.ts`
 
 ---
 
