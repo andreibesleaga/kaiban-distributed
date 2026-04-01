@@ -1,7 +1,10 @@
 import { Queue, Worker, QueueOptions } from "bullmq";
 import { context as otelContext } from "@opentelemetry/api";
 import { IMessagingDriver, MessagePayload } from "./interfaces";
-import { injectTraceContext, extractTraceContext } from "../telemetry/TraceContext";
+import {
+  injectTraceContext,
+  extractTraceContext,
+} from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
 
 export interface BullMQDriverOptions extends QueueOptions {
@@ -40,7 +43,10 @@ export class BullMQDriver implements IMessagingDriver {
     const queue = this.queues.get(queueName)!;
     const headers: Record<string, string> = {};
     injectTraceContext(headers);
-    const enrichedPayload: MessagePayload = { ...payload, traceHeaders: headers };
+    const enrichedPayload: MessagePayload = {
+      ...payload,
+      traceHeaders: headers,
+    };
     await queue.add(payload.taskId, enrichedPayload);
   }
 
@@ -56,18 +62,21 @@ export class BullMQDriver implements IMessagingDriver {
         queueName,
         async (job) => {
           const rawHeaders =
-            typeof job.data.traceHeaders === 'object' && job.data.traceHeaders !== null
+            typeof job.data.traceHeaders === "object" &&
+            job.data.traceHeaders !== null
               ? (job.data.traceHeaders as Record<string, unknown>)
               : {};
           const safeHeaders: Record<string, string> = {};
           for (const [k, v] of Object.entries(rawHeaders)) {
-            if (typeof k === 'string' && typeof v === 'string') {
-              if (k === 'traceparent' && !TRACEPARENT_RE.test(v)) continue;
+            if (typeof k === "string" && typeof v === "string") {
+              if (k === "traceparent" && !TRACEPARENT_RE.test(v)) continue;
               safeHeaders[k] = v;
             }
           }
           const ctx = extractTraceContext(safeHeaders);
-          await otelContext.with(ctx, () => handler(job.data as MessagePayload));
+          await otelContext.with(ctx, () =>
+            handler(job.data as MessagePayload),
+          );
         },
         this.config,
       );

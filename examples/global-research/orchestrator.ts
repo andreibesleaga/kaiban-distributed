@@ -26,7 +26,7 @@ import { Redis } from 'ioredis';
 import { createDriver, getDriverType } from './driver-factory';
 import { COMPLETED_QUEUE } from './team-config';
 import type { ResearchContext, SearchResult } from './types';
-import { wrapSigned } from '../../src/infrastructure/security/channel-signing';
+import { wrapSigned, unwrapVerified } from '../../src/infrastructure/security/channel-signing';
 import { issueA2AToken } from '../../src/infrastructure/security/a2a-auth';
 
 const GATEWAY_URL    = process.env['GATEWAY_URL']      ?? 'http://localhost:3000';
@@ -97,7 +97,7 @@ class OrchestratorStatePublisher {
     // Reset the searcher self-registration counter so nodes starting up
     // for this run claim indices searcher-0, searcher-1, etc. from scratch.
     this.redis.del('kaiban:searcher:reg').catch(() => {});
-    this.publish({ teamWorkflowStatus: 'RUNNING', agents: buildSwarmAgents(numSearchers) });
+    this.publish({ teamWorkflowStatus: 'RUNNING', agents: buildSwarmAgents(numSearchers), metadata: { startTime: Date.now() } });
   }
 
   searchingPhase(taskIds: string[]): void {
@@ -154,14 +154,15 @@ class OrchestratorStatePublisher {
       tasks: [{ taskId: editTaskId, title: ctx.originalQuery.slice(0, 60), status: 'DONE',
         assignedToAgentId: 'editor',
         result: `Published | Tokens: ${ctx.metadata.totalTokens} | Cost: $${ctx.metadata.estimatedCost.toFixed(4)}` }],
-      metadata: ctx.metadata,
+      metadata: { ...ctx.metadata, endTime: ctx.metadata.endTime ?? Date.now() },
     });
   }
 
-  workflowStopped(taskId: string, reason: string): void {
+  workflowStopped(taskId: string, reason: string, ctx?: ResearchContext): void {
     this.publish({
       teamWorkflowStatus: 'STOPPED',
       tasks: [{ taskId, title: 'Workflow ended', status: 'BLOCKED', assignedToAgentId: 'editor', result: reason.slice(0, 200) }],
+      metadata: ctx ? { ...ctx.metadata, endTime: ctx.metadata.endTime ?? Date.now() } : undefined,
     });
   }
 
@@ -552,7 +553,8 @@ async function waitForHITLDecision(
     sub.on('message', (_ch: string, msg: string) => {
       if (resolved) return;
       try {
-        const parsed = JSON.parse(msg) as { taskId: string; decision: string };
+        const parsed = unwrapVerified(msg) as { taskId?: string; decision?: string } | null;
+        if (!parsed || typeof parsed.taskId !== 'string' || typeof parsed.decision !== 'string') return;
         const mapped = BOARD_MAP[parsed.decision];
         if (parsed.taskId === taskId && mapped) {
           console.log(`\n🖥  Board decision received: ${parsed.decision}`);
@@ -630,7 +632,7 @@ async function handleDecision(
     );
   }
 
-  ctx.metadata.endTime = new Date().toISOString();
+  ctx.metadata.endTime = Date.now();
 
   if (decision === '1') {
     ctx.status = 'COMPLETED';
@@ -646,8 +648,8 @@ async function handleDecision(
     console.log(`     Total Tokens:   ${ctx.metadata.totalTokens}`);
     console.log(`     Estimated Cost: $${ctx.metadata.estimatedCost.toFixed(4)}`);
     console.log(`     Nodes Active:   ${ctx.metadata.activeNodes.length} (${ctx.metadata.activeNodes.join(', ')})`);
-    console.log(`     Started:        ${ctx.metadata.startTime}`);
-    console.log(`     Completed:      ${ctx.metadata.endTime}\n`);
+    console.log(`     Started:        ${new Date(ctx.metadata.startTime).toISOString()}`);
+    console.log(`     Completed:      ${new Date(ctx.metadata.endTime).toISOString()}\n`);
 
   } else if (decision === '2') {
     console.log('\nSending back to Atlas with editorial notes...\n');
@@ -704,13 +706,13 @@ async function handleDecision(
       console.log('\nRevised research report published.\n');
     } else {
       ctx.status = 'FAILED';
-      pub.workflowStopped(revisionTaskId, 'Report saved pending further review');
+      pub.workflowStopped(revisionTaskId, 'Report saved pending further review', ctx);
       console.log('\nReport saved. Re-run to continue.\n');
     }
 
   } else {
     ctx.status = 'FAILED';
-    pub.workflowStopped(edit.taskId, 'Report rejected by human editor');
+    pub.workflowStopped(edit.taskId, 'Report rejected by human editor', ctx);
     console.log('\nResearch report rejected.\n');
   }
 }
@@ -732,7 +734,7 @@ async function main(): Promise<void> {
     status: 'INITIALIZED',
     rawSearchData: [],
     editorApproval: false,
-    metadata: { totalTokens: 0, estimatedCost: 0, startTime: new Date().toISOString(), activeNodes: [] },
+    metadata: { totalTokens: 0, estimatedCost: 0, startTime: Date.now(), activeNodes: [] },
   };
 
   let socket: Socket | null = null;
@@ -776,7 +778,8 @@ async function main(): Promise<void> {
 
     const gov = await runGovernancePhase(ctx, router, pub);
     if (gov.recommendation === 'REJECTED') {
-      pub.workflowStopped(randomUUID(), `Governance rejected: ${ctx.feedback?.complianceViolations.join('; ') ?? gov.text.slice(0, 200)}`);
+      ctx.metadata.endTime = Date.now();
+      pub.workflowStopped(randomUUID(), `Governance rejected: ${ctx.feedback?.complianceViolations.join('; ') ?? gov.text.slice(0, 200)}`, ctx);
       console.log('\nGovernance review REJECTED the report. Workflow stopped.');
       console.log('   Review violations above and re-run with corrected query or constraints.\n');
       return;

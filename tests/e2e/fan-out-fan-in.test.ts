@@ -20,32 +20,38 @@
  *   6. Duplicate Task IDs  — Same taskId published twice, processed exactly once
  *   7. Approver Rejects    — Summary below threshold → rejected
  */
-import { describe, it, expect, afterEach } from 'vitest';
-import { randomUUID } from 'crypto';
-import { BullMQDriver } from '../../src/infrastructure/messaging/bullmq-driver';
-import { AgentActor } from '../../src/application/actor/AgentActor';
-import type { MessagePayload } from '../../src/infrastructure/messaging/interfaces';
+import { describe, it, expect, afterEach } from "vitest";
+import { randomUUID } from "crypto";
+import { BullMQDriver } from "../../src/infrastructure/messaging/bullmq-driver";
+import { AgentActor } from "../../src/application/actor/AgentActor";
+import type { MessagePayload } from "../../src/infrastructure/messaging/interfaces";
 
 // ── Shared setup ─────────────────────────────────────────────────────
 
-const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
 
 function connConfig(): { connection: { host: string; port: number } } {
   const url = new URL(REDIS_URL);
-  return { connection: { host: url.hostname, port: parseInt(url.port || '6379', 10) } };
+  return {
+    connection: { host: url.hostname, port: parseInt(url.port || "6379", 10) },
+  };
 }
 
-const FANIN_SUMMARY_CHANNEL = 'kaiban-fanin-summary';
-const FANIN_APPROVED_CHANNEL = 'kaiban-fanin-approved';
-const COMPLETED_CHANNEL = 'kaiban-events-completed';
-const FAILED_CHANNEL = 'kaiban-events-failed';
+const FANIN_SUMMARY_CHANNEL = "kaiban-fanin-summary";
+const FANIN_APPROVED_CHANNEL = "kaiban-fanin-approved";
+const COMPLETED_CHANNEL = "kaiban-events-completed";
+const FAILED_CHANNEL = "kaiban-events-failed";
 
 /** Wait until predicate is true or timeout expires */
-async function waitUntil(pred: () => boolean, timeoutMs: number, intervalMs = 200): Promise<boolean> {
+async function waitUntil(
+  pred: () => boolean,
+  timeoutMs: number,
+  intervalMs = 200,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (pred()) return true;
-    await new Promise(r => setTimeout(r, intervalMs));
+    await new Promise((r) => setTimeout(r, intervalMs));
   }
   return false;
 }
@@ -94,12 +100,15 @@ async function runAutoApprover(
   summary: WorkflowSummary,
   workflowId: string,
   requiredSuccessRatio = 1.0,
-): Promise<{ status: 'approved' | 'rejected'; reason: string }> {
-  const ratio = summary.totalExpected > 0 ? summary.success.length / summary.totalExpected : 0;
+): Promise<{ status: "approved" | "rejected"; reason: string }> {
+  const ratio =
+    summary.totalExpected > 0
+      ? summary.success.length / summary.totalExpected
+      : 0;
   const approved = ratio >= requiredSuccessRatio;
   const decision = {
     workflowId,
-    status: approved ? ('approved' as const) : ('rejected' as const),
+    status: approved ? ("approved" as const) : ("rejected" as const),
     reason: approved
       ? `All ${summary.success.length}/${summary.totalExpected} sub-tasks succeeded`
       : `Only ${summary.success.length}/${summary.totalExpected} succeeded (required ${requiredSuccessRatio * 100}%)`,
@@ -111,13 +120,13 @@ async function runAutoApprover(
   // Publish summary + decision
   await driver.publish(FANIN_SUMMARY_CHANNEL, {
     taskId: workflowId,
-    agentId: 'aggregator',
+    agentId: "aggregator",
     timestamp: Date.now(),
     data: { summary, decision },
   });
   await driver.publish(FANIN_APPROVED_CHANNEL, {
     taskId: workflowId,
-    agentId: 'approver',
+    agentId: "approver",
     timestamp: Date.now(),
     data: decision,
   });
@@ -148,29 +157,31 @@ async function spawnAgents(
     actors.push(actor);
   }
   // Allow BullMQ workers to attach
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise((r) => setTimeout(r, 800));
   return actors;
 }
 
 // ── Test Suite ────────────────────────────────────────────────────────
 
-describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
+describe("E2E: Fan-Out / Fan-In Workflow (BullMQ)", () => {
   const drivers: BullMQDriver[] = [];
 
   afterEach(async () => {
-    await Promise.all(drivers.map(d => d.disconnect()));
+    await Promise.all(drivers.map((d) => d.disconnect()));
     drivers.length = 0;
   });
 
   // ─────────────────────────────────────────────────────────────────────
   // Scenario 1 — Golden Path: 4 agents, all succeed, approver passes
   // ─────────────────────────────────────────────────────────────────────
-  it('Scenario 1 — Golden Path: 4 parallel agents complete, auto-approver passes', async () => {
+  it("Scenario 1 — Golden Path: 4 parallel agents complete, auto-approver passes", async () => {
     const workflowId = `wf-golden-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const NUM_AGENTS = 4;
     const AGENT_ID = `agent-${workflowId}`;
-    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) => makeTaskId(workflowId, i));
+    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) =>
+      makeTaskId(workflowId, i),
+    );
 
     // Oracle driver (publisher + result listener)
     const oracle = new BullMQDriver(connConfig());
@@ -179,19 +190,25 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
     // Approval result listener
     let approvalDecision: Record<string, unknown> | null = null;
     await oracle.subscribe(FANIN_APPROVED_CHANNEL, async (payload) => {
-      if (payload.taskId === workflowId) approvalDecision = payload.data as Record<string, unknown>;
+      if (payload.taskId === workflowId)
+        approvalDecision = payload.data as Record<string, unknown>;
     });
 
     // Spin up 4 competing consumer agents on the same queue
     await spawnAgents(drivers, NUM_AGENTS, AGENT_ID, QUEUE, async () => {
-      await new Promise(r => setTimeout(r, 20 + Math.random() * 30));
-      return { result: 'sub-task complete' };
+      await new Promise((r) => setTimeout(r, 20 + Math.random() * 30));
+      return { result: "sub-task complete" };
     });
 
     // Fan-out: publish all tasks simultaneously
     await Promise.all(
-      taskIds.map(taskId =>
-        oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: { instruction: `work-${taskId}` } }),
+      taskIds.map((taskId) =>
+        oracle.publish(QUEUE, {
+          taskId,
+          agentId: AGENT_ID,
+          timestamp: Date.now(),
+          data: { instruction: `work-${taskId}` },
+        }),
       ),
     );
 
@@ -207,21 +224,23 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
     // Assertions
     expect(summary.success).toHaveLength(NUM_AGENTS);
     expect(summary.failed).toHaveLength(0);
-    expect(decision.status).toBe('approved');
+    expect(decision.status).toBe("approved");
     expect(received).toBe(true);
-    expect(approvalDecision!['status']).toBe('approved');
-    expect(approvalDecision!['successCount']).toBe(NUM_AGENTS);
+    expect(approvalDecision!["status"]).toBe("approved");
+    expect(approvalDecision!["successCount"]).toBe(NUM_AGENTS);
   }, 30_000);
 
   // ─────────────────────────────────────────────────────────────────────
   // Scenario 2 — Scaled 8-node: proves horizontal fan-out at scale
   // ─────────────────────────────────────────────────────────────────────
-  it('Scenario 2 — Scaled 8-node: 8 parallel agents all succeed (horizontal fan-out)', async () => {
+  it("Scenario 2 — Scaled 8-node: 8 parallel agents all succeed (horizontal fan-out)", async () => {
     const workflowId = `wf-scale-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const NUM_AGENTS = 8;
     const AGENT_ID = `agent-${workflowId}`;
-    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) => makeTaskId(workflowId, i));
+    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) =>
+      makeTaskId(workflowId, i),
+    );
 
     const oracle = new BullMQDriver(connConfig());
     drivers.push(oracle);
@@ -229,13 +248,18 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
     const workerNodes = new Set<string>();
     await spawnAgents(drivers, NUM_AGENTS, AGENT_ID, QUEUE, async (p) => {
       workerNodes.add(p.taskId); // unique per job slot
-      await new Promise(r => setTimeout(r, 10 + Math.random() * 20));
-      return 'ok';
+      await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
+      return "ok";
     });
 
     await Promise.all(
-      taskIds.map(taskId =>
-        oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: {} }),
+      taskIds.map((taskId) =>
+        oracle.publish(QUEUE, {
+          taskId,
+          agentId: AGENT_ID,
+          timestamp: Date.now(),
+          data: {},
+        }),
       ),
     );
 
@@ -244,7 +268,7 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
 
     expect(summary.success).toHaveLength(NUM_AGENTS);
     expect(summary.failed).toHaveLength(0);
-    expect(decision.status).toBe('approved');
+    expect(decision.status).toBe("approved");
     // Prove tasks were spread across multiple BullMQ workers (competing consumers)
     expect(workerNodes.size).toBeGreaterThanOrEqual(NUM_AGENTS); // each task processed
   }, 40_000);
@@ -254,12 +278,14 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
   //   Agent for task-0 fails on 1st attempt, retries, then succeeds.
   //   Overall workflow still completes successfully.
   // ─────────────────────────────────────────────────────────────────────
-  it('Scenario 3 — Partial failure: 1 agent retries and recovers, workflow approves', async () => {
+  it("Scenario 3 — Partial failure: 1 agent retries and recovers, workflow approves", async () => {
     const workflowId = `wf-retry-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const NUM_AGENTS = 4;
     const AGENT_ID = `agent-${workflowId}`;
-    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) => makeTaskId(workflowId, i));
+    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) =>
+      makeTaskId(workflowId, i),
+    );
 
     const oracle = new BullMQDriver(connConfig());
     drivers.push(oracle);
@@ -272,14 +298,19 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
       const attempts = (attemptCounts.get(p.taskId) ?? 0) + 1;
       attemptCounts.set(p.taskId, attempts);
       if (p.taskId === FLAKY_TASK && attempts === 1) {
-        throw new Error('transient network error — will retry');
+        throw new Error("transient network error — will retry");
       }
-      return 'ok';
+      return "ok";
     });
 
     await Promise.all(
-      taskIds.map(taskId =>
-        oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: {} }),
+      taskIds.map((taskId) =>
+        oracle.publish(QUEUE, {
+          taskId,
+          agentId: AGENT_ID,
+          timestamp: Date.now(),
+          data: {},
+        }),
       ),
     );
 
@@ -289,7 +320,7 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
 
     expect(summary.success).toHaveLength(NUM_AGENTS);
     expect(summary.failed).toHaveLength(0);
-    expect(decision.status).toBe('approved');
+    expect(decision.status).toBe("approved");
     // Confirm the flaky task needed more than 1 attempt
     expect(attemptCounts.get(FLAKY_TASK)).toBeGreaterThan(1);
   }, 35_000);
@@ -298,24 +329,31 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
   // Scenario 4 — Total Failure: all agents exhaust retries → DLQ
   //   Workflow reports partial failure; approver rejects.
   // ─────────────────────────────────────────────────────────────────────
-  it('Scenario 4 — Total failure: all agents exhaust retries, approver rejects', async () => {
+  it("Scenario 4 — Total failure: all agents exhaust retries, approver rejects", async () => {
     const workflowId = `wf-fail-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const NUM_AGENTS = 3;
     const AGENT_ID = `agent-${workflowId}`;
-    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) => makeTaskId(workflowId, i));
+    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) =>
+      makeTaskId(workflowId, i),
+    );
 
     const oracle = new BullMQDriver(connConfig());
     drivers.push(oracle);
 
     // All handlers always throw → all 3 retries exhausted → DLQ
     await spawnAgents(drivers, NUM_AGENTS, AGENT_ID, QUEUE, async () => {
-      throw new Error('permanent failure');
+      throw new Error("permanent failure");
     });
 
     await Promise.all(
-      taskIds.map(taskId =>
-        oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: {} }),
+      taskIds.map((taskId) =>
+        oracle.publish(QUEUE, {
+          taskId,
+          agentId: AGENT_ID,
+          timestamp: Date.now(),
+          data: {},
+        }),
       ),
     );
 
@@ -325,8 +363,8 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
 
     expect(summary.success).toHaveLength(0);
     expect(summary.failed).toHaveLength(NUM_AGENTS);
-    expect(decision.status).toBe('rejected');
-    expect(decision.reason).toContain('0/' + NUM_AGENTS);
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("0/" + NUM_AGENTS);
   }, 30_000);
 
   // ─────────────────────────────────────────────────────────────────────
@@ -334,7 +372,7 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
   //   Tasks are published BEFORE the agent subscribes.
   //   BullMQ persists jobs in Redis; the late agent picks them up.
   // ─────────────────────────────────────────────────────────────────────
-  it('Scenario 5 — Late-joining agent: processes tasks published before connecting', async () => {
+  it("Scenario 5 — Late-joining agent: processes tasks published before connecting", async () => {
     const workflowId = `wf-late-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const AGENT_ID = `agent-${workflowId}`;
@@ -345,22 +383,27 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
 
     // Fan-out FIRST — no agents subscribed yet
     await Promise.all(
-      taskIds.map(taskId =>
-        oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: {} }),
+      taskIds.map((taskId) =>
+        oracle.publish(QUEUE, {
+          taskId,
+          agentId: AGENT_ID,
+          timestamp: Date.now(),
+          data: {},
+        }),
       ),
     );
 
     // Short pause to ensure jobs are persisted in Redis before agent joins
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 200));
 
     // Now the agent joins late
-    await spawnAgents(drivers, 1, AGENT_ID, QUEUE, async () => 'late-result');
+    await spawnAgents(drivers, 1, AGENT_ID, QUEUE, async () => "late-result");
 
     const summary = await runAggregator(oracle, taskIds, 10_000);
     const decision = await runAutoApprover(oracle, summary, workflowId, 1.0);
 
     expect(summary.success).toHaveLength(2);
-    expect(decision.status).toBe('approved');
+    expect(decision.status).toBe("approved");
   }, 25_000);
 
   // ─────────────────────────────────────────────────────────────────────
@@ -371,7 +414,7 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
   //   at the aggregator level that the completion set only counts once
   //   per unique taskId (Set semantics).
   // ─────────────────────────────────────────────────────────────────────
-  it('Scenario 6 — Duplicate task IDs: aggregator counts each taskId only once', async () => {
+  it("Scenario 6 — Duplicate task IDs: aggregator counts each taskId only once", async () => {
     const workflowId = `wf-dup-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const AGENT_ID = `agent-${workflowId}`;
@@ -383,12 +426,22 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
     let callCount = 0;
     await spawnAgents(drivers, 1, AGENT_ID, QUEUE, async () => {
       callCount++;
-      return 'ok';
+      return "ok";
     });
 
     // Publish same taskId TWICE
-    await oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: {} });
-    await oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: {} });
+    await oracle.publish(QUEUE, {
+      taskId,
+      agentId: AGENT_ID,
+      timestamp: Date.now(),
+      data: {},
+    });
+    await oracle.publish(QUEUE, {
+      taskId,
+      agentId: AGENT_ID,
+      timestamp: Date.now(),
+      data: {},
+    });
 
     // Collect completions for this one logical taskId
     const summary = await runAggregator(oracle, [taskId], 8_000);
@@ -396,7 +449,7 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
 
     // The aggregator Set yields exactly 1 unique taskId
     expect(summary.success).toHaveLength(1);
-    expect(decision.status).toBe('approved');
+    expect(decision.status).toBe("approved");
     // The handler may be invoked once or twice depending on BullMQ job-id behavior,
     // but the workflow outcome is correct either way
     expect(callCount).toBeGreaterThanOrEqual(1);
@@ -407,12 +460,14 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
   //   3 of 4 agents succeed; approver threshold is 100% → rejected.
   //   Also verifies the approver works with a lenient threshold (75%).
   // ─────────────────────────────────────────────────────────────────────
-  it('Scenario 7 — Approver rejects when success ratio below threshold', async () => {
+  it("Scenario 7 — Approver rejects when success ratio below threshold", async () => {
     const workflowId = `wf-reject-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const NUM_AGENTS = 4;
     const AGENT_ID = `agent-${workflowId}`;
-    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) => makeTaskId(workflowId, i));
+    const taskIds = Array.from({ length: NUM_AGENTS }, (_, i) =>
+      makeTaskId(workflowId, i),
+    );
 
     const oracle = new BullMQDriver(connConfig());
     drivers.push(oracle);
@@ -420,26 +475,42 @@ describe('E2E: Fan-Out / Fan-In Workflow (BullMQ)', () => {
     const FAILING_TASK = taskIds[0]; // exactly 1 task will always fail
 
     await spawnAgents(drivers, NUM_AGENTS, AGENT_ID, QUEUE, async (p) => {
-      if (p.taskId === FAILING_TASK) throw new Error('permanent sub-task failure');
-      return 'ok';
+      if (p.taskId === FAILING_TASK)
+        throw new Error("permanent sub-task failure");
+      return "ok";
     });
 
     await Promise.all(
-      taskIds.map(taskId =>
-        oracle.publish(QUEUE, { taskId, agentId: AGENT_ID, timestamp: Date.now(), data: {} }),
+      taskIds.map((taskId) =>
+        oracle.publish(QUEUE, {
+          taskId,
+          agentId: AGENT_ID,
+          timestamp: Date.now(),
+          data: {},
+        }),
       ),
     );
 
     const summary = await runAggregator(oracle, taskIds, 15_000);
 
     // Strict 100% threshold → rejected
-    const strictDecision = await runAutoApprover(oracle, summary, `${workflowId}-strict`, 1.0);
-    expect(strictDecision.status).toBe('rejected');
+    const strictDecision = await runAutoApprover(
+      oracle,
+      summary,
+      `${workflowId}-strict`,
+      1.0,
+    );
+    expect(strictDecision.status).toBe("rejected");
     expect(summary.success).toHaveLength(NUM_AGENTS - 1);
     expect(summary.failed).toHaveLength(1);
 
     // Lenient 75% threshold → approved (3/4 = 75%)
-    const lenientDecision = await runAutoApprover(oracle, summary, `${workflowId}-lenient`, 0.75);
-    expect(lenientDecision.status).toBe('approved');
+    const lenientDecision = await runAutoApprover(
+      oracle,
+      summary,
+      `${workflowId}-lenient`,
+      0.75,
+    );
+    expect(lenientDecision.status).toBe("approved");
   }, 30_000);
 });

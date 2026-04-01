@@ -49,8 +49,8 @@ export interface ResearchContext {
   metadata: {
     totalTokens: number;
     estimatedCost: number;
-    startTime: string;
-    endTime?: string;
+    startTime: number;
+    endTime?: number;
     activeNodes: string[];
   };
 }

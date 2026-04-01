@@ -1,10 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
-import { A2AConnector, type AgentCard } from '../../../src/infrastructure/federation/a2a-connector';
-import type { IMessagingDriver } from '../../../src/infrastructure/messaging/interfaces';
+import { describe, it, expect, vi } from "vitest";
+import {
+  A2AConnector,
+  type AgentCard,
+} from "../../../src/infrastructure/federation/a2a-connector";
+import type { IMessagingDriver } from "../../../src/infrastructure/messaging/interfaces";
 
 const testCard: AgentCard = {
-  name: 'test-worker', version: '1.0.0', description: 'test',
-  capabilities: ['tasks.create'], endpoints: { rpc: '/a2a/rpc' },
+  name: "test-worker",
+  version: "1.0.0",
+  description: "test",
+  capabilities: ["tasks.create"],
+  endpoints: { rpc: "/a2a/rpc" },
 };
 
 function makeMockDriver(): IMessagingDriver {
@@ -16,57 +22,67 @@ function makeMockDriver(): IMessagingDriver {
   };
 }
 
-describe('A2AConnector — input validation & hardening', () => {
+describe("A2AConnector — input validation & hardening", () => {
   // ── agentId validation ─────────────────────────────────────────────
-  describe('agentId validation', () => {
-    it('rejects agentId with special characters (SQL injection attempt)', async () => {
+  describe("agentId validation", () => {
+    it("rejects agentId with special characters (SQL injection attempt)", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 1, method: 'tasks.create',
-        params: { agentId: "agent'; DROP TABLE--", instruction: 'hi' },
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tasks.create",
+        params: { agentId: "agent'; DROP TABLE--", instruction: "hi" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.error?.code).toBe(-32602);
-        expect(result.value.error?.message).toContain('Invalid agentId');
+        expect(result.value.error?.message).toContain("Invalid agentId");
       }
     });
 
-    it('rejects agentId longer than 64 chars', async () => {
+    it("rejects agentId longer than 64 chars", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 2, method: 'tasks.create',
-        params: { agentId: 'a'.repeat(65), instruction: 'hi' },
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tasks.create",
+        params: { agentId: "a".repeat(65), instruction: "hi" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.error?.code).toBe(-32602);
     });
 
-    it('accepts agentId with hyphens and underscores', async () => {
+    it("accepts agentId with hyphens and underscores", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 3, method: 'tasks.create',
-        params: { agentId: 'my-agent_v2', instruction: 'hi' },
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tasks.create",
+        params: { agentId: "my-agent_v2", instruction: "hi" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.result).toBeDefined();
     });
 
-    it('accepts agentId exactly 64 chars', async () => {
+    it("accepts agentId exactly 64 chars", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 4, method: 'tasks.create',
-        params: { agentId: 'a'.repeat(64), instruction: 'hi' },
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tasks.create",
+        params: { agentId: "a".repeat(64), instruction: "hi" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.result).toBeDefined();
     });
 
-    it('rejects wildcard agentId (*) — wildcard routing removed', async () => {
+    it("rejects wildcard agentId (*) — wildcard routing removed", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 5, method: 'tasks.create',
-        params: { agentId: '*', instruction: 'hi' },
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tasks.create",
+        params: { agentId: "*", instruction: "hi" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -74,21 +90,25 @@ describe('A2AConnector — input validation & hardening', () => {
       }
     });
 
-    it('rejects agentId with path traversal (../)', async () => {
+    it("rejects agentId with path traversal (../)", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 6, method: 'tasks.create',
-        params: { agentId: '../../../etc/passwd', instruction: 'hi' },
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tasks.create",
+        params: { agentId: "../../../etc/passwd", instruction: "hi" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.error?.code).toBe(-32602);
     });
 
-    it('rejects agentId with spaces', async () => {
+    it("rejects agentId with spaces", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 7, method: 'tasks.create',
-        params: { agentId: 'agent one', instruction: 'hi' },
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tasks.create",
+        params: { agentId: "agent one", instruction: "hi" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.error?.code).toBe(-32602);
@@ -96,45 +116,53 @@ describe('A2AConnector — input validation & hardening', () => {
   });
 
   // ── instruction validation ─────────────────────────────────────────
-  describe('instruction validation', () => {
-    it('rejects instruction longer than 10,000 chars', async () => {
+  describe("instruction validation", () => {
+    it("rejects instruction longer than 10,000 chars", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 10, method: 'tasks.create',
-        params: { agentId: 'researcher', instruction: 'x'.repeat(10_001) },
+        jsonrpc: "2.0",
+        id: 10,
+        method: "tasks.create",
+        params: { agentId: "researcher", instruction: "x".repeat(10_001) },
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.error?.code).toBe(-32602);
-        expect(result.value.error?.message).toContain('instruction too long');
+        expect(result.value.error?.message).toContain("instruction too long");
       }
     });
 
-    it('accepts instruction exactly 10,000 chars', async () => {
+    it("accepts instruction exactly 10,000 chars", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 11, method: 'tasks.create',
-        params: { agentId: 'researcher', instruction: 'x'.repeat(10_000) },
+        jsonrpc: "2.0",
+        id: 11,
+        method: "tasks.create",
+        params: { agentId: "researcher", instruction: "x".repeat(10_000) },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.result).toBeDefined();
     });
 
-    it('accepts missing instruction (undefined)', async () => {
+    it("accepts missing instruction (undefined)", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 12, method: 'tasks.create',
-        params: { agentId: 'researcher' },
+        jsonrpc: "2.0",
+        id: 12,
+        method: "tasks.create",
+        params: { agentId: "researcher" },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.result).toBeDefined();
     });
 
-    it('accepts non-string instruction (number) — no length check', async () => {
+    it("accepts non-string instruction (number) — no length check", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
-        jsonrpc: '2.0', id: 13, method: 'tasks.create',
-        params: { agentId: 'researcher', instruction: 42 },
+        jsonrpc: "2.0",
+        id: 13,
+        method: "tasks.create",
+        params: { agentId: "researcher", instruction: 42 },
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.result).toBeDefined();
@@ -142,26 +170,35 @@ describe('A2AConnector — input validation & hardening', () => {
   });
 
   // ── method echo sanitization ───────────────────────────────────────
-  describe('method echo sanitization', () => {
-    it('truncates long method name in error response', async () => {
-      const longMethod = 'x'.repeat(200);
+  describe("method echo sanitization", () => {
+    it("truncates long method name in error response", async () => {
+      const longMethod = "x".repeat(200);
       const conn = new A2AConnector(testCard);
-      const result = await conn.handleRpc({ jsonrpc: '2.0', id: 20, method: longMethod });
+      const result = await conn.handleRpc({
+        jsonrpc: "2.0",
+        id: 20,
+        method: longMethod,
+      });
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.error?.code).toBe(-32601);
         // Error message should not contain the full 200-char method
         expect(result.value.error!.message.length).toBeLessThan(200);
         // But should contain the truncated portion
-        expect(result.value.error!.message).toContain('x'.repeat(100));
+        expect(result.value.error!.message).toContain("x".repeat(100));
       }
     });
 
-    it('short method names pass through unchanged', async () => {
+    it("short method names pass through unchanged", async () => {
       const conn = new A2AConnector(testCard);
-      const result = await conn.handleRpc({ jsonrpc: '2.0', id: 21, method: 'foo.bar' });
+      const result = await conn.handleRpc({
+        jsonrpc: "2.0",
+        id: 21,
+        method: "foo.bar",
+      });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value.error?.message).toBe('Method not found: foo.bar');
+      if (result.ok)
+        expect(result.value.error?.message).toBe("Method not found: foo.bar");
     });
   });
 });

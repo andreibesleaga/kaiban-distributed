@@ -8,7 +8,7 @@ export abstract class DomainError extends Error {
 }
 
 export class TaskNotFoundError extends DomainError {
-  readonly code = 'TASK_NOT_FOUND';
+  readonly code = "TASK_NOT_FOUND";
 
   constructor(taskId: string) {
     super(`Task not found: ${taskId}`);
@@ -16,7 +16,7 @@ export class TaskNotFoundError extends DomainError {
 }
 
 export class AgentNotFoundError extends DomainError {
-  readonly code = 'AGENT_NOT_FOUND';
+  readonly code = "AGENT_NOT_FOUND";
 
   constructor(agentId: string) {
     super(`Agent not found: ${agentId}`);
@@ -24,7 +24,7 @@ export class AgentNotFoundError extends DomainError {
 }
 
 export class ValidationError extends DomainError {
-  readonly code = 'VALIDATION_ERROR';
+  readonly code = "VALIDATION_ERROR";
 
   constructor(message: string) {
     super(message);
@@ -32,7 +32,7 @@ export class ValidationError extends DomainError {
 }
 
 export class MessagingError extends DomainError {
-  readonly code = 'MESSAGING_ERROR';
+  readonly code = "MESSAGING_ERROR";
 
   constructor(message: string) {
     super(message);

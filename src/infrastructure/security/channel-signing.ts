@@ -9,7 +9,7 @@
  * All publishers (AgentStatePublisher, OrchestratorStatePublisher) use wrapSigned.
  * The SocketGateway consumer uses unwrapVerified.
  */
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from "crypto";
 
 /** Maximum age of a signed message before it is considered a replay attack. */
 const MAX_CLOCK_SKEW_MS = 30_000;
@@ -25,11 +25,11 @@ interface SignedEnvelope {
  * Returns plain JSON when CHANNEL_SIGNING_SECRET is not set.
  */
 export function wrapSigned(payload: Record<string, unknown>): string {
-  const secret = process.env['CHANNEL_SIGNING_SECRET'];
+  const secret = process.env["CHANNEL_SIGNING_SECRET"];
   if (!secret) return JSON.stringify(payload);
   const ts = Date.now();
   const body = `${ts}.${JSON.stringify(payload)}`;
-  const sig = createHmac('sha256', secret).update(body).digest('hex');
+  const sig = createHmac("sha256", secret).update(body).digest("hex");
   const envelope: SignedEnvelope = { payload, sig, ts };
   return JSON.stringify(envelope);
 }
@@ -45,7 +45,7 @@ export function wrapSigned(payload: Record<string, unknown>): string {
  * Returns null on any JSON parse error regardless of mode.
  */
 export function unwrapVerified(raw: string): Record<string, unknown> | null {
-  const secret = process.env['CHANNEL_SIGNING_SECRET'];
+  const secret = process.env["CHANNEL_SIGNING_SECRET"];
   if (!secret) {
     try {
       return JSON.parse(raw) as Record<string, unknown>;
@@ -63,8 +63,8 @@ export function unwrapVerified(raw: string): Record<string, unknown> | null {
 
   if (
     !envelope.payload ||
-    typeof envelope.sig !== 'string' ||
-    typeof envelope.ts !== 'number'
+    typeof envelope.sig !== "string" ||
+    typeof envelope.ts !== "number"
   ) {
     return null;
   }
@@ -73,10 +73,15 @@ export function unwrapVerified(raw: string): Record<string, unknown> | null {
   if (Math.abs(Date.now() - envelope.ts) > MAX_CLOCK_SKEW_MS) return null;
 
   const body = `${envelope.ts}.${JSON.stringify(envelope.payload)}`;
-  const expected = createHmac('sha256', secret).update(body).digest('hex');
+  const expected = createHmac("sha256", secret).update(body).digest("hex");
 
   try {
-    if (!timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(envelope.sig, 'hex'))) {
+    if (
+      !timingSafeEqual(
+        Buffer.from(expected, "hex"),
+        Buffer.from(envelope.sig, "hex"),
+      )
+    ) {
       return null;
     }
   } catch {

@@ -1,7 +1,9 @@
 # Acceptance Criteria (E2E)
 
 ## Feature: Distributed Task Execution
+
 **Scenario: A workflow is assigned to a Team running across multiple Node.js workers.**
+
 - **Given** I have a Team configured with an Orchestrator and two Agents (Researcher and Writer).
 - **And** the Researcher Agent is hosted on Node A.
 - **And** the Writer Agent is hosted on Node B.
@@ -13,7 +15,9 @@
 - **And** the final workflow result should be identical to a monolithic KaibanJS execution.
 
 ## Feature: Fault Tolerance
+
 **Scenario: A worker node crashes mid-execution.**
+
 - **Given** a Worker Node is currently processing a task in the `DOING` state.
 - **When** the Node process is forcefully terminated (simulating a crash).
 - **Then** the Messaging Layer (BullMQ) should detect the stalled job.
@@ -21,7 +25,9 @@
 - **And** another available Worker Node should pick up the task and resume execution.
 
 ## Feature: UI Synchronization
+
 **Scenario: Real-time board updates during distributed execution.**
+
 - **Given** I am viewing the Kaiban Board UI via a browser connected to the Edge Gateway.
 - **When** a Worker Node on a disparate server changes a task state to `DONE`.
 - **Then** the Edge Gateway should receive the Pub/Sub event immediately.

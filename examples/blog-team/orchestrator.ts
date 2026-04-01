@@ -30,7 +30,7 @@ import { io, type Socket } from 'socket.io-client';
 import { Redis } from 'ioredis';
 import { createDriver, getDriverType } from './driver-factory';
 import { COMPLETED_QUEUE } from './team-config';
-import { wrapSigned } from '../../src/infrastructure/security/channel-signing';
+import { wrapSigned, unwrapVerified } from '../../src/infrastructure/security/channel-signing';
 import { issueA2AToken } from '../../src/infrastructure/security/a2a-auth';
 
 const GATEWAY_URL      = process.env['GATEWAY_URL']      ?? 'http://localhost:3000';
@@ -242,7 +242,8 @@ async function waitForHITLDecision(
     sub.on('message', (_ch: string, msg: string) => {
       if (resolved) return;
       try {
-        const parsed = JSON.parse(msg) as { taskId: string; decision: string };
+        const parsed = unwrapVerified(msg) as { taskId?: string; decision?: string } | null;
+        if (!parsed || typeof parsed.taskId !== 'string' || typeof parsed.decision !== 'string') return;
         if (parsed.taskId === taskId && ['PUBLISH', 'REVISE', 'REJECT'].includes(parsed.decision)) {
           console.log(`\n🖥  Board decision received: ${parsed.decision}`);
           finish(parsed.decision as 'PUBLISH' | 'REVISE' | 'REJECT');

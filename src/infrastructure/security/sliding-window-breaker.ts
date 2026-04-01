@@ -1,4 +1,4 @@
-import type { ICircuitBreaker } from '../../domain/security/circuit-breaker';
+import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
 
 /**
  * Sliding-window circuit breaker.
@@ -24,7 +24,7 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
     this.pruneOldFailures();
     if (this.opened && this.failures.length < this.threshold) {
       this.opened = false;
-      console.log('[CircuitBreaker] Circuit closed — recovered');
+      console.log("[CircuitBreaker] Circuit closed — recovered");
     }
   }
 

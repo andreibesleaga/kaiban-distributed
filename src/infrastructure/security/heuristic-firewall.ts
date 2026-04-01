@@ -1,4 +1,8 @@
-import type { EvaluationPayload, ISemanticFirewall, FirewallVerdict } from '../../domain/security/semantic-firewall';
+import type {
+  EvaluationPayload,
+  ISemanticFirewall,
+  FirewallVerdict,
+} from "../../domain/security/semantic-firewall";
 
 /**
  * Known prompt-injection patterns that attempt ASI01 goal hijacking.
@@ -24,8 +28,8 @@ const INJECTION_PATTERNS: RegExp[] = [
  */
 export class HeuristicFirewall implements ISemanticFirewall {
   async evaluate(payload: EvaluationPayload): Promise<FirewallVerdict> {
-    const instruction = String(payload.data['instruction'] ?? '');
-    const context = String(payload.data['context'] ?? '');
+    const instruction = String(payload.data["instruction"] ?? "");
+    const context = String(payload.data["context"] ?? "");
     const combined = `${instruction}\n${context}`;
 
     for (const pattern of INJECTION_PATTERNS) {

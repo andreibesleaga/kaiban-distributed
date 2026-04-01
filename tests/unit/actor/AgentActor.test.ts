@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { AgentActor } from "../../../src/application/actor/AgentActor";
-import { IMessagingDriver, MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
+import {
+  IMessagingDriver,
+  MessagePayload,
+} from "../../../src/infrastructure/messaging/interfaces";
 
 function makeMockDriver(): IMessagingDriver {
   return {
@@ -11,11 +14,17 @@ function makeMockDriver(): IMessagingDriver {
   };
 }
 
-function makeCapturingDriver(): { driver: IMessagingDriver; getHandler: () => (p: MessagePayload) => Promise<void> } {
+function makeCapturingDriver(): {
+  driver: IMessagingDriver;
+  getHandler: () => (p: MessagePayload) => Promise<void>;
+} {
   let h!: (p: MessagePayload) => Promise<void>;
   const driver: IMessagingDriver = {
     publish: vi.fn().mockResolvedValue(undefined),
-    subscribe: vi.fn((_q, handler) => { h = handler; return Promise.resolve(); }),
+    subscribe: vi.fn((_q, handler) => {
+      h = handler;
+      return Promise.resolve();
+    }),
     unsubscribe: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
   };
@@ -35,8 +44,16 @@ describe("AgentActor", () => {
     // No custom handler → uses default delay-based execute
     const actor = new AgentActor("agent-1", driver, "q");
     await actor.start();
-    await getHandler()({ taskId: "t", agentId: "agent-1", data: {}, timestamp: 0 });
-    expect(driver.publish).toHaveBeenCalledWith("kaiban-events-completed", expect.objectContaining({ taskId: "t" }));
+    await getHandler()({
+      taskId: "t",
+      agentId: "agent-1",
+      data: {},
+      timestamp: 0,
+    });
+    expect(driver.publish).toHaveBeenCalledWith(
+      "kaiban-events-completed",
+      expect.objectContaining({ taskId: "t" }),
+    );
   });
 
   it("processes a task with custom taskHandler", async () => {
@@ -44,9 +61,17 @@ describe("AgentActor", () => {
     const customHandler = vi.fn().mockResolvedValue(undefined);
     const actor = new AgentActor("agent-1", driver, "q", customHandler);
     await actor.start();
-    await getHandler()({ taskId: "t2", agentId: "agent-1", data: {}, timestamp: 0 });
+    await getHandler()({
+      taskId: "t2",
+      agentId: "agent-1",
+      data: {},
+      timestamp: 0,
+    });
     expect(customHandler).toHaveBeenCalledOnce();
-    expect(driver.publish).toHaveBeenCalledWith("kaiban-events-completed", expect.objectContaining({ taskId: "t2" }));
+    expect(driver.publish).toHaveBeenCalledWith(
+      "kaiban-events-completed",
+      expect.objectContaining({ taskId: "t2" }),
+    );
   });
 
   it("stop() calls driver.unsubscribe(), NOT driver.disconnect()", async () => {
@@ -63,9 +88,20 @@ describe("AgentActor", () => {
     const failHandler = vi.fn().mockRejectedValue(new Error("fail"));
     const actor = new AgentActor("agent-1", driver, "q", failHandler);
     await actor.start();
-    await getHandler()({ taskId: "tf", agentId: "agent-1", data: {}, timestamp: 0 });
+    await getHandler()({
+      taskId: "tf",
+      agentId: "agent-1",
+      data: {},
+      timestamp: 0,
+    });
     expect(failHandler).toHaveBeenCalledTimes(3);
-    expect(driver.publish).toHaveBeenCalledWith("kaiban-events-failed", expect.objectContaining({ taskId: "tf", data: expect.objectContaining({ status: "failed" }) }));
+    expect(driver.publish).toHaveBeenCalledWith(
+      "kaiban-events-failed",
+      expect.objectContaining({
+        taskId: "tf",
+        data: expect.objectContaining({ status: "failed" }),
+      }),
+    );
   });
 
   it("does not log raw agentId in console output", async () => {
@@ -84,7 +120,12 @@ describe("AgentActor", () => {
     const { driver, getHandler } = makeCapturingDriver();
     const actor = new AgentActor("agent-1", driver, "q");
     await actor.start();
-    await getHandler()({ taskId: "t", agentId: "other", data: {}, timestamp: 0 });
+    await getHandler()({
+      taskId: "t",
+      agentId: "other",
+      data: {},
+      timestamp: 0,
+    });
     expect(driver.publish).not.toHaveBeenCalled();
   });
 
@@ -93,18 +134,28 @@ describe("AgentActor", () => {
     const actor = new AgentActor("agent-1", driver, "q");
     await actor.start();
     await getHandler()({ taskId: "t", agentId: "*", data: {}, timestamp: 0 });
-    expect(driver.publish).toHaveBeenCalledWith("kaiban-events-completed", expect.anything());
+    expect(driver.publish).toHaveBeenCalledWith(
+      "kaiban-events-completed",
+      expect.anything(),
+    );
   });
 
   it("catches non-Error rejections and converts to string (covers errMsg = String(err) branch)", async () => {
     const { driver, getHandler } = makeCapturingDriver();
     // Non-Error rejection — exercises the String(err) path
-    const failHandler = vi.fn().mockRejectedValue('plain string error');
+    const failHandler = vi.fn().mockRejectedValue("plain string error");
     const actor = new AgentActor("agent-1", driver, "q", failHandler);
     await actor.start();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    await getHandler()({ taskId: "t", agentId: "agent-1", timestamp: 0, data: {} });
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('plain string error'));
+    await getHandler()({
+      taskId: "t",
+      agentId: "agent-1",
+      timestamp: 0,
+      data: {},
+    });
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("plain string error"),
+    );
     errSpy.mockRestore();
   });
 });

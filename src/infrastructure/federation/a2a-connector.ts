@@ -1,7 +1,7 @@
-import { randomUUID } from 'crypto';
-import { Result, ok } from '../../domain/result';
-import { DomainError } from '../../domain/errors/DomainError';
-import type { IMessagingDriver } from '../messaging/interfaces';
+import { randomUUID } from "crypto";
+import { Result, ok } from "../../domain/result";
+import { DomainError } from "../../domain/errors/DomainError";
+import type { IMessagingDriver } from "../messaging/interfaces";
 
 export interface AgentCard {
   name: string;
@@ -24,7 +24,7 @@ export interface JsonRpcError {
 }
 
 export interface JsonRpcResponse {
-  jsonrpc: '2.0';
+  jsonrpc: "2.0";
   id: string | number;
   result?: unknown;
   error?: JsonRpcError;
@@ -34,7 +34,7 @@ export interface JsonRpcResponse {
 const MAX_AGENT_ID_LEN = 64;
 const MAX_INSTRUCTION_LEN = 10_000;
 const MAX_METHOD_ECHO_LEN = 100;
-const AGENT_ID_PATTERN = /^[\w-]+$/;  // alphanumeric, underscore, hyphen
+const AGENT_ID_PATTERN = /^[\w-]+$/; // alphanumeric, underscore, hyphen
 
 export class A2AConnector {
   constructor(
@@ -49,19 +49,19 @@ export class A2AConnector {
   async handleRpc(
     request: JsonRpcRequest,
   ): Promise<Result<JsonRpcResponse, DomainError>> {
-    if (request.jsonrpc !== '2.0') {
+    if (request.jsonrpc !== "2.0") {
       return ok({
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id: request.id ?? null,
-        error: { code: -32600, message: 'Invalid Request' },
+        error: { code: -32600, message: "Invalid Request" },
       });
     }
 
     const dispatched = await this.dispatch(request.method, request.params);
-    if ('error' in dispatched) {
-      return ok({ jsonrpc: '2.0', id: request.id, error: dispatched.error });
+    if ("error" in dispatched) {
+      return ok({ jsonrpc: "2.0", id: request.id, error: dispatched.error });
     }
-    return ok({ jsonrpc: '2.0', id: request.id, result: dispatched.result });
+    return ok({ jsonrpc: "2.0", id: request.id, result: dispatched.result });
   }
 
   private async dispatch(
@@ -69,12 +69,14 @@ export class A2AConnector {
     params: Record<string, unknown> | undefined,
   ): Promise<{ result: unknown } | { error: JsonRpcError }> {
     switch (method) {
-      case 'agent.status':
-        return { result: { status: 'IDLE', agentId: this.agentCard.name } };
-      case 'tasks.create':
+      case "agent.status":
+        return { result: { status: "IDLE", agentId: this.agentCard.name } };
+      case "tasks.create":
         return this.handleTasksCreate(params);
-      case 'tasks.get':
-        return { result: { taskId: params?.['taskId'] ?? null, status: 'TODO' } };
+      case "tasks.get":
+        return {
+          result: { taskId: params?.["taskId"] ?? null, status: "TODO" },
+        };
       default:
         // Sanitize echoed method name to prevent log/response injection
         return {
@@ -89,13 +91,13 @@ export class A2AConnector {
   private validateCreateParams(
     params: Record<string, unknown> | undefined,
   ): { agentId: string } | { error: JsonRpcError } {
-    const agentId = String(params?.['agentId'] ?? '');
+    const agentId = String(params?.["agentId"] ?? "");
 
     if (!agentId) {
       return {
         error: {
           code: -32602,
-          message: 'agentId is required',
+          message: "agentId is required",
         },
       };
     }
@@ -109,8 +111,12 @@ export class A2AConnector {
       };
     }
 
-    const instruction = params?.['instruction'];
-    if (instruction !== undefined && typeof instruction === 'string' && instruction.length > MAX_INSTRUCTION_LEN) {
+    const instruction = params?.["instruction"];
+    if (
+      instruction !== undefined &&
+      typeof instruction === "string" &&
+      instruction.length > MAX_INSTRUCTION_LEN
+    ) {
       return {
         error: {
           code: -32602,
@@ -126,7 +132,7 @@ export class A2AConnector {
     params: Record<string, unknown> | undefined,
   ): Promise<{ result: unknown } | { error: JsonRpcError }> {
     const validated = this.validateCreateParams(params);
-    if ('error' in validated) return validated;
+    if ("error" in validated) return validated;
 
     const taskId = randomUUID();
     const { agentId } = validated;
@@ -140,6 +146,6 @@ export class A2AConnector {
       });
     }
 
-    return { result: { taskId, status: 'QUEUED', agentId } };
+    return { result: { taskId, status: "QUEUED", agentId } };
   }
 }

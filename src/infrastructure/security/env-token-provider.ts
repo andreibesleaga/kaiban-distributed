@@ -1,4 +1,4 @@
-import type { ITokenProvider } from '../../domain/security/token-provider';
+import type { ITokenProvider } from "../../domain/security/token-provider";
 
 /**
  * Default token provider that reads API keys from environment variables.
@@ -9,8 +9,10 @@ import type { ITokenProvider } from '../../domain/security/token-provider';
  * or any other ephemeral token source.
  */
 export class EnvTokenProvider implements ITokenProvider {
-   
-  async getToken(service: string, _taskId: string): Promise<string | undefined> {
+  async getToken(
+    service: string,
+    _taskId: string,
+  ): Promise<string | undefined> {
     return process.env[service];
   }
 }

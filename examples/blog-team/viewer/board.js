@@ -243,29 +243,6 @@ function renderBanners() {
       label.textContent = task.title || task.taskId;
       group.appendChild(label);
 
-      const btns = document.createElement('div');
-      btns.className = 'hitl-buttons';
-      const tid = task.taskId; // closure capture
-
-      const approveBtn = document.createElement('button');
-      approveBtn.className = 'btn-hitl btn-approve';
-      approveBtn.textContent = 'Approve';
-      approveBtn.addEventListener('click', () => sendHitlDecision(tid, 'PUBLISH'));
-
-      const reviseBtn = document.createElement('button');
-      reviseBtn.className = 'btn-hitl btn-revise';
-      reviseBtn.textContent = 'Revise';
-      reviseBtn.addEventListener('click', () => sendHitlDecision(tid, 'REVISE'));
-
-      const rejectBtn = document.createElement('button');
-      rejectBtn.className = 'btn-hitl btn-reject';
-      rejectBtn.textContent = 'Reject';
-      rejectBtn.addEventListener('click', () => sendHitlDecision(tid, 'REJECT'));
-
-      btns.appendChild(approveBtn);
-      btns.appendChild(reviseBtn);
-      btns.appendChild(rejectBtn);
-      group.appendChild(btns);
       container.appendChild(group);
     });
 

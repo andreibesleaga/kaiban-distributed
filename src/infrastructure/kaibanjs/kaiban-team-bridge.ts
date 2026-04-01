@@ -1,5 +1,5 @@
-import { Team } from 'kaibanjs';
-import type { Agent, Task } from 'kaibanjs';
+import { Team } from "kaibanjs";
+import type { Agent, Task } from "kaibanjs";
 
 export interface KaibanTeamConfig {
   name: string;
@@ -38,11 +38,18 @@ export class KaibanTeamBridge {
   private readonly middleware: IStateMiddleware | null;
 
   constructor(config: KaibanTeamConfig, middleware?: IStateMiddleware) {
-    this.team = new Team({ name: config.name, agents: config.agents, tasks: config.tasks, env: config.env ?? {} });
+    this.team = new Team({
+      name: config.name,
+      agents: config.agents,
+      tasks: config.tasks,
+      env: config.env ?? {},
+    });
     this.middleware = middleware ?? null;
 
     if (this.middleware) {
-      const store = this.team.getStore() as unknown as { setState: (p: Record<string, unknown>) => void };
+      const store = this.team.getStore() as unknown as {
+        setState: (p: Record<string, unknown>) => void;
+      };
       this.middleware.attach(store);
     }
   }
@@ -51,7 +58,9 @@ export class KaibanTeamBridge {
     return this.team;
   }
 
-  async start(inputs: Record<string, unknown> = {}): Promise<{ status: string; result: unknown; stats: unknown }> {
+  async start(
+    inputs: Record<string, unknown> = {},
+  ): Promise<{ status: string; result: unknown; stats: unknown }> {
     return this.team.start(inputs);
   }
 

@@ -1,8 +1,11 @@
-import { Kafka, Producer, Consumer } from 'kafkajs';
+import { Kafka, Producer, Consumer } from "kafkajs";
 import { context as otelContext } from "@opentelemetry/api";
-import { IMessagingDriver, MessagePayload } from './interfaces';
-import { injectTraceContext, extractTraceContext } from '../telemetry/TraceContext';
-import type { TlsConfig } from '../../main/config';
+import { IMessagingDriver, MessagePayload } from "./interfaces";
+import {
+  injectTraceContext,
+  extractTraceContext,
+} from "../telemetry/TraceContext";
+import type { TlsConfig } from "../../main/config";
 
 export interface KafkaDriverConfig {
   brokers: string[];
@@ -21,14 +24,16 @@ export class KafkaDriver implements IMessagingDriver {
     const kafka = new Kafka({
       brokers: config.brokers,
       clientId: config.clientId,
-      ...(config.ssl ? {
-        ssl: {
-          rejectUnauthorized: config.ssl.rejectUnauthorized,
-          ca: [config.ssl.ca.toString()],
-          cert: config.ssl.cert.toString(),
-          key: config.ssl.key.toString(),
-        },
-      } : {}),
+      ...(config.ssl
+        ? {
+            ssl: {
+              rejectUnauthorized: config.ssl.rejectUnauthorized,
+              ca: [config.ssl.ca.toString()],
+              cert: config.ssl.cert.toString(),
+              key: config.ssl.key.toString(),
+            },
+          }
+        : {}),
     });
     this.producer = kafka.producer();
     this.consumer = kafka.consumer({ groupId: config.groupId });
@@ -42,21 +47,30 @@ export class KafkaDriver implements IMessagingDriver {
   }
 
   private isRetryableError(err: unknown): boolean {
-    if (err && typeof err === 'object') {
+    if (err && typeof err === "object") {
       const e = err as { type?: string; message?: string };
-      return e.type === 'UNKNOWN_TOPIC_OR_PARTITION' ||
-             !!e.message?.includes('does not host this topic-partition') ||
-             !!e.message?.includes('KafkaJSProtocolError');
+      return (
+        e.type === "UNKNOWN_TOPIC_OR_PARTITION" ||
+        !!e.message?.includes("does not host this topic-partition") ||
+        !!e.message?.includes("KafkaJSProtocolError")
+      );
     }
     return false;
   }
 
-  async publish(topic: string, payload: MessagePayload, retries = 5): Promise<void> {
+  async publish(
+    topic: string,
+    payload: MessagePayload,
+    retries = 5,
+  ): Promise<void> {
     await this.ensureProducerConnected();
     const headers: Record<string, string> = {};
     injectTraceContext(headers);
-    const enrichedPayload: MessagePayload = { ...payload, traceHeaders: headers };
-    
+    const enrichedPayload: MessagePayload = {
+      ...payload,
+      traceHeaders: headers,
+    };
+
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         await this.producer.send({
@@ -67,7 +81,9 @@ export class KafkaDriver implements IMessagingDriver {
       } catch (err: unknown) {
         if (this.isRetryableError(err)) {
           if (attempt === retries - 1) throw err;
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 100));
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.pow(2, attempt) * 100),
+          );
         } else {
           throw err;
         }
@@ -94,7 +110,6 @@ export class KafkaDriver implements IMessagingDriver {
     });
   }
 
-   
   async unsubscribe(_topic: string): Promise<void> {
     if (this.consumerConnected) {
       await this.consumer.disconnect();

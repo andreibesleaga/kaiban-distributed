@@ -1,15 +1,25 @@
-import { Redis } from 'ioredis';
+import { Redis } from "ioredis";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
-import { STATE_CHANNEL } from '../../infrastructure/messaging/channels';
+import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 
 const PII_DENYLIST: ReadonlySet<string> = new Set([
-  'email', 'name', 'phone', 'ip', 'password', 'token', 'secret', 'ssn', 'dob',
+  "email",
+  "name",
+  "phone",
+  "ip",
+  "password",
+  "token",
+  "secret",
+  "ssn",
+  "dob",
 ]);
 
 function sanitizeDelta(partial: unknown): Record<string, unknown> {
-  if (partial === null || typeof partial !== 'object') return {};
+  if (partial === null || typeof partial !== "object") return {};
   const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(partial as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(
+    partial as Record<string, unknown>,
+  )) {
     if (!PII_DENYLIST.has(key)) {
       result[key] = value;
     }
@@ -33,7 +43,10 @@ export class DistributedStateMiddleware {
   public attach(store: ZustandStore): ZustandStore {
     const originalSet = store.setState.bind(store);
 
-    store.setState = async (partial: Record<string, unknown>, replace?: boolean): Promise<void> => {
+    store.setState = async (
+      partial: Record<string, unknown>,
+      replace?: boolean,
+    ): Promise<void> => {
       originalSet(partial, replace);
 
       const sanitized = sanitizeDelta(partial);
@@ -47,23 +60,31 @@ export class DistributedStateMiddleware {
       try {
         await this.redis.publish(this.channelName, JSON.stringify(payload));
       } catch (err) {
-        console.error("[DistributedStateMiddleware] Failed to publish state delta:", err);
+        console.error(
+          "[DistributedStateMiddleware] Failed to publish state delta:",
+          err,
+        );
       }
     };
 
     return store;
   }
 
-  public async listen(onStateChange: (delta: Record<string, unknown>) => void): Promise<void> {
+  public async listen(
+    onStateChange: (delta: Record<string, unknown>) => void,
+  ): Promise<void> {
     const sub = new Redis(this.redis.options);
     await sub.subscribe(this.channelName);
-    sub.on('message', (channel, message) => {
+    sub.on("message", (channel, message) => {
       if (channel === this.channelName) {
         try {
           const payload = JSON.parse(message) as MessagePayload;
-          onStateChange(payload.data['stateUpdate'] as Record<string, unknown>);
+          onStateChange(payload.data["stateUpdate"] as Record<string, unknown>);
         } catch (e) {
-          console.error("[DistributedStateMiddleware] Failed to parse message:", e);
+          console.error(
+            "[DistributedStateMiddleware] Failed to parse message:",
+            e,
+          );
         }
       }
     });

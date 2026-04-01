@@ -1,8 +1,16 @@
-import express, { type Application, type Request, type Response, type NextFunction } from 'express';
-import { randomUUID } from 'crypto';
-import helmet from 'helmet';
-import { A2AConnector, type JsonRpcRequest } from '../../infrastructure/federation/a2a-connector';
-import { verifyA2AToken } from '../../infrastructure/security/a2a-auth';
+import express, {
+  type Application,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
+import { randomUUID } from "crypto";
+import helmet from "helmet";
+import {
+  A2AConnector,
+  type JsonRpcRequest,
+} from "../../infrastructure/federation/a2a-connector";
+import { verifyA2AToken } from "../../infrastructure/security/a2a-auth";
 
 interface ApiResponse<T> {
   data: T | null;
@@ -67,22 +75,32 @@ export class GatewayApp {
 
     // Trust proxy — enables correct req.ip behind reverse proxies (Railway, Kubernetes, Nginx).
     // Must be set before any middleware that reads req.ip.
-    if (opts?.trustProxy) this.app.set('trust proxy', 1);
+    if (opts?.trustProxy) this.app.set("trust proxy", 1);
 
-    this.app.use(helmet({
-      contentSecurityPolicy: { directives: { defaultSrc: ["'none'"] } },
-      hsts: { maxAge: 63072000, includeSubDomains: true },
-      referrerPolicy: { policy: 'no-referrer' },
-    }));
-    this.app.use(express.json({ limit: '1mb' }));
+    this.app.use(
+      helmet({
+        contentSecurityPolicy: { directives: { defaultSrc: ["'none'"] } },
+        hsts: { maxAge: 63072000, includeSubDomains: true },
+        referrerPolicy: { policy: "no-referrer" },
+      }),
+    );
+    this.app.use(express.json({ limit: "1mb" }));
     this.registerRoutes();
   }
 
   private registerRoutes(): void {
     this.app.use(this.requestLogger.bind(this));
-    this.app.get('/health', this.healthRateLimit.bind(this), this.handleHealth.bind(this));
-    this.app.get('/.well-known/agent-card.json', this.handleAgentCard.bind(this));
-    this.app.post('/a2a/rpc',
+    this.app.get(
+      "/health",
+      this.healthRateLimit.bind(this),
+      this.handleHealth.bind(this),
+    );
+    this.app.get(
+      "/.well-known/agent-card.json",
+      this.handleAgentCard.bind(this),
+    );
+    this.app.post(
+      "/a2a/rpc",
       this.rateLimit.bind(this),
       this.requireA2AAuth.bind(this),
       this.handleRpc.bind(this),
@@ -92,25 +110,29 @@ export class GatewayApp {
 
   private requestLogger(req: Request, res: Response, next: NextFunction): void {
     const requestId = randomUUID();
-    res.on('finish', () => {
+    res.on("finish", () => {
       console.log(`[${requestId}] ${req.method} ${req.path} ${res.statusCode}`);
     });
     next();
   }
 
   private rateLimit(req: Request, res: Response, next: NextFunction): void {
-    const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    const clientIp = req.ip ?? req.socket.remoteAddress ?? "unknown";
     if (!this.rateLimiter.isAllowed(clientIp)) {
-      res.status(429).json(apiError('Too Many Requests'));
+      res.status(429).json(apiError("Too Many Requests"));
       return;
     }
     next();
   }
 
-  private healthRateLimit(req: Request, res: Response, next: NextFunction): void {
-    const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+  private healthRateLimit(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void {
+    const clientIp = req.ip ?? req.socket.remoteAddress ?? "unknown";
     if (!this.healthRateLimiter.isAllowed(clientIp)) {
-      res.status(429).json(apiError('Too Many Requests'));
+      res.status(429).json(apiError("Too Many Requests"));
       return;
     }
     next();
@@ -120,18 +142,22 @@ export class GatewayApp {
    * A2A bearer token auth middleware.
    * Gated: only enforced when A2A_JWT_SECRET is set (backwards-compatible).
    */
-  private requireA2AAuth(req: Request, res: Response, next: NextFunction): void {
-    if (!process.env['A2A_JWT_SECRET']) return next(); // auth disabled
+  private requireA2AAuth(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void {
+    if (!process.env["A2A_JWT_SECRET"]) return next(); // auth disabled
     try {
-      verifyA2AToken(req.headers['authorization']);
+      verifyA2AToken(req.headers["authorization"]);
       next();
     } catch {
-      res.status(401).json(apiError('Unauthorized'));
+      res.status(401).json(apiError("Unauthorized"));
     }
   }
 
   private handleHealth(_req: Request, res: Response): void {
-    res.json(apiOk({ status: 'ok', timestamp: new Date().toISOString() }));
+    res.json(apiOk({ status: "ok", timestamp: new Date().toISOString() }));
   }
 
   private handleAgentCard(_req: Request, res: Response): void {
@@ -139,9 +165,9 @@ export class GatewayApp {
   }
 
   private async handleRpc(req: Request, res: Response): Promise<void> {
-    const contentType = req.headers['content-type'] ?? '';
-    if (!contentType.includes('application/json')) {
-      res.status(415).json(apiError('Content-Type must be application/json'));
+    const contentType = req.headers["content-type"] ?? "";
+    if (!contentType.includes("application/json")) {
+      res.status(415).json(apiError("Content-Type must be application/json"));
       return;
     }
 
@@ -153,13 +179,13 @@ export class GatewayApp {
       res.json(result.value);
     } else {
       // Sanitize internal error details in production
-      const isDev = process.env['NODE_ENV'] !== 'production';
-      const publicMsg = isDev ? result.error.message : 'Internal server error';
+      const isDev = process.env["NODE_ENV"] !== "production";
+      const publicMsg = isDev ? result.error.message : "Internal server error";
       res.status(500).json(apiError(publicMsg));
     }
   }
 
   private handleNotFound(_req: Request, res: Response): void {
-    res.status(404).json(apiError('Not Found'));
+    res.status(404).json(apiError("Not Found"));
   }
 }

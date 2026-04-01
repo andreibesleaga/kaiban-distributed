@@ -1,8 +1,8 @@
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node';
-import { trace } from '@opentelemetry/api';
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { ConsoleSpanExporter } from "@opentelemetry/sdk-trace-node";
+import { trace } from "@opentelemetry/api";
 
 export interface TelemetryConfig {
   serviceName: string;
@@ -13,7 +13,9 @@ let sdk: NodeSDK | null = null;
 
 export function initTelemetry(config: TelemetryConfig): void {
   if (!config.exporterEndpoint) {
-    console.warn('[Telemetry] No OTEL_EXPORTER_OTLP_ENDPOINT configured — using ConsoleSpanExporter (dev only)');
+    console.warn(
+      "[Telemetry] No OTEL_EXPORTER_OTLP_ENDPOINT configured — using ConsoleSpanExporter (dev only)",
+    );
   }
   const exporter = config.exporterEndpoint
     ? new OTLPTraceExporter({ url: config.exporterEndpoint })
@@ -27,7 +29,7 @@ export function initTelemetry(config: TelemetryConfig): void {
 
   sdk.start();
 
-  process.on('SIGTERM', () => {
+  process.on("SIGTERM", () => {
     sdk?.shutdown().catch(console.error);
   });
 }
