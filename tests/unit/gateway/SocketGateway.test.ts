@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createServer } from "http";
+import type Redis from "ioredis";
 import { SocketGateway } from "../../../src/adapters/gateway/SocketGateway";
 
 const mockSubscribe = vi.fn().mockResolvedValue(undefined);
@@ -12,6 +13,8 @@ const mockRedisSubscriber = {
   quit: mockQuit,
 };
 const mockRedisPublisher = { publish: mockPublish, quit: mockQuit };
+const redisSubscriber = mockRedisSubscriber as unknown as Redis;
+const redisPublisher = mockRedisPublisher as unknown as Redis;
 
 const mockEmit = vi.fn();
 const mockIoClose = vi.fn().mockImplementation((cb?: () => void) => {
@@ -70,12 +73,7 @@ describe("SocketGateway", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     connectionHandler = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sg = new SocketGateway(
-      httpServer,
-      mockRedisPublisher as any,
-      mockRedisSubscriber as any,
-    );
+    sg = new SocketGateway(httpServer, redisPublisher, redisSubscriber);
   });
 
   afterEach(async () => {
@@ -121,12 +119,7 @@ describe("SocketGateway", () => {
   });
 
   it("shutdown() resolves without calling io.close when not initialized", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const uninitSg = new SocketGateway(
-      httpServer,
-      mockRedisPublisher as any,
-      mockRedisSubscriber as any,
-    );
+    const uninitSg = new SocketGateway(httpServer, redisPublisher, redisSubscriber);
     await expect(uninitSg.shutdown()).resolves.not.toThrow();
     expect(mockIoClose).not.toHaveBeenCalled();
   });

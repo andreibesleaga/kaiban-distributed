@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createServer } from "http";
+import type Redis from "ioredis";
 import { SocketGateway } from "../../../src/adapters/gateway/SocketGateway";
 
 const mockSubscribe = vi.fn().mockResolvedValue(undefined);
@@ -18,6 +19,8 @@ const mockRedisSubscriber = {
   quit: mockQuit,
 };
 const mockRedisPublisher = { publish: mockPublish, quit: mockQuit };
+const redisSubscriber = mockRedisSubscriber as unknown as Redis;
+const redisPublisher = mockRedisPublisher as unknown as Redis;
 
 const mockEmit = vi.fn();
 const mockIoClose = vi.fn().mockImplementation((cb?: () => void) => {
@@ -64,12 +67,7 @@ describe("SocketGateway — HITL edge cases", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     connectionHandler = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sg = new SocketGateway(
-      httpServer,
-      mockRedisPublisher as any,
-      mockRedisSubscriber as any,
-    );
+    sg = new SocketGateway(httpServer, redisPublisher, redisSubscriber);
     sg.initialize();
   });
 
@@ -167,15 +165,9 @@ describe("SocketGateway — HITL edge cases", () => {
 
   it("respects custom validHitlDecisions list", async () => {
     await sg.shutdown();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sg = new SocketGateway(
-      httpServer,
-      mockRedisPublisher as any,
-      mockRedisSubscriber as any,
-      {
-        validHitlDecisions: ["APPROVE", "DENY"],
-      },
-    );
+    sg = new SocketGateway(httpServer, redisPublisher, redisSubscriber, {
+      validHitlDecisions: ["APPROVE", "DENY"],
+    });
     sg.initialize();
 
     const { hitl } = connectSocket();

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createServer } from "http";
+import type Redis from "ioredis";
 
 // Capture constructor options
 let capturedOptions: Record<string, unknown> | null = null;
@@ -31,17 +32,13 @@ const mockRedis = {
   on: vi.fn(),
   quit: vi.fn().mockResolvedValue(undefined),
 };
+const redisClient = mockRedis as unknown as Redis;
 
 describe("SocketGateway — hardening options", () => {
   it("sets maxHttpBufferSize to 1MB", () => {
     capturedOptions = null;
     const httpServer = createServer();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sg = new SocketGateway(
-      httpServer,
-      mockRedis as any,
-      mockRedis as any,
-    );
+    const sg = new SocketGateway(httpServer, redisClient, redisClient);
     sg.initialize();
     expect(capturedOptions).toBeDefined();
     expect(capturedOptions!["maxHttpBufferSize"]).toBe(1e6);
@@ -50,12 +47,7 @@ describe("SocketGateway — hardening options", () => {
   it("sets pingTimeout to 20s", () => {
     capturedOptions = null;
     const httpServer = createServer();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sg = new SocketGateway(
-      httpServer,
-      mockRedis as any,
-      mockRedis as any,
-    );
+    const sg = new SocketGateway(httpServer, redisClient, redisClient);
     sg.initialize();
     expect(capturedOptions!["pingTimeout"]).toBe(20_000);
   });
@@ -63,12 +55,7 @@ describe("SocketGateway — hardening options", () => {
   it("sets pingInterval to 25s", () => {
     capturedOptions = null;
     const httpServer = createServer();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sg = new SocketGateway(
-      httpServer,
-      mockRedis as any,
-      mockRedis as any,
-    );
+    const sg = new SocketGateway(httpServer, redisClient, redisClient);
     sg.initialize();
     expect(capturedOptions!["pingInterval"]).toBe(25_000);
   });
@@ -76,12 +63,7 @@ describe("SocketGateway — hardening options", () => {
   it("still sets CORS origin (wildcard array when SOCKET_CORS_ORIGINS unset)", () => {
     capturedOptions = null;
     const httpServer = createServer();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sg = new SocketGateway(
-      httpServer,
-      mockRedis as any,
-      mockRedis as any,
-    );
+    const sg = new SocketGateway(httpServer, redisClient, redisClient);
     sg.initialize();
     const cors = capturedOptions!["cors"] as Record<string, unknown>;
     // When SOCKET_CORS_ORIGINS is not set (non-production), origin is ['*']

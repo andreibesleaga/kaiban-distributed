@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   A2AConnector,
   type AgentCard,
+  type JsonRpcRequest,
 } from "../../../src/infrastructure/federation/a2a-connector";
 import type { IMessagingDriver } from "../../../src/infrastructure/messaging/interfaces";
 
@@ -48,20 +49,18 @@ describe("A2AConnector", () => {
   });
 
   it("handleRpc() without jsonrpc field returns -32600", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await new A2AConnector(testCard).handleRpc({
       id: 3,
       method: "agent.status",
-    } as any);
+    } as unknown as JsonRpcRequest);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.error?.code).toBe(-32600);
   });
 
   it("handleRpc() without id covers id ?? null branch", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await new A2AConnector(testCard).handleRpc({
       method: "agent.status",
-    } as any);
+    } as unknown as JsonRpcRequest);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.id).toBeNull();
   });
