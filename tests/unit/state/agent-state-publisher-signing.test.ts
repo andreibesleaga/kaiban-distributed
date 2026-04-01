@@ -91,14 +91,12 @@ describe("AgentStatePublisher — channel signing", () => {
 
     it("wrapHandler DONE branch publishes signed envelope", async () => {
       const pub = new AgentStatePublisher("redis://localhost:6379", agentInfo);
-      const mockHandler = vi
-        .fn()
-        .mockResolvedValue({
-          answer: "test result",
-          inputTokens: 10,
-          outputTokens: 5,
-          estimatedCost: 0.001,
-        });
+      const mockHandler = vi.fn().mockResolvedValue({
+        answer: "test result",
+        inputTokens: 10,
+        outputTokens: 5,
+        estimatedCost: 0.001,
+      });
 
       const wrapped = pub.wrapHandler(mockHandler);
       await wrapped({

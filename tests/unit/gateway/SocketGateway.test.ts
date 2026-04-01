@@ -119,7 +119,11 @@ describe("SocketGateway", () => {
   });
 
   it("shutdown() resolves without calling io.close when not initialized", async () => {
-    const uninitSg = new SocketGateway(httpServer, redisPublisher, redisSubscriber);
+    const uninitSg = new SocketGateway(
+      httpServer,
+      redisPublisher,
+      redisSubscriber,
+    );
     await expect(uninitSg.shutdown()).resolves.not.toThrow();
     expect(mockIoClose).not.toHaveBeenCalled();
   });

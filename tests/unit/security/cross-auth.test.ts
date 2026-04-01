@@ -78,12 +78,10 @@ describe("Firewall block does not count as circuit breaker failure", () => {
     };
 
     const firewall: ISemanticFirewall = {
-      evaluate: vi
-        .fn()
-        .mockResolvedValue({
-          allowed: false,
-          reason: "prompt injection detected",
-        }),
+      evaluate: vi.fn().mockResolvedValue({
+        allowed: false,
+        reason: "prompt injection detected",
+      }),
     };
     const breaker: ICircuitBreaker = {
       isOpen: vi.fn().mockReturnValue(false),

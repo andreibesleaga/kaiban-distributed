@@ -490,7 +490,7 @@ describe("E2E: Global Research Swarm Pipeline (BullMQ)", () => {
       metadata: {
         totalTokens: 2500,
         estimatedCost: 0.0035,
-        startTime: new Date().toISOString(),
+        startTime: Date.now(),
         activeNodes: ["searcher-0", "searcher-1"],
       },
     };

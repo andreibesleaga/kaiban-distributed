@@ -10,7 +10,10 @@ import {
   HITL_SOCKET_EVENT,
 } from "../../infrastructure/messaging/channels";
 import { verifyBoardToken } from "../../infrastructure/security/board-auth";
-import { unwrapVerified, wrapSigned } from "../../infrastructure/security/channel-signing";
+import {
+  unwrapVerified,
+  wrapSigned,
+} from "../../infrastructure/security/channel-signing";
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
 const DEFAULT_DECISIONS = ["PUBLISH", "REVISE", "REJECT", "VIEW"];
