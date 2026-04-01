@@ -29,7 +29,7 @@ const state = {
   metadata: null,
 };
 
-// Current HITL task ID (module-level so button closures can always read latest value)
+// (hitlTaskId retained for backward compat with any external code, but no longer drives rendering)
 let hitlTaskId = null;
 
 // Live-duration timer — active while workflow is RUNNING
@@ -153,12 +153,16 @@ function makeTaskCard(task) {
 
   const title      = task.title || task.description?.slice(0, 40) || task.taskId || 'Task';
   const assignedTo = task.agent?.name || task.assignedToAgentId || '—';
+  const tokensHtml = task.tokens != null
+    ? `<div class="task-tokens">${Number(task.tokens).toLocaleString()} tok · $${Number(task.cost || 0).toFixed(4)}</div>`
+    : '';
 
   return `
     <div class="task-card ${escHTML((task.status || 'todo').toLowerCase())}">
       <div class="task-title">${escHTML(title)}${badge}</div>
       <div class="task-agent">${escHTML(assignedTo)}</div>
       ${resultHtml}
+      ${tokensHtml}
     </div>`;
 }
 
@@ -209,6 +213,9 @@ function renderBanners() {
     const pub = doneTasks.find(t => String(t.result || '').includes('Published') || String(t.result || '').includes('Tokens'));
     document.getElementById('banner-finished-msg').textContent =
       pub ? `"${pub.title}" research was published successfully` : 'Research report published';
+    // Highlight economics section on completion
+    const econSection = document.getElementById('economics-section') || document.querySelector('.swarm-meta');
+    if (econSection) econSection.classList.add('economics-finished');
 
   } else if (ws === 'STOPPED') {
     bannerStopped.style.display = 'block';
@@ -217,51 +224,66 @@ function renderBanners() {
       stopped ? String(stopped.result || '').slice(0, 200) : 'Research workflow ended';
 
   } else if (awaitingTasks.length > 0) {
-    hitlTaskId = awaitingTasks[0].taskId;
     bannerHitl.style.display = 'block';
     document.getElementById('banner-hitl-msg').textContent =
-      awaitingTasks[0].result || 'Awaiting human decision';
+      awaitingTasks.length === 1
+        ? (awaitingTasks[0].result || 'Awaiting human decision')
+        : `${awaitingTasks.length} tasks awaiting human decision`;
 
-    // Add HITL buttons once — guard against duplicates on re-renders
-    if (!document.getElementById('hitl-buttons')) {
+    // Re-render per-task button groups on every call (task list may have changed)
+    const oldContainer = document.getElementById('hitl-tasks-container');
+    if (oldContainer) oldContainer.remove();
+    const container = document.createElement('div');
+    container.id = 'hitl-tasks-container';
+
+    awaitingTasks.forEach((task) => {
+      const group = document.createElement('div');
+      group.className = 'hitl-task-group';
+
+      const label = document.createElement('div');
+      label.className = 'hitl-task-label';
+      label.textContent = task.title || task.taskId;
+      group.appendChild(label);
+
       const btns = document.createElement('div');
-      btns.id = 'hitl-buttons';
       btns.className = 'hitl-buttons';
+      const tid = task.taskId; // closure capture
 
       const approveBtn = document.createElement('button');
       approveBtn.className = 'btn-hitl btn-approve';
       approveBtn.textContent = 'Approve';
-      approveBtn.addEventListener('click', () => sendHitlDecision(hitlTaskId, 'PUBLISH'));
+      approveBtn.addEventListener('click', () => sendHitlDecision(tid, 'PUBLISH'));
 
       const reviseBtn = document.createElement('button');
       reviseBtn.className = 'btn-hitl btn-revise';
       reviseBtn.textContent = 'Revise';
-      reviseBtn.addEventListener('click', () => sendHitlDecision(hitlTaskId, 'REVISE'));
+      reviseBtn.addEventListener('click', () => sendHitlDecision(tid, 'REVISE'));
 
       const rejectBtn = document.createElement('button');
       rejectBtn.className = 'btn-hitl btn-reject';
       rejectBtn.textContent = 'Reject';
-      rejectBtn.addEventListener('click', () => sendHitlDecision(hitlTaskId, 'REJECT'));
+      rejectBtn.addEventListener('click', () => sendHitlDecision(tid, 'REJECT'));
 
       btns.appendChild(approveBtn);
       btns.appendChild(reviseBtn);
       btns.appendChild(rejectBtn);
-      bannerHitl.appendChild(btns);
-    }
+      group.appendChild(btns);
+      container.appendChild(group);
+    });
+
+    bannerHitl.appendChild(container);
 
   } else if (blockedTasks.length > 0) {
-    hitlTaskId = null;
-    const oldBtns = document.getElementById('hitl-buttons');
-    if (oldBtns) oldBtns.remove();
+    const oldContainer = document.getElementById('hitl-tasks-container');
+    if (oldContainer) oldContainer.remove();
 
     bannerError.style.display = 'block';
     document.getElementById('banner-error-msg').textContent =
       blockedTasks.map(t => `• ${t.title}: ${String(t.result || '').replace('ERROR:', '').trim().slice(0, 200)}`).join('\n');
 
   } else {
-    hitlTaskId = null;
-    const oldBtns = document.getElementById('hitl-buttons');
-    if (oldBtns) oldBtns.remove();
+    const oldContainer = document.getElementById('hitl-tasks-container');
+    if (oldContainer) oldContainer.remove();
   }
 }
 
@@ -372,7 +394,11 @@ function logDelta(delta) {
       const icon    = AGENT_ICONS[a.status] || '⬡';
       const taskRef = a.currentTaskId ? ` [${a.currentTaskId.slice(-8)}]` : '';
       const hi      = a.status === 'EXECUTING' || a.status === 'ERROR';
-      addLog('AGENT', `${icon} ${a.name || a.agentId} → ${a.status}${taskRef}`, hi);
+      if (a.status === 'THINKING') {
+        addLog('LLM', `🤖 ${a.name || a.agentId} — LLM call in progress${taskRef}`, false);
+      } else {
+        addLog('AGENT', `${icon} ${a.name || a.agentId} → ${a.status}${taskRef}`, hi);
+      }
     }
   }
 
@@ -381,7 +407,8 @@ function logDelta(delta) {
       const icon    = TASK_ICONS[t.status] || '📋';
       const preview = parseTaskResult(t.result) ? ` — ${parseTaskResult(t.result).slice(0, 80)}` : '';
       const hi      = t.status === 'DONE' || t.status === 'BLOCKED' || t.status === 'AWAITING_VALIDATION';
-      addLog('TASK', `${icon} ${(t.title || t.taskId).slice(0, 50)} → ${t.status}${preview}`, hi);
+      const tokSuffix = (t.tokens != null) ? ` [${Number(t.tokens).toLocaleString()} tok]` : '';
+      addLog('TASK', `${icon} ${(t.title || t.taskId).slice(0, 50)} → ${t.status}${preview}${tokSuffix}`, hi);
     }
   }
 

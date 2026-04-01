@@ -6,6 +6,7 @@ const TYPE_COLOR: Record<string, string> = {
   WORKFLOW:   'text-purple-400',
   AGENT:      'text-cyan-400',
   TASK:       'text-emerald-400',
+  LLM:        'text-violet-400',
   HITL:       'text-amber-400',
   CONNECT:    'text-emerald-300',
   DISCONNECT: 'text-red-400',

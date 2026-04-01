@@ -29,19 +29,29 @@ interface TaskState {
   status: 'TODO' | 'DOING' | 'DONE' | 'BLOCKED' | 'AWAITING_VALIDATION';
   assignedToAgentId: string;
   result?: string;
+  tokens?: number;
+  cost?: number;
 }
 
 
 // 20 KB — large enough for a full blog post (typically 3–6 KB), still bounds message size
 const MAX_RESULT_LEN = 20_000;
 
+export interface AgentStatePublisherOpts {
+  /** Max cumulative tokens before the publisher throws BudgetExceededError. 0 = unlimited. */
+  maxTokenBudget?: number;
+}
+
 export class AgentStatePublisher {
   private redis: Redis;
   private agentInfo: AgentInfo;
+  private totalTokensUsed = 0;
+  private readonly maxTokenBudget: number;
 
-  constructor(redisUrl: string, agentInfo: AgentInfo) {
+  constructor(redisUrl: string, agentInfo: AgentInfo, opts?: AgentStatePublisherOpts) {
     this.redis = new Redis(redisUrl, { lazyConnect: false });
     this.agentInfo = agentInfo;
+    this.maxTokenBudget = opts?.maxTokenBudget ?? 0;
   }
 
   /** Publish a partial state delta — board merges by agentId/taskId */
@@ -119,12 +129,17 @@ export class AgentStatePublisher {
     return async (payload: MessagePayload): Promise<unknown> => {
       const title = String(payload.data['instruction'] ?? payload.taskId).slice(0, 60);
 
-      // → EXECUTING
+      // → EXECUTING (task queued / starting)
       this.currentStatus = 'EXECUTING';
       this.currentTaskId = payload.taskId;
       pub({
         agents: [{ agentId, name, role, status: 'EXECUTING', currentTaskId: payload.taskId }],
         tasks: [{ taskId: payload.taskId, title, status: 'DOING', assignedToAgentId: agentId }],
+      });
+
+      // → THINKING (LLM call in progress)
+      pub({
+        agents: [{ agentId, name, role, status: 'THINKING', currentTaskId: payload.taskId }],
       });
 
       try {
@@ -135,7 +150,19 @@ export class AgentStatePublisher {
         this.currentTaskId = null;
         const resultStr = this.formatDisplayResult(result);
         const tokenMeta = this.extractTokenMetadata(result);
-        
+
+        // Token budget check
+        if (tokenMeta) {
+          this.totalTokensUsed += tokenMeta.totalTokens;
+          if (this.maxTokenBudget > 0 && this.totalTokensUsed >= this.maxTokenBudget) {
+            pub({
+              agents: [{ agentId, name, role, status: 'ERROR', currentTaskId: payload.taskId }],
+              tasks: [{ taskId: payload.taskId, title, status: 'BLOCKED', assignedToAgentId: agentId }],
+            });
+            throw new Error(`Token budget exceeded: ${this.totalTokensUsed} >= ${this.maxTokenBudget}`);
+          }
+        }
+
         pub({
           agents: [{ agentId, name, role, status: 'IDLE', currentTaskId: null }],
           tasks: [{
@@ -144,6 +171,7 @@ export class AgentStatePublisher {
             status: 'DONE',
             assignedToAgentId: agentId,
             result: resultStr,
+            ...(tokenMeta ? { tokens: tokenMeta.totalTokens, cost: tokenMeta.estimatedCost } : {}),
           }],
           ...(tokenMeta ? { metadata: tokenMeta } : {}),
         });

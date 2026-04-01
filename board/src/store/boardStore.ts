@@ -116,13 +116,23 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
       for (const a of delta.agents ?? []) {
         const icon = AGENT_ICONS[a.status] ?? '⬡';
         const taskRef = a.currentTaskId ? ` [${a.currentTaskId.slice(-8)}]` : '';
-        newEntries.push({
-          id: ++logIdCounter,
-          time: nowTime(),
-          type: 'AGENT',
-          message: `${icon} ${a.name || a.agentId} → ${a.status}${taskRef}`,
-          highlight: a.status === 'EXECUTING' || a.status === 'ERROR',
-        });
+        if (a.status === 'THINKING') {
+          newEntries.push({
+            id: ++logIdCounter,
+            time: nowTime(),
+            type: 'LLM',
+            message: `🔵 ${a.name || a.agentId} — LLM call in progress${taskRef}`,
+            highlight: false,
+          });
+        } else {
+          newEntries.push({
+            id: ++logIdCounter,
+            time: nowTime(),
+            type: 'AGENT',
+            message: `${icon} ${a.name || a.agentId} → ${a.status}${taskRef}`,
+            highlight: a.status === 'EXECUTING' || a.status === 'ERROR',
+          });
+        }
       }
 
       for (const t of delta.tasks ?? []) {

@@ -76,6 +76,7 @@ async function main(): Promise<void> {
     : {};
   const redisSocketPub = new Redis(config.redis.url, redisOpts);
   const redisSocketSub = new Redis(config.redis.url, redisOpts);
+  const redisHitlPub   = new Redis(config.redis.url, redisOpts);
 
   const actors = config.agentIds.map(
     (agentId) => new AgentActor(
@@ -83,7 +84,7 @@ async function main(): Promise<void> {
       messagingDriver,
       `kaiban-agents-${agentId}`,
       undefined,
-      { firewall, circuitBreaker },
+      { firewall, circuitBreaker, taskTimeoutMs: config.agentTimeoutMs },
     ),
   );
 
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
   const httpServer = createServer(gateway.app);
   const socketGateway = new SocketGateway(httpServer, redisSocketPub, redisSocketSub, {
     validHitlDecisions: config.validHitlDecisions,
+    hitlPublisher: redisHitlPub,
   });
 
   socketGateway.initialize();

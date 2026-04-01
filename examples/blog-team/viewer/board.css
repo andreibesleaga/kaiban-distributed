@@ -214,6 +214,7 @@ details.task-result[open] summary::before { content: '▼ '; }
 }
 .task-badge-hitl  { background: #7c2d12; color: #fb923c; }
 .task-badge-error { background: #450a0a; color: #f87171; }
+.task-tokens { font-size: 0.7rem; color: #64748b; margin-top: 2px; font-variant-numeric: tabular-nums; }
 
 .tasks-label {
   font-size: 0.7rem;
@@ -226,6 +227,22 @@ details.task-result[open] summary::before { content: '▼ '; }
 }
 
 .empty { color: #475569; font-size: 0.8rem; text-align: center; padding: 20px; }
+
+/* ── Economics / swarm-meta panel ── */
+.swarm-meta {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-top: 24px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.swarm-meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #94a3b8; display: block; margin-bottom: 12px; }
+.meta-item  { display: flex; flex-direction: column; gap: 4px; }
+.meta-label { font-size: 0.68rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+.meta-value { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; }
+.economics-finished { border-color: #16a34a; box-shadow: 0 0 14px rgba(22,163,74,0.3); }
 
 /* ── Event log ── */
 .log-section { margin-top: 28px; }
@@ -256,6 +273,7 @@ details.task-result[open] summary::before { content: '▼ '; }
 }
 .log-time          { color: #475569; }
 .log-type          { color: #7c3aed; font-weight: 600; }
+.log-type.llm      { color: #8b5cf6; }
 .log-msg           { color: #94a3b8; }
 .log-msg.highlight { color: #e2e8f0; }
 
@@ -288,7 +306,10 @@ details.task-result[open] summary::before { content: '▼ '; }
 }
 
 /* ── HITL decision buttons ── */
-.hitl-buttons { display: flex; gap: 10px; margin-top: 10px; justify-content: center; flex-wrap: wrap; }
+.hitl-task-group { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
+.hitl-task-group:first-child { border-top: none; margin-top: 6px; }
+.hitl-task-label { font-size: 0.78rem; color: #94a3b8; margin-bottom: 6px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.hitl-buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .btn-hitl { padding: 8px 18px; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
 .btn-hitl:hover { opacity: 0.85; }
 .btn-approve { background: #16a34a; color: #fff; }

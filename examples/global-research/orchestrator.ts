@@ -94,6 +94,9 @@ class OrchestratorStatePublisher {
   }
 
   workflowStarted(numSearchers: number): void {
+    // Reset the searcher self-registration counter so nodes starting up
+    // for this run claim indices searcher-0, searcher-1, etc. from scratch.
+    this.redis.del('kaiban:searcher:reg').catch(() => {});
     this.publish({ teamWorkflowStatus: 'RUNNING', agents: buildSwarmAgents(numSearchers) });
   }
 
@@ -649,6 +652,10 @@ async function handleDecision(
   } else if (decision === '2') {
     console.log('\nSending back to Atlas with editorial notes...\n');
 
+    // Clear the original editorial-review task from AWAITING_VALIDATION so the
+    // board banner disappears while the revision is being written.
+    pub.taskDone(edit.taskId, 'editor');
+
     const revisionTask = await rpc('tasks.create', {
       agentId: 'writer',
       instruction: `Revise the research report about "${QUERY}" addressing all editorial feedback. Maintain compliance with governance standards (score: ${gov.score}).`,
@@ -693,11 +700,10 @@ async function handleDecision(
     if (revisionDecision === '1') {
       ctx.status = 'COMPLETED';
       ctx.editorApproval = true;
-      pub.workflowFinished(ctx, edit.taskId);
+      pub.workflowFinished(ctx, revisionTaskId);
       console.log('\nRevised research report published.\n');
     } else {
       ctx.status = 'FAILED';
-      pub.taskDone(edit.taskId, 'editor');
       pub.workflowStopped(revisionTaskId, 'Report saved pending further review');
       console.log('\nReport saved. Re-run to continue.\n');
     }

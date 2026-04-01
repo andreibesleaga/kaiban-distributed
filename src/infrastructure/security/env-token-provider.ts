@@ -9,7 +9,7 @@ import type { ITokenProvider } from '../../domain/security/token-provider';
  * or any other ephemeral token source.
  */
 export class EnvTokenProvider implements ITokenProvider {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   async getToken(service: string, _taskId: string): Promise<string | undefined> {
     return process.env[service];
   }

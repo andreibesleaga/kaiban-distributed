@@ -37,6 +37,8 @@ export interface TaskDelta {
   status: TaskStatus;
   assignedToAgentId: string;
   result?: string;
+  tokens?: number;
+  cost?: number;
 }
 
 export interface Metadata {

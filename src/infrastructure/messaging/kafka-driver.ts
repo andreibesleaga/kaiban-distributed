@@ -94,7 +94,7 @@ export class KafkaDriver implements IMessagingDriver {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   async unsubscribe(_topic: string): Promise<void> {
     if (this.consumerConnected) {
       await this.consumer.disconnect();

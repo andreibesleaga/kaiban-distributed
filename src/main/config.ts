@@ -28,6 +28,8 @@ export interface AppConfig {
   };
   agentIds: string[];
   validHitlDecisions: string[];
+  agentTimeoutMs: number;
+  maxTokenBudget: number;
   security: {
     semanticFirewallEnabled: boolean;
     semanticFirewallLlmUrl?: string;
@@ -107,6 +109,8 @@ export function loadConfig(): AppConfig {
     agentIds: agentIdsRaw.split(',').map((id) => id.trim()).filter(Boolean),
     validHitlDecisions: getEnv('VALID_HITL_DECISIONS', 'PUBLISH,REVISE,REJECT,VIEW')
       .split(',').map((s) => s.trim()).filter(Boolean),
+    agentTimeoutMs: parseInt(getEnv('AGENT_TIMEOUT_MS', '300000'), 10),
+    maxTokenBudget: parseInt(getEnv('MAX_TOKEN_BUDGET', '0'), 10),
     security: {
       semanticFirewallEnabled: getBoolEnv('SEMANTIC_FIREWALL_ENABLED', false),
       semanticFirewallLlmUrl: process.env['SEMANTIC_FIREWALL_LLM_URL'],

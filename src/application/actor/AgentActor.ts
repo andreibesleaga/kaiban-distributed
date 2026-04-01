@@ -28,9 +28,14 @@ function capDataSize(data: Record<string, unknown>): Record<string, unknown> {
   return { ...data, result: String(data['result'] ?? '').slice(0, MAX_PUBLISH_DATA_LEN), _truncated: true };
 }
 
+/** Default per-task execution timeout: 5 minutes */
+const DEFAULT_TASK_TIMEOUT_MS = 300_000;
+
 export interface AgentActorDeps {
   firewall?: ISemanticFirewall;
   circuitBreaker?: ICircuitBreaker;
+  /** Max ms a single task handler may run before being timed out (default: 300_000) */
+  taskTimeoutMs?: number;
 }
 
 export class AgentActor {
@@ -40,6 +45,7 @@ export class AgentActor {
   private taskHandler?: TaskHandler;
   private firewall?: ISemanticFirewall;
   private circuitBreaker?: ICircuitBreaker;
+  private taskTimeoutMs: number;
 
   constructor(
     id: string,
@@ -54,6 +60,7 @@ export class AgentActor {
     this.taskHandler = taskHandler;
     this.firewall = deps?.firewall;
     this.circuitBreaker = deps?.circuitBreaker;
+    this.taskTimeoutMs = deps?.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
   }
 
   public async start(): Promise<void> {
@@ -131,7 +138,15 @@ export class AgentActor {
 
   private async executeTask(payload: MessagePayload): Promise<unknown> {
     if (this.taskHandler) {
-      return this.taskHandler(payload);
+      const timeoutMs = this.taskTimeoutMs;
+      const handlerPromise = this.taskHandler(payload);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Task timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        ),
+      );
+      return Promise.race([handlerPromise, timeoutPromise]);
     }
     await delay(50);
     return null;

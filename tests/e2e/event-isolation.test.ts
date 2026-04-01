@@ -52,7 +52,7 @@ describe('E2E: Distributed Event Isolation', () => {
 
     const received: Record<string, unknown>[] = [];
     sub.on('message', (_ch: string, data: string) => {
-      try { received.push(JSON.parse(data)); } catch {}
+      try { received.push(JSON.parse(data)); } catch { /* ignore malformed */ }
     });
     await sub.subscribe(channel);
 

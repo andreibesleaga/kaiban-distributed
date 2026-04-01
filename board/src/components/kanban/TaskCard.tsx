@@ -45,6 +45,13 @@ export default function TaskCard({ task, agent }: Props) {
         </p>
       )}
 
+      {/* Token/cost badge (shown when task is DONE and data is available) */}
+      {task.tokens != null && (
+        <p className="text-xs text-slate-500 tabular-nums">
+          {task.tokens.toLocaleString()} tok · ${(task.cost ?? 0).toFixed(4)}
+        </p>
+      )}
+
       {/* Status badge */}
       <div className="flex justify-end">
         <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded', badgeClass)}>

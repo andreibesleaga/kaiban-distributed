@@ -28,6 +28,8 @@ export class SocketGateway {
   private httpServer: HttpServer;
   private redisPublisher: Redis;
   private redisSubscriber: Redis;
+  /** Dedicated publisher for HITL decisions — separate from the Socket.IO adapter's pubClient */
+  private hitlPublisher: Redis;
   private validDecisions: string[];
 
   /** Running state snapshot — gate truth for reconnecting clients */
@@ -37,11 +39,12 @@ export class SocketGateway {
     httpServer: HttpServer,
     redisPublisher: Redis,
     redisSubscriber: Redis,
-    opts?: { validHitlDecisions?: string[] },
+    opts?: { validHitlDecisions?: string[]; hitlPublisher?: Redis },
   ) {
     this.httpServer = httpServer;
     this.redisPublisher = redisPublisher;
     this.redisSubscriber = redisSubscriber;
+    this.hitlPublisher = opts?.hitlPublisher ?? redisPublisher;
     this.validDecisions = opts?.validHitlDecisions ?? DEFAULT_DECISIONS;
   }
 
@@ -180,7 +183,7 @@ export class SocketGateway {
           return;
         }
         console.log(`[SocketGateway] HITL decision received: ${String(decision)} for task ${taskId.slice(-8)}`);
-        this.redisPublisher.publish(HITL_CHANNEL, JSON.stringify({ taskId, decision }))
+        this.hitlPublisher.publish(HITL_CHANNEL, JSON.stringify({ taskId, decision }))
           .then(() => {
             console.log(`[SocketGateway] HITL decision forwarded to Redis: ${String(decision)}`);
             ack?.({ ok: true });
@@ -218,5 +221,8 @@ export class SocketGateway {
     });
     await this.redisPublisher.quit();
     await this.redisSubscriber.quit();
+    if (this.hitlPublisher !== this.redisPublisher) {
+      await this.hitlPublisher.quit();
+    }
   }
 }
