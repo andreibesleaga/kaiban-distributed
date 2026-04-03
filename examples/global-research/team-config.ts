@@ -18,6 +18,7 @@
  *     LLM_MODEL=your-model
  */
 import type { KaibanAgentConfig } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
+import { buildLLMConfig } from '../../src/shared';
 
 export const SEARCHER_QUEUE  = 'kaiban-agents-searcher';
 export const WRITER_QUEUE    = 'kaiban-agents-writer';
@@ -25,42 +26,6 @@ export const REVIEWER_QUEUE  = 'kaiban-agents-reviewer';
 export const EDITOR_QUEUE    = 'kaiban-agents-editor';
 export const COMPLETED_QUEUE = 'kaiban-events-completed';
 export const STATE_CHANNEL   = 'kaiban-state-events';
-
-/**
- * Resolve LLM config from environment variables.
- * Priority: OPENROUTER_API_KEY → OPENAI_API_KEY → undefined
- */
-function buildLLMConfig(): KaibanAgentConfig['llmConfig'] | undefined {
-  // OpenRouter (uses openai provider with apiBaseUrl override)
-  const openrouterKey = process.env['OPENROUTER_API_KEY'];
-  if (openrouterKey) {
-    return {
-      provider: 'openai',
-      model: process.env['LLM_MODEL'] ?? 'openai/gpt-4o-mini',
-      apiKey: openrouterKey,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      apiBaseUrl: 'https://openrouter.ai/api/v1',
-    } as any;
-  }
-
-  // Standard OpenAI or custom compatible endpoint
-  const openaiKey = process.env['OPENAI_API_KEY'];
-  if (openaiKey) {
-    const config: KaibanAgentConfig['llmConfig'] = {
-      provider: 'openai',
-      model: process.env['LLM_MODEL'] ?? 'gpt-4o-mini',
-      apiKey: openaiKey,
-    };
-    const baseUrl = process.env['OPENAI_BASE_URL'];
-    if (baseUrl) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return { ...config, apiBaseUrl: baseUrl } as any;
-    }
-    return config;
-  }
-
-  return undefined; // KaibanJS will use process.env.OPENAI_API_KEY as fallback
-}
 
 const llmConfig = buildLLMConfig();
 
