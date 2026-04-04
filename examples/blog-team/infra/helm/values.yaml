@@ -1,7 +1,9 @@
 image:
   repository: kaiban-distributed
   pullPolicy: IfNotPresent
-  tag: "latest"
+  # Leave tag empty to use the Chart.AppVersion defined in Chart.yaml.
+  # Override at install time: --set image.tag=v1.2.3
+  tag: ""
 
 redis:
   enabled: true

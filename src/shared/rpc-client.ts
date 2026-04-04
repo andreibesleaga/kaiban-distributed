@@ -32,7 +32,10 @@ export function createRpcClient(gatewayUrl: string): RpcClient {
     setToken(t: string): void {
       token = t;
     },
-    async call(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    async call(
+      method: string,
+      params: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };

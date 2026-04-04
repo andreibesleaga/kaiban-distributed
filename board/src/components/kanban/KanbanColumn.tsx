@@ -8,9 +8,10 @@ interface Props {
   agents: Map<string, AgentDelta>;
   accent: string;
   emptyText?: string;
+  onTaskClick?: (taskId: string) => void;
 }
 
-export default function KanbanColumn({ title, tasks, agents, accent, emptyText }: Props) {
+export default function KanbanColumn({ title, tasks, agents, accent, emptyText, onTaskClick }: Props) {
   return (
     <div className="flex flex-col min-w-0 flex-1">
       {/* Column header */}
@@ -29,6 +30,7 @@ export default function KanbanColumn({ title, tasks, agents, accent, emptyText }
             key={task.taskId}
             task={task}
             agent={task.assignedToAgentId ? agents.get(task.assignedToAgentId) : undefined}
+            onClick={onTaskClick ? () => onTaskClick(task.taskId) : undefined}
           />
         ))}
       </div>

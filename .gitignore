@@ -21,6 +21,7 @@ build
 coverage
 agents
 certs
+runs
 
 CHANGES_LOG.md
 CHANGES_GITLOG.md
