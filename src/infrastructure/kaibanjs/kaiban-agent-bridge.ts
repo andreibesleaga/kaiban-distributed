@@ -96,6 +96,7 @@ function buildTask(payload: MessagePayload, agent: Agent): Task {
 function toHandlerResult(
   result: {
     result: unknown;
+    status?: unknown;
     stats: {
       llmUsageStats: { inputTokens: number; outputTokens: number };
     } | null;
@@ -110,6 +111,204 @@ function toHandlerResult(
     outputTokens,
     estimatedCost: estimateCost(model, inputTokens, outputTokens),
   };
+}
+
+function isSuccessfulWorkflowStatus(status: unknown): boolean {
+  const normalised = String(status ?? "").toUpperCase();
+  if (!normalised) return true;
+  return [
+    "COMPLETED",
+    "DONE",
+    "FINISHED",
+    "SUCCESS",
+    "SUCCEEDED",
+    "STOPPED",
+  ].includes(normalised);
+}
+
+type WorkflowLogLike = {
+  logType?: unknown;
+  agentStatus?: unknown;
+  logDescription?: unknown;
+  metadata?: {
+    error?: unknown;
+  };
+};
+
+function toNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function extractNestedErrorMessageFromRecord(
+  record: Record<string, unknown>,
+  depth: number,
+): string | undefined {
+  const nestedKeys = [
+    "originalError",
+    "rootError",
+    "cause",
+    "error",
+    "details",
+  ];
+  for (const key of nestedKeys) {
+    const nestedMessage = extractNestedErrorMessage(record[key], depth + 1);
+    if (nestedMessage) {
+      return nestedMessage;
+    }
+  }
+
+  return (
+    toNonEmptyString(record["message"]) ??
+    toNonEmptyString(record["blockReason"]) ??
+    toNonEmptyString(record["logDescription"])
+  );
+}
+
+function toErrorRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value instanceof Error) {
+    return {
+      originalError: (value as Error & { originalError?: unknown })
+        .originalError,
+      rootError: (value as Error & { rootError?: unknown }).rootError,
+      cause: (value as Error & { cause?: unknown }).cause,
+      error: (value as Error & { error?: unknown }).error,
+      details: (value as Error & { details?: unknown }).details,
+      message: value.message,
+    };
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return value as Record<string, unknown>;
+  }
+
+  return undefined;
+}
+
+function extractRootCauseMessage(
+  value: unknown,
+  depth = 0,
+): string | undefined {
+  if (depth > 4 || value == null) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    return toNonEmptyString(value);
+  }
+
+  const record = toErrorRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const nestedKeys = [
+    "originalError",
+    "rootError",
+    "cause",
+    "error",
+    "details",
+  ];
+  for (const key of nestedKeys) {
+    const nestedMessage = extractRootCauseMessage(record[key], depth + 1);
+    if (nestedMessage) {
+      return nestedMessage;
+    }
+  }
+
+  return depth > 0 ? toNonEmptyString(record["message"]) : undefined;
+}
+function extractNestedErrorMessage(
+  value: unknown,
+  depth = 0,
+): string | undefined {
+  if (depth > 4 || value == null) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    return toNonEmptyString(value);
+  }
+
+  const record = toErrorRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return extractNestedErrorMessageFromRecord(record, depth);
+}
+
+function extractWorkflowFailureReason(
+  team: Team,
+  result: { result: unknown },
+): string | undefined {
+  let workflowLogs: WorkflowLogLike[] = [];
+  try {
+    const state = team.getStore().getState() as {
+      workflowLogs?: WorkflowLogLike[];
+    };
+    workflowLogs = state.workflowLogs ?? [];
+  } catch {
+    // getStore unavailable in minimal test mocks — fall back to result
+  }
+
+  return (
+    findWorkflowRootCauseMessage(workflowLogs) ??
+    findWorkflowFallbackMessage(workflowLogs) ??
+    extractNestedErrorMessage(result.result) ??
+    toNonEmptyString(result.result)
+  );
+}
+
+function findWorkflowRootCauseMessage(
+  workflowLogs: WorkflowLogLike[],
+): string | undefined {
+  for (let index = workflowLogs.length - 1; index >= 0; index -= 1) {
+    const log = workflowLogs[index];
+    if (!isRootCauseLog(log)) {
+      continue;
+    }
+
+    const rootCauseMessage = extractRootCauseMessage(log?.metadata?.error);
+    if (rootCauseMessage) {
+      return rootCauseMessage;
+    }
+  }
+
+  return undefined;
+}
+
+function isRootCauseLog(log: WorkflowLogLike | undefined): boolean {
+  return (
+    String(log?.logType ?? "") === "AgentStatusUpdate" ||
+    String(log?.agentStatus ?? "").toUpperCase() === "THINKING_ERROR"
+  );
+}
+
+function findWorkflowFallbackMessage(
+  workflowLogs: WorkflowLogLike[],
+): string | undefined {
+  for (let index = workflowLogs.length - 1; index >= 0; index -= 1) {
+    const log = workflowLogs[index];
+    const errorMessage = extractNestedErrorMessage(log?.metadata?.error);
+    if (errorMessage) {
+      return errorMessage;
+    }
+
+    const description = toNonEmptyString(log?.logDescription);
+    if (description) {
+      return description
+        .replace(/^Workflow blocked:\s*/i, "")
+        .replace(/^Task blocked:.*?Reason:\s*/i, "")
+        .trim();
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -151,9 +350,11 @@ export function createKaibanTaskHandler(
         `cost=$${handlerResult.estimatedCost.toFixed(6)}`,
     );
 
-    if (result.status === "ERRORED") {
+    if (!isSuccessfulWorkflowStatus(result.status)) {
+      const failureReason =
+        extractWorkflowFailureReason(team, result) ?? "unknown";
       throw new Error(
-        `KaibanJS workflow error: ${String(result.result ?? "unknown")}`,
+        `KaibanJS workflow ${String(result.status ?? "failed").toLowerCase()}: ${failureReason}`,
       );
     }
 
