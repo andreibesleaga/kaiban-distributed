@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: {{ $agentName }}
-        image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+        image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
         imagePullPolicy: {{ $.Values.image.pullPolicy }}
         command: ["node", "dist/examples/blog-team/{{ $agentName }}-node.js"]
         envFrom:
@@ -28,5 +28,26 @@ spec:
             name: {{ include "kaiban-blog-team.fullname" $ }}-config
         - secretRef:
             name: {{ include "kaiban-blog-team.fullname" $ }}-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
 ---
 {{- end }}

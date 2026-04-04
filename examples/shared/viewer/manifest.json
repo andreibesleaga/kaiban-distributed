@@ -1,0 +1,19 @@
+{
+  "name": "Kaiban Distributed — Live Board",
+  "short_name": "Kaiban Board",
+  "description": "Read-only live Kanban board for monitoring Kaiban Distributed agent workflows.",
+  "start_url": "./board.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='48' fill='%237c3aed'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-size='52' fill='white'%3E⬡%3C/text%3E%3C/svg%3E",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity"],
+  "lang": "en"
+}

@@ -4,6 +4,7 @@ import clsx from 'clsx';
 interface Props {
   task: TaskDelta;
   agent?: AgentDelta;
+  onClick?: () => void;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -14,12 +15,29 @@ const STATUS_BADGE: Record<string, string> = {
   AWAITING_VALIDATION:  'bg-amber-900 text-amber-300',
 };
 
-export default function TaskCard({ task, agent }: Props) {
+export default function TaskCard({ task, agent, onClick }: Props) {
   const badgeClass = STATUS_BADGE[task.status] ?? 'bg-slate-700 text-slate-400';
   const fullTitle = task.title || task.taskId;
 
   return (
-    <div className="group rounded-lg border border-slate-700 bg-slate-800 p-3 flex flex-col gap-2 hover:border-slate-500 transition-colors cursor-default">
+    <div
+      className={clsx(
+        'group rounded-lg border border-slate-700 bg-slate-800 p-3 flex flex-col gap-2 hover:border-slate-500 transition-colors',
+        onClick && 'cursor-pointer',
+      )}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={`View details for task: ${fullTitle}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          onClick?.();
+        } else if (e.key === ' ') {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+    >
       {/* Title — expands on hover to show full text */}
       <p
         className="text-sm text-slate-200 font-medium leading-snug line-clamp-2 group-hover:line-clamp-none break-words"

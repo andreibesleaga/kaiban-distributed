@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useBoardStore } from '../../store/boardStore';
 import KanbanColumn from './KanbanColumn';
+import TaskDetailModal from './TaskDetailModal';
 import type { TaskDelta, TaskStatus } from '../../types/board';
 
 const COLUMNS: Array<{
@@ -43,6 +45,12 @@ const COLUMNS: Array<{
 export default function KanbanBoard() {
   const tasks = useBoardStore((s) => s.tasks);
   const agents = useBoardStore((s) => s.agents);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  const selectedTask = selectedTaskId ? tasks.get(selectedTaskId) : null;
+  const selectedAgent = selectedTask?.assignedToAgentId
+    ? agents.get(selectedTask.assignedToAgentId)
+    : undefined;
 
   const tasksByStatus = new Map<TaskStatus, TaskDelta[]>();
   for (const col of COLUMNS) {
@@ -54,23 +62,33 @@ export default function KanbanBoard() {
   }
 
   return (
-    <section>
-      <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-        Tasks ({tasks.size})
-      </h2>
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {COLUMNS.map((col) => (
-          <div key={col.status} className="min-w-[220px] flex-1">
-            <KanbanColumn
-              title={col.title}
-              tasks={tasksByStatus.get(col.status) ?? []}
-              agents={agents}
-              accent={col.accent}
-              emptyText={col.emptyText}
-            />
-          </div>
-        ))}
-      </div>
-    </section>
+    <>
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask}
+          agent={selectedAgent}
+          onClose={() => setSelectedTaskId(null)}
+        />
+      )}
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+          Tasks ({tasks.size})
+        </h2>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {COLUMNS.map((col) => (
+            <div key={col.status} className="min-w-[220px] flex-1">
+              <KanbanColumn
+                title={col.title}
+                tasks={tasksByStatus.get(col.status) ?? []}
+                agents={agents}
+                accent={col.accent}
+                emptyText={col.emptyText}
+                onTaskClick={setSelectedTaskId}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
   );
 }

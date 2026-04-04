@@ -1,5 +1,7 @@
 # Stage 1: Build
-FROM node:22-alpine AS builder
+# Pin to the Node 22 LTS minor release for reproducible builds.
+# Update this tag when you upgrade Node (also update the runner stage below).
+FROM node:22.14-alpine AS builder
 
 WORKDIR /app
 
@@ -14,7 +16,8 @@ COPY examples/ ./examples/
 RUN npm run build
 
 # Stage 2: Runtime
-FROM node:22-alpine AS runner
+# Same base as builder to guarantee ABI compatibility.
+FROM node:22.14-alpine AS runner
 
 WORKDIR /app
 
@@ -28,9 +31,13 @@ COPY --from=builder /app/dist ./dist
 
 USER kaiban
 
-EXPOSE 3000
+# Allow the health-check port to be overridden at build time: --build-arg PORT=8080
+ARG PORT=3000
+ENV PORT=${PORT}
+
+EXPOSE ${PORT}
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD wget -qO- http://localhost:${PORT}/health || exit 1
 
 CMD ["node", "dist/src/main/index.js"]

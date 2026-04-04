@@ -3,4 +3,4 @@ name: kaiban-global-research
 description: A Helm chart for deploying the KaibanJS Global Research Swarm example
 type: application
 version: 0.1.0
-appVersion: "latest"
+appVersion: "0.1.0"

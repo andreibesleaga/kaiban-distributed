@@ -1,129 +1,170 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description"
+    content="Read-only live Kanban board for the Kaiban Distributed Global Research Swarm workflow.">
+  <meta name="theme-color" content="#0891b2">
+
+  <!-- Security headers -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none';
+                 script-src 'self' https://cdn.socket.io;
+                 style-src  'self';
+                 connect-src ws: wss: http: https:;
+                 img-src    data:;
+                 manifest-src 'self';">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta name="referrer" content="no-referrer">
+
   <title>Kaiban Distributed — Global Research Swarm</title>
+
+  <!-- PWA manifest (local copy so start_url resolves to this viewer's board.html) -->
+  <link rel="manifest" href="./manifest.json">
+
+  <link rel="stylesheet" href="../../shared/viewer/board-base.css">
   <link rel="stylesheet" href="board.css">
 </head>
+
 <body>
 
-<header>
-  <h1>Kaiban Distributed — Global Research Swarm</h1>
-  <span class="badge badge-connecting" id="conn-badge">Connecting...</span>
-  <span id="workflow-badge" style="font-size:0.75rem; color:#475569"></span>
-</header>
+  <!-- Accessibility: skip to main content -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
 
-<!-- Banners (shown dynamically by board.js) -->
-<div id="banner-hitl" class="banner banner-hitl">
-  <div class="banner-title">HUMAN DECISION REQUIRED</div>
-  <div class="banner-msg" id="banner-hitl-msg"></div>
-</div>
-<div id="banner-error" class="banner banner-error">
-  <div class="banner-title">TASK FAILED</div>
-  <div class="banner-msg" id="banner-error-msg"></div>
-</div>
-<div id="banner-finished" class="banner banner-finished">
-  <div class="banner-title">RESEARCH PUBLISHED</div>
-  <div class="banner-msg" id="banner-finished-msg"></div>
-</div>
-<div id="banner-stopped" class="banner banner-stopped">
-  <div class="banner-title">RESEARCH WORKFLOW ENDED</div>
-  <div class="banner-msg" id="banner-stopped-msg"></div>
-</div>
+  <header role="banner">
+    <h1>⬡ Kaiban — Global Research Swarm</h1>
+    <span class="badge badge-connecting" id="conn-badge" role="status" aria-live="polite">Connecting…</span>
+    <span id="workflow-badge" aria-hidden="true"></span>
+  </header>
 
-<!-- Workflow status bar -->
-<div class="workflow-bar">
-  <span class="workflow-label">Workflow:</span>
-  <span class="workflow-status ws-initial" id="workflow-status">INITIAL</span>
-  <span id="query-label" style="font-size:0.8rem; color:#475569; margin-left:8px"></span>
-</div>
+  <main id="main-content" role="main">
 
-<!-- Swarm agents -->
-<div class="agents-section">
-  <span class="section-label">Swarm Agents</span>
-  <div class="agents-grid" id="agents-grid">
-    <div class="empty">Waiting for agent state...</div>
-  </div>
-</div>
-
-<!-- Kanban board -->
-<span class="section-label">Research Tasks</span>
-<div class="board">
-  <div class="column col-todo">
-    <div class="column-header">TODO <span id="cnt-todo">0</span></div>
-    <div id="col-todo"></div>
-  </div>
-  <div class="column col-doing">
-    <div class="column-header"><span class="task-pulse"></span>DOING <span id="cnt-doing">0</span></div>
-    <div id="col-doing"></div>
-  </div>
-  <div class="column col-await">
-    <div class="column-header">AWAITING <span id="cnt-await">0</span></div>
-    <div id="col-await"></div>
-  </div>
-  <div class="column col-done">
-    <div class="column-header">DONE <span id="cnt-done">0</span></div>
-    <div id="col-done"></div>
-  </div>
-  <div class="column col-blocked">
-    <div class="column-header">BLOCKED <span id="cnt-blocked">0</span></div>
-    <div id="col-blocked"></div>
-  </div>
-</div>
-
-<!-- Swarm metadata panel -->
-<div class="swarm-meta">
-  <span class="section-label">Swarm Metadata</span>
-  <div class="swarm-meta-grid">
-    <div class="meta-item">
-      <span class="meta-label">Active Nodes</span>
-      <div class="meta-nodes" id="meta-nodes">
-        <span style="color:#475569; font-size:0.8rem">Waiting...</span>
+    <!-- Notification banners -->
+    <div id="banner-hitl" class="banner banner-hitl" role="alert" aria-atomic="true">
+      <div class="banner-title">⏸ HUMAN DECISION REQUIRED</div>
+      <div class="banner-msg" id="banner-hitl-msg">
+        Use the React board (<code>board/</code>) to respond to HITL decisions.
       </div>
     </div>
-    <div class="meta-item">
-      <span class="meta-label">Total Tokens</span>
-      <span class="meta-value" id="meta-tokens">—</span>
+    <div id="banner-error" class="banner banner-error" role="alert" aria-atomic="true">
+      <div class="banner-title">⛔ TASK FAILED</div>
+      <div class="banner-msg" id="banner-error-msg"></div>
     </div>
-    <div class="meta-item">
-      <span class="meta-label">Estimated Cost</span>
-      <span class="meta-value" id="meta-cost">—</span>
+    <div id="banner-finished" class="banner banner-finished" role="status" aria-atomic="true">
+      <div class="banner-title">✅ RESEARCH PUBLISHED</div>
+      <div class="banner-msg" id="banner-finished-msg"></div>
     </div>
-    <div class="meta-item">
-      <span class="meta-label">Start Time</span>
-      <span class="meta-value" id="meta-start">—</span>
+    <div id="banner-stopped" class="banner banner-stopped" role="status" aria-atomic="true">
+      <div class="banner-title">⏹ RESEARCH WORKFLOW ENDED</div>
+      <div class="banner-msg" id="banner-stopped-msg"></div>
     </div>
-    <div class="meta-item">
-      <span class="meta-label">End Time</span>
-      <span class="meta-value" id="meta-end">—</span>
-    </div>
-    <div class="meta-item">
-      <span class="meta-label">Duration</span>
-      <span class="meta-value" id="meta-duration">—</span>
-    </div>
-  </div>
-</div>
 
-<!-- Event log -->
-<div class="log-section">
-  <span class="section-label">Event Stream</span>
-  <div class="log-box" id="log-box">
-    <div class="log-entry">
-      <span class="log-time">--:--:--</span>
-      <span class="log-type">INIT</span>
-      <span class="log-msg">Waiting for connection to gateway...</span>
+    <!-- Workflow status bar -->
+    <div class="workflow-bar" role="region" aria-label="Workflow status">
+      <span class="workflow-label">Workflow:</span>
+      <span class="workflow-status ws-initial" id="workflow-status" role="status">INITIAL</span>
+      <span id="input-label" aria-label="Current research query"></span>
     </div>
-  </div>
-</div>
 
-<!-- Connection info -->
-<div id="connection-info">
-  <strong id="gateway-url-display">Gateway</strong>
-  <span id="conn-detail">Connecting...</span>
-</div>
+    <!-- Swarm agents -->
+    <section class="agents-section" aria-label="Active swarm agents">
+      <span class="section-label" aria-hidden="true">Swarm Agents</span>
+      <div class="agents-grid" id="agents-grid" role="list">
+        <div class="empty" role="status">Waiting for agent state…</div>
+      </div>
+    </section>
 
-<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
-<script src="board.js"></script>
+    <!-- Kanban board -->
+    <span class="section-label" aria-hidden="true">Research Tasks</span>
+    <div class="board" role="region" aria-label="Kanban task board">
+      <div class="column col-todo" role="region" aria-label="To-do tasks">
+        <div class="column-header" aria-hidden="true">TODO <span id="cnt-todo">0</span></div>
+        <div id="col-todo" role="list"></div>
+      </div>
+      <div class="column col-doing" role="region" aria-label="In-progress tasks">
+        <div class="column-header" aria-hidden="true"><span class="task-pulse"></span>DOING <span
+            id="cnt-doing">0</span></div>
+        <div id="col-doing" role="list"></div>
+      </div>
+      <div class="column col-await" role="region" aria-label="Tasks awaiting validation">
+        <div class="column-header" aria-hidden="true">AWAITING <span id="cnt-await">0</span></div>
+        <div id="col-await" role="list"></div>
+      </div>
+      <div class="column col-done" role="region" aria-label="Completed tasks">
+        <div class="column-header" aria-hidden="true">DONE <span id="cnt-done">0</span></div>
+        <div id="col-done" role="list"></div>
+      </div>
+      <div class="column col-blocked" role="region" aria-label="Blocked tasks">
+        <div class="column-header" aria-hidden="true">BLOCKED <span id="cnt-blocked">0</span></div>
+        <div id="col-blocked" role="list"></div>
+      </div>
+    </div>
+
+    <!-- Swarm metadata panel (extends base economics with active nodes) -->
+    <section class="swarm-meta" aria-label="Swarm metadata and economics">
+      <span class="section-label">Swarm Metadata</span>
+      <div class="swarm-meta-grid">
+        <div class="meta-item">
+          <span class="meta-label">Active Nodes</span>
+          <div class="meta-nodes" id="meta-nodes" role="list" aria-label="Active compute nodes">
+            <span style="color:#475569; font-size:0.8rem">Waiting…</span>
+          </div>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Total Tokens</span>
+          <span class="meta-value" id="meta-tokens">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Estimated Cost</span>
+          <span class="meta-value" id="meta-cost">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Start Time</span>
+          <span class="meta-value" id="meta-start">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">End Time</span>
+          <span class="meta-value" id="meta-end">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Duration</span>
+          <span class="meta-value" id="meta-duration">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Event log -->
+    <section class="log-section" aria-label="Event stream">
+      <span class="section-label">Event Stream</span>
+      <div class="log-box" id="log-box" role="log" aria-live="polite" aria-relevant="additions">
+        <div class="log-entry" role="listitem">
+          <span class="log-time">--:--:--</span>
+          <span class="log-type">INIT</span>
+          <span class="log-msg">Waiting for connection to gateway…</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Fixed connection info footer -->
+  <aside id="connection-info" aria-label="Connection status">
+    <strong id="gateway-url-display">Gateway</strong>
+    <span id="conn-detail">Connecting…</span>
+  </aside>
+
+  <!-- socket.io client (CDN) -->
+  <!-- To verify integrity: npx sri-hash https://cdn.socket.io/4.8.0/socket.io.min.js -->
+  <script src="https://cdn.socket.io/4.8.0/socket.io.min.js" crossorigin="anonymous"></script>
+
+  <!-- Shared viewer base and example-specific config -->
+  <script src="../../shared/viewer/board-base.js"></script>
+  <script src="board.js"></script>
+
+  <!-- PWA service worker registration (external to comply with CSP script-src 'self') -->
+  <script src="../../shared/viewer/sw-register.js"></script>
+
 </body>
+
 </html>

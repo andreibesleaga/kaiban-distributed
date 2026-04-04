@@ -15,23 +15,38 @@ spec:
         app: kaiban-gateway
     spec:
       containers:
-      - name: gateway
-        image: kaiban-distributed:latest
-        imagePullPolicy: IfNotPresent  # Ensure image is built locally or pushed
-        ports:
-        - containerPort: 3000
-        envFrom:
-        - configMapRef:
-            name: kaiban-blog-team-config
-        env:
-        - name: AGENT_IDS
-          value: "gateway"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
+        - name: gateway
+          image: kaiban-distributed:latest
+          imagePullPolicy: IfNotPresent # Ensure image is built locally or pushed
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: kaiban-blog-team-config
+          env:
+            - name: AGENT_IDS
+              value: "gateway"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
 ---
 apiVersion: v1
 kind: Service
@@ -42,8 +57,8 @@ metadata:
 spec:
   type: NodePort # Use LoadBalancer for cloud providers
   ports:
-  - port: 3000
-    targetPort: 3000
-    nodePort: 30000
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30000
   selector:
     app: kaiban-gateway

@@ -1,0 +1,354 @@
+/**
+ * Kaiban Distributed — Shared Viewer Styles
+ *
+ * Dark theme used by all example Kanban board viewers.
+ * Example-specific overrides go in each viewer's own board.css file.
+ *
+ * Design tokens use Tailwind-compatible palette values (slate, cyan, emerald, etc.)
+ * so the viewer visually matches the React board in board/.
+ */
+
+/* ── Reset & base ── */
+*  { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* ── Skip-to-main link (accessibility) ── */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #7c3aed;
+  color: #fff;
+  padding: 8px 16px;
+  z-index: 1000;
+  border-radius: 0 0 8px 0;
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: top 0.2s;
+}
+.skip-link:focus { top: 0; }
+
+/* ── Header ── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #1e293b;
+  flex-wrap: wrap;
+}
+header h1 { font-size: 1.3rem; font-weight: 700; }
+
+/* ── Connection badge ── */
+.badge {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.badge-connecting { background: #334155; color: #94a3b8; }
+.badge-live       { background: #052e16; color: #4ade80; }
+.badge-error      { background: #450a0a; color: #f87171; }
+
+/* ── Banners ── */
+.banner {
+  border-radius: 10px;
+  padding: 14px 20px;
+  margin-bottom: 14px;
+  display: none;
+}
+.banner[role="alert"] { display: none; }
+.banner.visible       { display: block; }
+.banner-title { font-size: 1rem; font-weight: 800; }
+.banner-msg   { font-size: 0.8rem; margin-top: 4px; }
+
+.banner-hitl {
+  background: linear-gradient(90deg, #1c0a00, #2d1200);
+  border: 1px solid #f9731660;
+  animation: awaiting-glow 2s ease-in-out infinite;
+}
+.banner-hitl .banner-title { color: #fb923c; }
+.banner-hitl .banner-msg   { color: #fed7aa; font-style: italic; }
+
+.banner-error { background: #130505; border: 1px solid #ef4444; }
+.banner-error .banner-title { font-size: 0.9rem; color: #f87171; }
+.banner-error .banner-msg   { color: #fca5a5; white-space: pre-wrap; font-size: 0.78rem; }
+
+.banner-finished {
+  background: linear-gradient(90deg, #052e16, #14532d);
+  border: 1px solid #4ade80;
+}
+.banner-finished .banner-title { font-size: 1.1rem; color: #4ade80; }
+.banner-finished .banner-msg   { color: #86efac; }
+
+.banner-stopped { background: #1e293b; border: 1px solid #64748b; }
+.banner-stopped .banner-title { font-size: 0.9rem; color: #94a3b8; }
+.banner-stopped .banner-msg   { color: #64748b; }
+
+/* ── Workflow status bar ── */
+.workflow-bar {
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+  border: 1px solid #334155;
+  flex-wrap: wrap;
+}
+.workflow-label  { font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
+.workflow-status { font-size: 0.8rem; font-weight: 700; padding: 3px 11px; border-radius: 20px; }
+
+.ws-initial  { background: #1e293b; color: #94a3b8; }
+.ws-running  { background: #1e3a5f; color: #60a5fa; }
+.ws-finished { background: #052e16; color: #4ade80; animation: done-glow 3s ease-in-out 2; }
+.ws-errored  { background: #450a0a; color: #f87171; }
+.ws-blocked  { background: #451a03; color: #fb923c; }
+.ws-stopped  { background: #1e293b; color: #94a3b8; }
+
+/* ── Section labels ── */
+.section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  display: block;
+  margin-bottom: 10px;
+}
+
+/* ── Agents grid ── */
+.agents-section { margin-bottom: 24px; }
+.agents-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.agent-card {
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-width: 130px;
+  border: 1px solid #334155;
+}
+.agent-name { font-size: 0.82rem; font-weight: 700; }
+.agent-role { font-size: 0.68rem; color: #94a3b8; margin: 2px 0 8px; }
+.agent-task { font-size: 0.66rem; color: #475569; margin-top: 6px; }
+
+.agent-status {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  display: inline-block;
+}
+.status-idle      { background: #1e293b; color: #64748b; border: 1px solid #334155; }
+.status-thinking  { background: #1e3a5f; color: #60a5fa; }
+.status-executing { background: #052e16; color: #4ade80; }
+.status-error     { background: #450a0a; color: #f87171; }
+
+/* ── Kanban board ── */
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.column {
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 14px;
+  border: 1px solid #334155;
+}
+.column-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.col-todo    .column-header { color: #94a3b8; }
+.col-doing   .column-header { color: #60a5fa; }
+.col-done    .column-header { color: #4ade80; }
+.col-blocked .column-header { color: #f87171; }
+.col-await   .column-header { color: #fb923c; }
+
+/* Animated pulse dot for DOING column header */
+.task-pulse {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3b82f6;
+  margin-right: 5px;
+  animation: pulse 1.5s infinite;
+}
+
+/* ── Task cards ── */
+.task-card {
+  background: #0f172a;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-left: 3px solid transparent;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.task-card:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+.task-card:focus-within { outline: 2px solid #7c3aed; outline-offset: 2px; }
+
+.task-card.todo               { border-left-color: #64748b; }
+.task-card.doing              { border-left-color: #3b82f6; background: #0c1a30; }
+.task-card.done               { border-left-color: #22c55e; }
+.task-card.blocked            { border-left-color: #ef4444; background: #130505; box-shadow: 0 0 8px rgba(239,68,68,0.3); }
+.task-card.awaiting_validation {
+  border-left-color: #f97316;
+  background: #1a1000;
+  box-shadow: 0 0 12px rgba(249,115,22,0.35);
+  animation: awaiting-glow 2s ease-in-out infinite;
+}
+
+.task-title  { font-size: 0.82rem; font-weight: 600; margin-bottom: 4px; line-height: 1.3; }
+.task-agent  { font-size: 0.7rem; color: #94a3b8; margin-bottom: 6px; }
+
+.task-result {
+  font-size: 0.7rem;
+  color: #cbd5e1;
+  margin-top: 6px;
+  padding: 7px;
+  background: #1e293b;
+  border-radius: 6px;
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.task-result.blocked  { border-left: 2px solid #ef4444; color: #fca5a5; }
+.task-result.awaiting { border-left: 2px solid #f97316; color: #fed7aa; }
+
+/* Collapsible long results */
+details.task-result summary               { cursor: pointer; list-style: none; }
+details.task-result summary::-webkit-details-marker { display: none; }
+details.task-result summary::before       { content: '▶ '; font-size: 0.62rem; }
+details.task-result[open] summary::before { content: '▼ '; }
+.task-result-full { white-space: pre-wrap; margin-top: 6px; }
+
+/* Status/badge elements */
+.task-badge      { font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; font-weight: 700; margin-left: 6px; }
+.task-badge-hitl { background: #7c2d12; color: #fb923c; }
+.task-badge-error{ background: #450a0a; color: #f87171; }
+.task-tokens     { font-size: 0.68rem; color: #64748b; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+.empty { color: #475569; font-size: 0.78rem; text-align: center; padding: 18px; }
+
+/* ── Economics / metadata panel ── */
+.swarm-meta {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-top: 22px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.swarm-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+.economics-finished { border-color: #16a34a; box-shadow: 0 0 14px rgba(22,163,74,0.3); }
+
+.meta-item  { display: flex; flex-direction: column; gap: 4px; }
+.meta-label { font-size: 0.66rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+.meta-value { font-size: 0.88rem; font-weight: 600; color: #e2e8f0; }
+
+/* ── Event log ── */
+.log-section { margin-top: 24px; }
+.log-box {
+  background: #020d1e;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 0.73rem;
+}
+.log-entry {
+  padding: 3px 0;
+  border-bottom: 1px solid #0f172a;
+  display: grid;
+  grid-template-columns: 68px 75px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.log-time          { color: #475569; }
+.log-type          { color: #7c3aed; font-weight: 600; }
+.log-type.lt-llm   { color: #8b5cf6; }
+.log-msg           { color: #94a3b8; word-break: break-word; }
+.log-msg.highlight { color: #e2e8f0; }
+
+/* ── Connection info bar (fixed bottom-right) ── */
+#connection-info {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  z-index: 500;
+  max-width: 280px;
+  word-break: break-all;
+}
+#connection-info strong { color: #e2e8f0; display: block; margin-bottom: 3px; font-size: 0.7rem; }
+
+/* ── Animations ── */
+@keyframes awaiting-glow {
+  0%, 100% { box-shadow: 0 0 10px rgba(249,115,22,0.35); }
+  50%       { box-shadow: 0 0 22px rgba(249,115,22,0.75); }
+}
+@keyframes done-glow {
+  0%, 100% { box-shadow: none; }
+  50%       { box-shadow: 0 0 18px rgba(74,222,128,0.55); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.35); }
+}
+
+/* ── Responsive adjustments ── */
+@media (max-width: 640px) {
+  body { padding: 12px; }
+  header { gap: 10px; }
+  header h1 { font-size: 1.1rem; }
+  .board { grid-template-columns: 1fr; }
+  .agents-grid { gap: 8px; }
+  #connection-info { bottom: 8px; right: 8px; left: 8px; max-width: unset; }
+}
+
+@media (max-width: 400px) {
+  .log-entry { grid-template-columns: 60px 60px 1fr; }
+  .swarm-meta-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Reduced motion (accessibility) ── */
+@media (prefers-reduced-motion: reduce) {
+  .task-card, .task-card.awaiting_validation,
+  .ws-finished, .banner-hitl, .task-pulse {
+    animation: none;
+    transition: none;
+  }
+}

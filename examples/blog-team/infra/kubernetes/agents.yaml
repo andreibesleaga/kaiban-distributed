@@ -1,4 +1,8 @@
-# Researcher Agent
+# Blog Team Agent Deployments
+# Apply: kubectl apply -f agents.yaml
+# All three agents share the same container image; the command distinguishes their role.
+
+# ── Researcher ──────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,8 +29,29 @@ spec:
             name: kaiban-blog-team-config
         - secretRef:
             name: kaiban-blog-team-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
 ---
-# Writer Agent
+# ── Writer ───────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,7 +59,7 @@ metadata:
   labels:
     app: kaiban-writer
 spec:
-  replicas: 1 # Scale up for more generic parallel processing
+  replicas: 1  # Scale up for parallel draft generation
   selector:
     matchLabels:
       app: kaiban-writer
@@ -53,8 +78,29 @@ spec:
             name: kaiban-blog-team-config
         - secretRef:
             name: kaiban-blog-team-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
 ---
-# Editor Agent
+# ── Editor ───────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -81,3 +127,24 @@ spec:
             name: kaiban-blog-team-config
         - secretRef:
             name: kaiban-blog-team-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
