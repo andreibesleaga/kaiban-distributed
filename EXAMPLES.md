@@ -13,6 +13,20 @@
 
 ---
 
+## Universal Runner
+
+For the default Redis/BullMQ path, you can now start or stop any example with one generic wrapper:
+
+```bash
+
+./scripts/run-example.sh start examples/blog-team
+./scripts/run-example.sh stop  examples/blog-team
+```
+
+This wrapper uses only `<example>/docker-compose.yml` and `<example>/orchestrator.ts`.
+
+---
+
 ## Example 1 — Blog Team Pipeline (Three-Agent Editorial)
 
 Three KaibanJS agents collaborate to research, write, and fact-check a blog post, with a human editorial decision at the end.

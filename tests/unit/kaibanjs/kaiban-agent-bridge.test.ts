@@ -137,7 +137,7 @@ describe("createKaibanTaskHandler", () => {
       makeMockDriver(),
     );
     await expect(h(basePayload)).rejects.toThrow(
-      "KaibanJS workflow error: LLM API Error",
+      "KaibanJS workflow errored: LLM API Error",
     );
   });
 
@@ -152,7 +152,7 @@ describe("createKaibanTaskHandler", () => {
       makeMockDriver(),
     );
     await expect(h(basePayload)).rejects.toThrow(
-      "KaibanJS workflow error: unknown",
+      "KaibanJS workflow errored: unknown",
     );
   });
 

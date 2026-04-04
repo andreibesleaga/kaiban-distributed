@@ -4,9 +4,9 @@ import { AgentActor } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
 import type { MessagePayload } from '../../src/infrastructure/messaging/interfaces';
-import { createDriver } from './driver-factory';
+import { createDriver } from '../../src/shared';
 import { searcherConfig, SEARCHER_QUEUE } from './team-config';
-import { buildSecurityDeps } from './build-security-deps';
+import { buildSecurityDeps } from '../../src/shared';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const CHAOS_MODE = process.env['CHAOS_MODE'] === 'true';

@@ -53,9 +53,11 @@ vi.mock("socket.io", () => ({
       close: vi.fn((cb?: () => void) => {
         if (cb) cb();
       }),
-      on: vi.fn().mockImplementation((event: string, cb: typeof connectionHandler) => {
-        if (event === "connection") connectionHandler = cb;
-      }),
+      on: vi
+        .fn()
+        .mockImplementation((event: string, cb: typeof connectionHandler) => {
+          if (event === "connection") connectionHandler = cb;
+        }),
       use: vi.fn(),
     };
   }),
@@ -67,7 +69,9 @@ vi.mock("@socket.io/redis-adapter", () => ({
 
 vi.mock("../../../src/infrastructure/security/channel-signing", () => ({
   unwrapVerified: vi.fn((payload: string) => unwrapVerifiedMock(payload)),
-  wrapSigned: vi.fn((payload: Record<string, unknown>) => wrapSignedMock(payload)),
+  wrapSigned: vi.fn((payload: Record<string, unknown>) =>
+    wrapSignedMock(payload),
+  ),
 }));
 
 import { SocketGateway } from "../../../src/adapters/gateway/SocketGateway";
@@ -79,16 +83,19 @@ describe("SocketGateway — coverage branches", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     connectionHandler = null;
-    unwrapVerifiedMock.mockImplementation((payload: string) => JSON.parse(payload));
+    unwrapVerifiedMock.mockImplementation((payload: string) =>
+      JSON.parse(payload),
+    );
   });
 
   afterEach(async () => {
     await Promise.all(gateways.splice(0).map((gateway) => gateway.shutdown()));
   });
 
-  function initGateway(
-    opts?: { validHitlDecisions?: string[]; hitlPublisher?: Redis },
-  ): SocketGateway {
+  function initGateway(opts?: {
+    validHitlDecisions?: string[];
+    hitlPublisher?: Redis;
+  }): SocketGateway {
     const gateway = new SocketGateway(
       httpServer,
       redisPublisher,
@@ -107,7 +114,9 @@ describe("SocketGateway — coverage branches", () => {
     return calls.find(([event]) => event === "message")![1];
   }
 
-  function getHitlHandler(socket: MockSocket): (
+  function getHitlHandler(
+    socket: MockSocket,
+  ): (
     payload: unknown,
     ack?: (response: { ok: boolean; error?: string }) => void,
   ) => void {
@@ -220,9 +229,14 @@ describe("SocketGateway — coverage branches", () => {
       publish: vi.fn().mockResolvedValue(1),
       quit: hitlQuit,
     } as unknown as Redis;
-    const gateway = new SocketGateway(httpServer, redisPublisher, redisSubscriber, {
-      hitlPublisher: separateHitlPublisher,
-    });
+    const gateway = new SocketGateway(
+      httpServer,
+      redisPublisher,
+      redisSubscriber,
+      {
+        hitlPublisher: separateHitlPublisher,
+      },
+    );
 
     await gateway.shutdown();
 

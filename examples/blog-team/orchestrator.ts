@@ -27,308 +27,39 @@
 import 'dotenv/config';
 import readline from 'readline';
 import { io, type Socket } from 'socket.io-client';
-import { Redis } from 'ioredis';
-import { createDriver, getDriverType } from './driver-factory';
-import { COMPLETED_QUEUE } from './team-config';
-import { wrapSigned, unwrapVerified } from '../../src/infrastructure/security/channel-signing';
+import {
+  createDriver,
+  createRpcClient,
+  CompletionRouter,
+  getDriverType,
+} from '../../src/shared';
 import { issueA2AToken } from '../../src/infrastructure/security/a2a-auth';
+import { log, RunLogger } from './run-logger';
+import { BlogStatePublisher } from './state-publisher';
+import {
+  runResearchPhase,
+  runWritePhase,
+  runEditorialPhase,
+  handleBlogDecision,
+} from './phases';
 
-const GATEWAY_URL      = process.env['GATEWAY_URL']      ?? 'http://localhost:3000';
-const REDIS_URL        = process.env['REDIS_URL']        ?? 'redis://localhost:6379';
-const TOPIC            = process.env['TOPIC']            ?? 'Latest developments in AI agents';
-const RESEARCH_WAIT_MS = parseInt(process.env['RESEARCH_WAIT_MS'] ?? '120000', 10);
-const WRITE_WAIT_MS    = parseInt(process.env['WRITE_WAIT_MS']    ?? '240000', 10);
-const EDIT_WAIT_MS     = parseInt(process.env['EDIT_WAIT_MS']     ?? '300000', 10);
+const GATEWAY_URL = process.env['GATEWAY_URL'] ?? 'http://localhost:3000';
+const REDIS_URL   = process.env['REDIS_URL']   ?? 'redis://localhost:6379';
+const TOPIC       = process.env['TOPIC']       ?? 'Latest developments in AI agents';
 
-// ──────────────────────────────────────────────────────────────
-// CompletionRouter — single BullMQ subscriber, dispatches by taskId
-// Fixes: BullMQDriver.subscribe() reuses the same worker for a queue,
-// so calling subscribe() twice for different handlers silently drops
-// the second handler. One router handles all completions.
-// ──────────────────────────────────────────────────────────────
-
-/** All three blog-team agent descriptors (used to reset board state on completion) */
-const BLOG_AGENTS = [
-  { agentId: 'researcher', name: 'Ava',   role: 'News Researcher',        status: 'IDLE' as const, currentTaskId: null },
-  { agentId: 'writer',     name: 'Kai',   role: 'Content Creator',        status: 'IDLE' as const, currentTaskId: null },
-  { agentId: 'editor',     name: 'Morgan',role: 'Editorial Fact-Checker', status: 'IDLE' as const, currentTaskId: null },
-];
-
-/**
- * Publishes orchestration lifecycle states directly to Redis Pub/Sub → SocketGateway → board.
- *
- * Workers' AgentStatePublisher no longer emits teamWorkflowStatus — only the
- * OrchestratorStatePublisher controls the workflow lifecycle (RUNNING → FINISHED / STOPPED).
- * This prevents heartbeats from overriding terminal states.
- */
-class OrchestratorStatePublisher {
-  private redis: Redis;
-
-  constructor(redisUrl: string) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false });
-  }
-
-  publish(delta: Record<string, unknown>): void {
-    this.redis.publish('kaiban-state-events', wrapSigned(delta)).catch((err: unknown) =>
-      console.error('[OrchestratorStatePublisher] Publish failed:', err),
-    );
-  }
-
-  /** Call once when the orchestrator starts — board shows workflow is active with topic */
-  workflowStarted(topic: string): void {
-    this.publish({ teamWorkflowStatus: 'RUNNING', agents: BLOG_AGENTS, inputs: { topic }, metadata: { startTime: Date.now() } });
-  }
-
-  /** Publish a running-total metadata delta so the board updates in real time */
-  publishMetadata(meta: { totalTokens: number; estimatedCost: number }): void {
-    this.publish({ metadata: meta });
-  }
-
-  /** Publish a task immediately after it is queued — board shows it in TODO column */
-  taskQueued(taskId: string, title: string, agentId: string): void {
-    this.publish({
-      tasks: [{ taskId, title: title.slice(0, 60), status: 'TODO', assignedToAgentId: agentId }],
-    });
-  }
-
-  awaitingHITL(taskId: string, reviewTitle: string, recommendation: string, score: string): void {
-    this.publish({
-      teamWorkflowStatus: 'RUNNING',
-      agents: BLOG_AGENTS,
-      tasks: [{
-        taskId,
-        title: `🔍 ${reviewTitle}`,
-        status: 'AWAITING_VALIDATION',
-        assignedToAgentId: 'editor',
-        result: `Recommendation: ${recommendation} | Score: ${score} — Waiting for human decision`,
-      }],
-    });
-  }
-
-  taskFailed(taskId: string, agentId: string, title: string, error: string): void {
-    this.publish({
-      agents: [{ agentId, name: agentId, role: agentId, status: 'ERROR', currentTaskId: taskId }],
-      tasks: [{ taskId, title: title.slice(0, 60), status: 'BLOCKED', assignedToAgentId: agentId, result: `ERROR: ${error.slice(0, 200)}` }],
-    });
-  }
-
-  /** Publish FINISHED state — resets all agents to IDLE and clears all pending tasks */
-  workflowFinished(finalTaskId: string, topic: string, totalTokens: number, estimatedCost: number, editTaskId?: string): void {
-    const tasks: Array<Record<string, unknown>> = [
-      { taskId: finalTaskId, title: topic.slice(0, 60), status: 'DONE', assignedToAgentId: 'writer', result: '✅ Published' },
-    ];
-    if (editTaskId) {
-      tasks.push({ taskId: editTaskId, title: 'Editorial Review', status: 'DONE', assignedToAgentId: 'editor', result: '✅ Approved for publication' });
-    }
-    this.publish({ teamWorkflowStatus: 'FINISHED', agents: BLOG_AGENTS, tasks, metadata: { totalTokens, estimatedCost, endTime: Date.now() } });
-  }
-
-  /** Publish STOPPED state — clears all pending tasks including editorial review */
-  workflowStopped(taskId: string, reason: string, totalTokens: number, estimatedCost: number, editTaskId?: string): void {
-    const tasks: Array<Record<string, unknown>> = [
-      { taskId, title: 'Workflow ended', status: 'BLOCKED', assignedToAgentId: 'editor', result: `🗑 ${reason.slice(0, 200)}` },
-    ];
-    if (editTaskId && editTaskId !== taskId) {
-      tasks.push({ taskId: editTaskId, title: 'Editorial Review', status: 'BLOCKED', assignedToAgentId: 'editor', result: '⏹ Workflow stopped' });
-    }
-    this.publish({ teamWorkflowStatus: 'STOPPED', agents: BLOG_AGENTS, tasks, metadata: { totalTokens, estimatedCost, endTime: Date.now() } });
-  }
-
-  async disconnect(): Promise<void> { await this.redis.quit(); }
-}
-
-/**
- * CompletionRouter — single subscription hub dispatching by taskId.
- *
- * For BullMQ: one driver handles both completed + failed queues (different queue names).
- * For Kafka:  TWO separate drivers required (different consumer groups) because
- *             KafkaJS doesn't support subscribing to new topics after consumer.run() starts.
- *             Pass a separate failedDriver created with a different groupId suffix.
- */
-class CompletionRouter {
-  private pendingResolve = new Map<string, (result: string) => void>();
-  private pendingReject  = new Map<string, (err: Error) => void>();
-  private timers         = new Map<string, ReturnType<typeof setTimeout>>();
-
-  constructor(
-    completedDriver: import('../../src/infrastructure/messaging/interfaces').IMessagingDriver,
-    failedDriver?: import('../../src/infrastructure/messaging/interfaces').IMessagingDriver,
-  ) {
-    const dlqDriver = failedDriver ?? completedDriver;
-
-    // Successful completions
-    void completedDriver.subscribe(COMPLETED_QUEUE, async (payload) => {
-      const resolve = this.pendingResolve.get(payload.taskId);
-      if (resolve) {
-        this.clearPending(payload.taskId);
-        const result = payload.data['result'];
-        resolve(typeof result === 'string' ? result : JSON.stringify(result ?? ''));
-      }
-    });
-
-    // Failed tasks (after 3 retries → DLQ) — surfaces real LLM error
-    void dlqDriver.subscribe('kaiban-events-failed', async (payload) => {
-      const reject = this.pendingReject.get(payload.taskId);
-      if (reject) {
-        this.clearPending(payload.taskId);
-        const errMsg = String(payload.data['error'] ?? 'Task failed after max retries');
-        reject(new Error(`Agent failed: ${errMsg}`));
-      }
-    });
-  }
-
-  private clearPending(taskId: string): void {
-    this.pendingResolve.delete(taskId);
-    this.pendingReject.delete(taskId);
-    const t = this.timers.get(taskId);
-    if (t) { clearTimeout(t); this.timers.delete(taskId); }
-  }
-
-  wait(taskId: string, timeoutMs: number, label: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      this.pendingResolve.set(taskId, resolve);
-      this.pendingReject.set(taskId, reject);
-      this.timers.set(taskId, setTimeout(() => {
-        if (this.pendingResolve.has(taskId)) {
-          this.clearPending(taskId);
-          reject(new Error(`[Orchestrator] Timeout waiting for ${label} (${timeoutMs / 1000}s)\n` +
-            'Tip: increase RESEARCH_WAIT_MS / WRITE_WAIT_MS / EDIT_WAIT_MS'));
-        }
-      }, timeoutMs));
-    });
-  }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────
-
-/** A2A bearer token — issued at startup when A2A_JWT_SECRET is set. Empty string = no auth. */
-let a2aToken = '';
-
-async function rpc(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (a2aToken) headers['Authorization'] = `Bearer ${a2aToken}`;
-  const res = await fetch(`${GATEWAY_URL}/a2a/rpc`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
-  });
-  const body = await res.json() as { result: Record<string, unknown>; error?: { message: string } };
-  if (body.error) throw new Error(body.error.message);
-  return body.result;
-}
-
-/**
- * Wait for a HITL decision from either the terminal (readline) or the board (Socket.io → Redis).
- * The first source to deliver a valid decision wins; the other is cleaned up.
- *
- * Terminal: [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW (re-prompts)
- * Board:    emits hitl:decision → SocketGateway → kaiban-hitl-decisions Redis channel
- */
-async function waitForHITLDecision(
-  taskId: string,
-  rl: readline.Interface,
-  redisUrl: string,
-  blogDraft: string,
-): Promise<'PUBLISH' | 'REVISE' | 'REJECT'> {
-  return new Promise((resolve) => {
-    let resolved = false;
-
-    // ── Board path: subscribe to Redis HITL channel ─────────────────────
-    // Register handler BEFORE subscribe to avoid race where a message
-    // arrives between subscribe completing and .then() firing.
-    const sub = new Redis(redisUrl, { lazyConnect: false });
-    sub.on('message', (_ch: string, msg: string) => {
-      if (resolved) return;
-      try {
-        const parsed = unwrapVerified(msg) as { taskId?: string; decision?: string } | null;
-        if (!parsed || typeof parsed.taskId !== 'string' || typeof parsed.decision !== 'string') return;
-        if (parsed.taskId === taskId && ['PUBLISH', 'REVISE', 'REJECT'].includes(parsed.decision)) {
-          console.log(`\n🖥  Board decision received: ${parsed.decision}`);
-          finish(parsed.decision as 'PUBLISH' | 'REVISE' | 'REJECT');
-        }
-      } catch { /* ignore malformed messages */ }
-    });
-    sub.subscribe('kaiban-hitl-decisions').catch(() => { /* Redis unavailable — terminal-only */ });
-
-    const finish = (decision: 'PUBLISH' | 'REVISE' | 'REJECT') => {
-      if (resolved) return;
-      resolved = true;
-      sub.disconnect();
-      // Feed empty line to release any pending rl.question callback so the
-      // readline interface is ready for a potential second HITL round (REVISE).
-      rl.write('\n');
-      resolve(decision);
-    };
-
-    // ── Terminal path ───────────────────────────────────────────────────
-    const askTerminal = () => {
-      rl.question('\nYour decision [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW: ', (answer) => {
-        if (resolved) return;
-        const a = answer.trim();
-        if (a === '1') finish('PUBLISH');
-        else if (a === '2') finish('REVISE');
-        else if (a === '3') finish('REJECT');
-        else {
-          if (a === '4') {
-            console.log('\n─── FULL BLOG DRAFT ──────────────────────────────────');
-            console.log(blogDraft);
-            console.log('──────────────────────────────────────────────────────\n');
-          }
-          askTerminal();
-        }
-      });
-    };
-    askTerminal();
-  });
-}
-
-/** Parse the structured KaibanHandlerResult returned by the bridge. Falls back to plain text. */
-function parseHandlerResult(raw: string): { answer: string; inputTokens: number; outputTokens: number; estimatedCost: number } {
-  try {
-    const parsed = JSON.parse(raw) as { answer?: string; inputTokens?: number; outputTokens?: number; estimatedCost?: number };
-    if (typeof parsed === 'object' && parsed !== null && 'answer' in parsed) {
-      return {
-        answer:        String(parsed.answer ?? ''),
-        inputTokens:   Number(parsed.inputTokens  ?? 0),
-        outputTokens:  Number(parsed.outputTokens ?? 0),
-        estimatedCost: Number(parsed.estimatedCost ?? 0),
-      };
-    }
-  } catch { /* not JSON — treat as plain text */ }
-  return { answer: raw, inputTokens: 0, outputTokens: 0, estimatedCost: 0 };
-}
-
-function parseRecommendation(review: string): 'PUBLISH' | 'REVISE' | 'REJECT' | 'UNKNOWN' {
-  // Handle plain, bold (**Recommendation:**), and variations
-  const match = /\*{0,2}Recommendation:?\*{0,2}\s*\*{0,2}(PUBLISH|REVISE|REJECT)\*{0,2}/i.exec(review);
-  if (!match) return 'UNKNOWN';
-  return match[1].toUpperCase() as 'PUBLISH' | 'REVISE' | 'REJECT';
-}
-
-function parseAccuracyScore(review: string): string {
-  const match = /Accuracy Score:\s*([0-9.]+\/10)/i.exec(review);
-  return match ? match[1] : 'N/A';
-}
-
-// ──────────────────────────────────────────────────────────────
-// Main orchestration flow
-// ──────────────────────────────────────────────────────────────
+// ── Main orchestration flow ───────────────────────────────────
 
 async function main(): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   // For BullMQ: one driver handles both completed + failed queues.
   // For Kafka: separate consumer groups prevent the KafkaJS "can't subscribe after run()" issue.
-  const isKafka = getDriverType() === 'kafka';
+  const isKafka         = getDriverType() === 'kafka';
   const completedDriver = createDriver('-orchestrator-completed');
-  const failedDriver = isKafka ? createDriver('-orchestrator-failed') : completedDriver;
-
-  // Single shared router — must be created BEFORE any tasks are submitted
-  const completionRouter = new CompletionRouter(completedDriver, failedDriver);
-
-  // Direct Redis Pub/Sub publisher for orchestration states (HITL, errors, finish)
-  const statePublisher = new OrchestratorStatePublisher(REDIS_URL);
+  const failedDriver    = isKafka ? createDriver('-orchestrator-failed') : completedDriver;
+  const router          = new CompletionRouter(completedDriver, failedDriver);
+  const pub             = new BlogStatePublisher(REDIS_URL);
+  const rpc             = createRpcClient(GATEWAY_URL);
+  const runLog          = new RunLogger(TOPIC, GATEWAY_URL, getDriverType());
 
   let socket: Socket | null = null;
 
@@ -336,28 +67,25 @@ async function main(): Promise<void> {
     socket?.disconnect();
     await completedDriver.disconnect();
     if (isKafka) await failedDriver.disconnect();
-    await statePublisher.disconnect();
+    await pub.disconnect();
     rl.close();
   };
 
   try {
-    console.log(`\n${'═'.repeat(60)}`);
-    console.log(' KAIBAN DISTRIBUTED — BLOG TEAM ORCHESTRATOR');
-    console.log(`${'═'.repeat(60)}\n`);
+    log.header('KAIBAN DISTRIBUTED — BLOG TEAM ORCHESTRATOR');
 
-    // Issue A2A bearer token if secret is configured
     if (process.env['A2A_JWT_SECRET']) {
-      a2aToken = issueA2AToken('blog-team-orchestrator');
-      console.log('✓ A2A auth token issued');
+      rpc.setToken(issueA2AToken('blog-team-orchestrator'));
+      log.info('A2A auth token issued');
     }
 
     const health = await fetch(`${GATEWAY_URL}/health`).then((r) => r.json()) as { data: { status: string } };
-    console.log(`✓ Gateway: ${health.data.status.toUpperCase()} at ${GATEWAY_URL}`);
+    log.info(`Gateway: ${health.data.status.toUpperCase()} at ${GATEWAY_URL}`);
 
     const card = await fetch(`${GATEWAY_URL}/.well-known/agent-card.json`).then((r) => r.json()) as {
       name: string; capabilities: string[];
     };
-    console.log(`✓ Agent:   ${card.name} — [${card.capabilities.join(', ')}]\n`);
+    log.info(`Agent: ${card.name} — [${card.capabilities.join(', ')}]\n`);
 
     socket = io(GATEWAY_URL, { transports: ['websocket'] });
     socket.on('state:update', (delta: Record<string, unknown>) => {
@@ -365,220 +93,59 @@ async function main(): Promise<void> {
       if (status) process.stdout.write(`  ⬡ Board: ${String(status)}\n`);
     });
 
-    console.log(`📋 Topic: "${TOPIC}"\n`);
+    log.info(`Topic: "${TOPIC}"\n`);
+    pub.workflowStarted(TOPIC);
 
-    // Running totals for EconomicsPanel on the board
-    let totalTokens = 0;
-    let totalCost = 0;
-
-    // Broadcast workflow start — board shows RUNNING + topic + all agents IDLE + startTime
-    statePublisher.workflowStarted(TOPIC);
-
-    // ──────────────────────────────────────────────────────────
     // STEP 1 — Research
-    // ──────────────────────────────────────────────────────────
-    console.log('─'.repeat(60));
-    console.log('STEP 1 — Ava (Researcher) is gathering information...');
-    console.log('─'.repeat(60));
+    log.separator('-'); log.info('STEP 1 — Ava (Researcher) is gathering information...'); log.separator('-');
+    const research = await runResearchPhase(TOPIC, router, pub, rpc, runLog);
 
-    const researchTask = await rpc('tasks.create', {
-      agentId: 'researcher',
-      instruction: `Research the latest news, key developments, and verifiable facts on: "${TOPIC}". Include specific data points, statistics, and notable developments.`,
-      expectedOutput: 'A detailed research summary with key facts, trends, and developments. Distinguish confirmed facts from speculation.',
-      inputs: { topic: TOPIC },
-    });
-    const researchTaskId = String(researchTask['taskId']);
-    // Publish immediately — board shows task in TODO before researcher picks it up
-    statePublisher.taskQueued(researchTaskId, `Research: ${TOPIC}`, 'researcher');
-    console.log(`  ↳ Task queued: ${researchTaskId}`);
-    console.log(`  ↳ Waiting up to ${RESEARCH_WAIT_MS / 1000}s for research...\n`);
+    log.info('\nRESEARCH COMPLETE');
+    log.separator('-');
+    log.info(research.summary.slice(0, 600) + (research.summary.length > 600 ? '\n  [...truncated...]' : ''));
+    log.separator('-');
 
-    const researchRaw = await completionRouter.wait(researchTaskId, RESEARCH_WAIT_MS, 'research')
-      .catch((err: Error) => {
-        statePublisher.taskFailed(researchTaskId, 'researcher', 'Research task', err.message);
-        throw err;
-      });
-    const researchParsed = parseHandlerResult(researchRaw);
-    const researchSummary = researchParsed.answer;
-    totalTokens += researchParsed.inputTokens + researchParsed.outputTokens;
-    totalCost   += researchParsed.estimatedCost;
-    statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
-
-    console.log('\n✅ RESEARCH COMPLETE');
-    console.log('─'.repeat(60));
-    console.log(researchSummary.slice(0, 600) + (researchSummary.length > 600 ? '\n  [...truncated...]' : ''));
-    console.log('─'.repeat(60) + '\n');
-
-    // ──────────────────────────────────────────────────────────
     // STEP 2 — Write
-    // ──────────────────────────────────────────────────────────
-    console.log('STEP 2 — Kai (Writer) is drafting the blog post...');
-    console.log('─'.repeat(60));
+    log.info('\nSTEP 2 — Kai (Writer) is drafting the blog post...');
+    log.separator('-');
+    const write = await runWritePhase(TOPIC, research.summary, router, pub, rpc, runLog);
 
-    const writeTask = await rpc('tasks.create', {
-      agentId: 'writer',
-      instruction: `Write an engaging blog post about: "${TOPIC}". Use the research provided in the context. Structure: headline, introduction, 3–4 sections, conclusion. Only include verified facts.`,
-      expectedOutput: 'A complete blog post in Markdown format, 500–800 words.',
-      inputs: { topic: TOPIC },
-      context: researchSummary,
-    });
-    const writeTaskId = String(writeTask['taskId']);
-    statePublisher.taskQueued(writeTaskId, `Write blog: ${TOPIC}`, 'writer');
-    console.log(`  ↳ Task queued: ${writeTaskId}`);
-    console.log(`  ↳ Waiting up to ${WRITE_WAIT_MS / 1000}s for draft...\n`);
+    log.info('\nDRAFT COMPLETE');
+    log.separator('-');
+    log.info(write.draft);
+    log.separator('-');
 
-    const writeRaw = await completionRouter.wait(writeTaskId, WRITE_WAIT_MS, 'writing')
-      .catch((err: Error) => {
-        statePublisher.taskFailed(writeTaskId, 'writer', 'Writing task', err.message);
-        throw err;
-      });
-    const writeParsed = parseHandlerResult(writeRaw);
-    const blogDraft = writeParsed.answer;
-    totalTokens += writeParsed.inputTokens + writeParsed.outputTokens;
-    totalCost   += writeParsed.estimatedCost;
-    statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
-
-    console.log('\n✅ DRAFT COMPLETE');
-    console.log('─'.repeat(60));
-    console.log(blogDraft);
-    console.log('─'.repeat(60) + '\n');
-
-    // ──────────────────────────────────────────────────────────
     // STEP 3 — Editorial Review
-    // ──────────────────────────────────────────────────────────
-    console.log('STEP 3 — Morgan (Editor) is reviewing for accuracy...');
-    console.log('─'.repeat(60));
+    log.info('\nSTEP 3 — Morgan (Editor) is reviewing for accuracy...');
+    log.separator('-');
+    const edit = await runEditorialPhase(TOPIC, research.summary, write.draft, router, pub, rpc, runLog);
 
-    const editTask = await rpc('tasks.create', {
-      agentId: 'editor',
-      instruction: 'Review the blog post draft for factual accuracy. Cross-reference every claim against the research summary. Output your review in the exact structured format from your background instructions.',
-      expectedOutput: 'Structured editorial review: accuracy score, issues with severity, required changes, PUBLISH/REVISE/REJECT recommendation, rationale.',
-      inputs: { topic: TOPIC },
-      context: `--- RESEARCH SUMMARY ---\n${researchSummary}\n\n--- BLOG DRAFT ---\n${blogDraft}`,
-    });
-    const editTaskId = String(editTask['taskId']);
-    statePublisher.taskQueued(editTaskId, 'Editorial Review', 'editor');
-    console.log(`  ↳ Task queued: ${editTaskId}`);
-    console.log(`  ↳ Waiting up to ${EDIT_WAIT_MS / 1000}s for editorial review...\n`);
+    log.header('EDITORIAL REVIEW BY MORGAN');
+    log.info(edit.review);
+    log.separator('=');
+    log.info(`  Accuracy Score:  ${edit.score}`);
+    log.info(`  Recommendation:  ${edit.recommendation}\n`);
 
-    const editRaw = await completionRouter.wait(editTaskId, EDIT_WAIT_MS, 'editorial review')
-      .catch((err: Error) => {
-        statePublisher.taskFailed(editTaskId, 'editor', 'Editorial review', err.message);
-        throw err;
-      });
-    const editParsed = parseHandlerResult(editRaw);
-    const editorialReview = editParsed.answer;
-    totalTokens += editParsed.inputTokens + editParsed.outputTokens;
-    totalCost   += editParsed.estimatedCost;
-    statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
+    // STEP 4 — Human-in-the-Loop Decision (HITL)
+    log.header('HUMAN REVIEW REQUIRED (HITL)');
+    log.info(`Editorial: ${edit.recommendation} (Accuracy: ${edit.score})`);
+    await handleBlogDecision({ topic: TOPIC, redisUrl: REDIS_URL, gatewayUrl: GATEWAY_URL, research, write, edit, router, pub, rpc, rl, runLog });
 
-    const recommendation = parseRecommendation(editorialReview);
-    const accuracyScore  = parseAccuracyScore(editorialReview);
+    log.separator('-');
+    log.info(`View full trace: ${GATEWAY_URL}  |  Board: examples/blog-team/viewer/board.html`);
+    log.separator('-');
 
-    console.log('\n');
-    console.log('╔' + '═'.repeat(58) + '╗');
-    console.log('║  📝 EDITORIAL REVIEW BY MORGAN' + ' '.repeat(27) + '║');
-    console.log('╠' + '═'.repeat(58) + '╣');
-    editorialReview.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
-    console.log('╚' + '═'.repeat(58) + '╝');
-    console.log(`\n  Accuracy Score:  ${accuracyScore}`);
-    console.log(`  Recommendation:  ${recommendation}\n`);
-
-    // ──────────────────────────────────────────────────────────
-    // STEP 4 — Human-in-the-Loop Decision
-    // ──────────────────────────────────────────────────────────
-    // Broadcast AWAITING_VALIDATION so the board shows the paused state
-    statePublisher.awaitingHITL(editTaskId, 'Editorial Review — Human Decision Required', recommendation, accuracyScore);
-
-    console.log('═'.repeat(60));
-    console.log(' HUMAN REVIEW REQUIRED (HITL)');
-    console.log('═'.repeat(60));
-
-    const icon = recommendation === 'PUBLISH' ? '🟢' : recommendation === 'REVISE' ? '🟡' : '🔴';
-    console.log(`\n${icon} Editor recommends ${recommendation} (Accuracy: ${accuracyScore})\n`);
-    console.log('Options:\n  [1] PUBLISH\n  [2] REVISE → send back to Kai with notes\n  [3] REJECT\n  [4] VIEW full draft\n');
-
-    console.log('  (Decide here or click Approve / Revise / Reject on the board)');
-    const decision = await waitForHITLDecision(editTaskId, rl, REDIS_URL, blogDraft);
-
-    if (decision === 'PUBLISH') {
-      console.log('\n╔' + '═'.repeat(58) + '╗');
-      console.log('║  🚀 PUBLISHED — FINAL BLOG POST' + ' '.repeat(26) + '║');
-      console.log('╠' + '═'.repeat(58) + '╣');
-      blogDraft.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
-      console.log('╚' + '═'.repeat(58) + '╝');
-      console.log(`\n✅ Published. Accuracy: ${accuracyScore}\n`);
-      statePublisher.workflowFinished(writeTaskId, TOPIC, totalTokens, totalCost, editTaskId);
-
-    } else if (decision === 'REVISE') {
-      console.log('\n🔄 Sending back to Kai with editorial notes...\n');
-
-      // Clear AWAITING_VALIDATION from the edit task so the board banner disappears
-      statePublisher.publish({
-        tasks: [{ taskId: editTaskId, title: 'Editorial Review', status: 'DOING',
-          assignedToAgentId: 'editor', result: '🔄 Revision requested — sending back to writer' }],
-      });
-
-      const revisionTask = await rpc('tasks.create', {
-        agentId: 'writer',
-        instruction: `Revise your blog post about "${TOPIC}" addressing all editorial feedback below.`,
-        expectedOutput: 'A fully revised blog post in Markdown addressing all editorial issues.',
-        inputs: { topic: TOPIC },
-        context: `--- ORIGINAL DRAFT ---\n${blogDraft}\n\n--- EDITORIAL FEEDBACK ---\n${editorialReview}\n\n--- RESEARCH ---\n${researchSummary}`,
-      });
-      const revisionTaskId = String(revisionTask['taskId']);
-      statePublisher.taskQueued(revisionTaskId, `Revision: ${TOPIC}`, 'writer');
-      console.log(`  ↳ Revision task queued: ${revisionTaskId}`);
-
-      const revisionRaw = await completionRouter.wait(revisionTaskId, WRITE_WAIT_MS, 'revision');
-      const revisionParsed = parseHandlerResult(revisionRaw);
-      const revisedDraft = revisionParsed.answer;
-      totalTokens += revisionParsed.inputTokens + revisionParsed.outputTokens;
-      totalCost   += revisionParsed.estimatedCost;
-      statePublisher.publishMetadata({ totalTokens, estimatedCost: totalCost });
-
-      console.log('╔' + '═'.repeat(58) + '╗');
-      console.log('║  ✏️  REVISED DRAFT' + ' '.repeat(40) + '║');
-      console.log('╠' + '═'.repeat(58) + '╣');
-      revisedDraft.split('\n').forEach((l) => console.log(`║  ${l.slice(0, 56).padEnd(56)}║`));
-      console.log('╚' + '═'.repeat(58) + '╝');
-
-      // Show AWAITING_VALIDATION for the revised draft — board displays the banner again
-      statePublisher.awaitingHITL(revisionTaskId, 'Revised Draft — Approve for publication?', 'PUBLISH', 'N/A');
-
-      console.log('\n═'.repeat(60));
-      console.log(' REVISED DRAFT READY — HUMAN REVIEW REQUIRED (HITL)');
-      console.log('═'.repeat(60));
-      console.log('\nOptions:\n  [1] PUBLISH\n  [2] REVISE → save draft, stop\n  [3] REJECT\n  [4] VIEW full draft\n');
-      console.log('  (Decide here or click Approve / Revise / Reject on the board)');
-
-      const revisionDecision = await waitForHITLDecision(revisionTaskId, rl, REDIS_URL, revisedDraft);
-      if (revisionDecision === 'PUBLISH') {
-        console.log('\n✅ Revised draft published.\n');
-        statePublisher.workflowFinished(revisionTaskId, TOPIC, totalTokens, totalCost, editTaskId);
-      } else {
-        console.log('\n⏸  Draft saved. Run again to review further.\n');
-        statePublisher.workflowStopped(revisionTaskId, 'Draft saved pending further review', totalTokens, totalCost, editTaskId);
-      }
-
-    } else { // REJECT
-      console.log('\n🗑  Post rejected.\n');
-      const rationaleMatch = /Rationale\s*\n([\s\S]+)$/i.exec(editorialReview);
-      const rationale = rationaleMatch ? rationaleMatch[1].trim() : 'Rejected by human reviewer';
-      if (rationaleMatch) console.log(rationale);
-      statePublisher.workflowStopped(editTaskId, rationale, totalTokens, totalCost, editTaskId);
-    }
-
-    console.log('─'.repeat(60));
-    console.log(`View full trace: ${GATEWAY_URL}  |  Board: examples/blog-team/viewer/board.html`);
-    console.log('─'.repeat(60) + '\n');
-
+  } catch (err: unknown) {
+    runLog.finish('FAILED');
+    throw err;
   } finally {
+    const logPath = await runLog.flush('examples/blog-team/runs').catch(() => null);
+    if (logPath) log.info(`Run log saved to ${logPath}`);
     await cleanup();
   }
 }
 
 main().catch((err: unknown) => {
-  console.error('[Orchestrator] Fatal error:', err);
+  console.error('[BlogTeam] Fatal error:', err);
   process.exit(1);
 });

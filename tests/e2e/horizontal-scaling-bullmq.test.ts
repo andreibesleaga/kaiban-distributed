@@ -30,18 +30,25 @@ describe("E2E: Horizontal Scaling & Concurrency (BullMQ)", () => {
     const completedTasks = new Set<string>();
     const processingAgents = new Set<string>();
 
-    // Listen for completions
-    await oracleDriver.subscribe("kaiban-events-completed", async (payload) => {
-      // payload data contains which actual worker instance handled it
-      completedTasks.add(payload.taskId);
-    });
-
     // 2. Setup 3 multiple cloned agents (identical agent ids and queue names)
     // To prove distribution, we inject a unique workerId inside the handler closure
     const NUM_INSTANCES = 3;
     const NUM_TASKS = 30;
     const QUEUE_NAME = `e2e-scaled-queue-${randomUUID()}`;
     const AGENT_ID = "e2e-scaled-agent";
+    // Unique prefix so completions from other test runs don't pollute the set
+    const RUN_ID = randomUUID().slice(0, 8);
+
+    // Listen for completions — filter to this run's task IDs only so stale
+    // events from other runs on the shared channel don't inflate the count.
+    await oracleDriver.subscribe("kaiban-events-completed", async (payload) => {
+      if (
+        typeof payload.taskId === "string" &&
+        payload.taskId.startsWith(`burst-task-${RUN_ID}-`)
+      ) {
+        completedTasks.add(payload.taskId);
+      }
+    });
 
     const instances: AgentActor[] = [];
 
@@ -73,7 +80,7 @@ describe("E2E: Horizontal Scaling & Concurrency (BullMQ)", () => {
     for (let i = 0; i < NUM_TASKS; i++) {
       publishPromises.push(
         oracleDriver.publish(QUEUE_NAME, {
-          taskId: `burst-task-${i}`,
+          taskId: `burst-task-${RUN_ID}-${i}`,
           agentId: AGENT_ID,
           data: { instruction: `do work ${i}` },
           timestamp: Date.now(),

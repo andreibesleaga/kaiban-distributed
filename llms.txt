@@ -27,6 +27,7 @@ When writing or analyzing code for this repo, you must respect the dual-channel 
 - `/src/application`: The `AgentActor` use cases, task consumption, and retry lifecycle.
 - `/src/adapters`: `GatewayApp` (A2A HTTP REST/JSON-RPC), `SocketGateway` (WebSockets), `AgentStatePublisher`.
 - `/src/infrastructure`: Framework implementations (KaibanJS bridges, BullMQ/Kafka drivers, Heuristic Firewalls, Telemetry).
+- `/src/shared`: Common libraries functions and helpers to be used in `examples/`.
 - `/board`: Standalone React + Vite dashboard for real-time Distributed Kanban visualization.
 - `/examples`: Reference implementations (`blog-team` and the flagship `global-research` swarm).
 - `/docs`: Architecture Decision Records (ADRs), deployment manifests (Helm/K8s/Docker), and API specs.
