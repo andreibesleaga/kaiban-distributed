@@ -30,11 +30,15 @@ export function parseHandlerResult(raw: string): HandlerResult {
       estimatedCost?: number;
     };
     if (typeof parsed === "object" && parsed !== null && "answer" in parsed) {
+      const toSafeNumber = (x: number | undefined): number => {
+        const n = Number(x ?? 0);
+        return Number.isFinite(n) ? n : 0;
+      };
       return {
         answer: String(parsed.answer ?? ""),
-        inputTokens: Number(parsed.inputTokens ?? 0),
-        outputTokens: Number(parsed.outputTokens ?? 0),
-        estimatedCost: Number(parsed.estimatedCost ?? 0),
+        inputTokens: toSafeNumber(parsed.inputTokens),
+        outputTokens: toSafeNumber(parsed.outputTokens),
+        estimatedCost: toSafeNumber(parsed.estimatedCost),
       };
     }
   } catch {
@@ -86,7 +90,8 @@ export function parseScore(
  * Normalises editorial text that may arrive as JSON (from some LLM output formats)
  * into Markdown format for consistent display and parsing.
  *
- * Returns the input unchanged if it is already Markdown (does not start with `{`).
+ * Returns the trimmed input if it is already Markdown (does not start with `{`).
+ * Input is always trimmed before processing or returning.
  */
 export function normaliseEditorialText(raw: string): string {
   const trimmed = raw.trim();

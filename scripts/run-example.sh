@@ -177,9 +177,13 @@ NODE
     exit 1
   fi
 
-  if [[ $node_status -ne 0 ]]; then
-    echo "OpenRouter key preflight OK."
-    return 0
+  if [[ $node_status -ne 0 && $node_status -ne 10 ]]; then
+    if [[ -n "${summary:-}" ]]; then
+      echo "ERROR: OpenRouter key preflight could not be completed (node exit status $node_status): $summary"
+    else
+      echo "ERROR: OpenRouter key preflight could not be completed (node exit status $node_status)."
+    fi
+    exit 1
   fi
 
   if [[ -n "$summary" ]]; then

@@ -122,7 +122,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
 
   await handleDecision({
     ctx, query: QUERY, redisUrl: REDIS_URL, gov, edit,
-    numSearchers: NUM_SEARCHERS, writeWaitMs: WRITE_WAIT_MS, autoPub: AUTO_PUBLISH,
+    writeWaitMs: WRITE_WAIT_MS, autoPub: AUTO_PUBLISH,
     router, pub, rpc, rl, runLog,
   });
 

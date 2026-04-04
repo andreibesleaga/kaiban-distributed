@@ -17,7 +17,7 @@ import {
   normaliseEditorialText,
   waitForHITLDecision,
 } from '../../src/shared';
-import { ResearchStatePublisher, buildSwarmAgents, extractSearchResults } from './state-publisher';
+import { ResearchStatePublisher, extractSearchResults } from './state-publisher';
 import { RunLogger } from './run-logger';
 import type { ResearchContext } from './types';
 
@@ -66,17 +66,15 @@ export async function runSearchPhase(
 ): Promise<void> {
   ctx.status = 'SEARCHING';
   const subTopics = buildSubTopics(query, numSearchers);
-  const taskIds: string[] = [];
 
-  await Promise.all(subTopics.map(async (subTopic, i) => {
+  const taskIds = await Promise.all(subTopics.map(async (subTopic, i) => {
     const task = await rpc.call('tasks.create', {
       agentId: 'searcher',
       instruction: `Research this specific aspect: "${subTopic}". Provide detailed findings with source references.`,
       expectedOutput: 'Detailed research findings with source URLs, key facts, and relevant data points.',
       inputs: { topic: query, subTopic, searchIndex: i },
     });
-    const taskId = String(task['taskId']);
-    taskIds.push(taskId);
+    return String(task['taskId']);
   }));
 
   pub.searchingPhase(taskIds);
@@ -283,7 +281,6 @@ export interface DecisionDeps {
   redisUrl: string;
   gov: GovernanceResult;
   edit: EditorialResult;
-  numSearchers: number;
   writeWaitMs: number;
   autoPub: boolean;
   router: CompletionRouter;
@@ -294,7 +291,7 @@ export interface DecisionDeps {
 }
 
 export async function handleDecision(deps: DecisionDeps): Promise<void> {
-  const { ctx, query, redisUrl, gov, edit, numSearchers, writeWaitMs, autoPub, router, pub, rpc, rl, runLog } = deps;
+  const { ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, rpc, rl, runLog } = deps;
 
   const decision = autoPub ? 'PUBLISH' : await waitForHITLDecision({
     taskId: edit.taskId, rl, redisUrl,
@@ -309,7 +306,6 @@ export async function handleDecision(deps: DecisionDeps): Promise<void> {
     ctx.status = 'COMPLETED'; ctx.editorApproval = true;
     pub.workflowFinished(ctx, edit.taskId);
     runLog.finish('PUBLISHED');
-    buildSwarmAgents(numSearchers); // keep import used
 
   } else if (decision === 'REVISE') {
     await runRevisionPhase({ ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, rpc, rl, runLog });
