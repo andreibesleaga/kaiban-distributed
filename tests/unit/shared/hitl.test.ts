@@ -350,4 +350,121 @@ describe("waitForHITLDecision — board path", () => {
     await promise;
     expect(mockDisconnect).toHaveBeenCalled();
   });
+
+  it("warns when board message has unrecognised decision value", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "warn-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    // Unrecognised decision (e.g. VIEW sent from board, now rejected)
+    capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      JSON.stringify({ taskId: "warn-task", decision: "VIEW" }),
+    );
+    // Promise stays pending — resolve via terminal
+    sendAnswer("1");
+    await expect(promise).resolves.toBe("PUBLISH");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Unrecognised board decision"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("warns when board message taskId does not match", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "expected-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      JSON.stringify({ taskId: "other-task", decision: "PUBLISH" }),
+    );
+    sendAnswer("2");
+    await expect(promise).resolves.toBe("REVISE");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("taskId mismatch"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("warns when Redis subscribe fails and continues in terminal-only mode", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockSubscribe.mockRejectedValueOnce(new Error("Redis connection refused"));
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "redis-fail-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    sendAnswer("3");
+    await expect(promise).resolves.toBe("REJECT");
+    await Promise.resolve(); // allow the subscribe rejection to propagate
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Redis subscribe failed"),
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("terminal wins race when board is slow (board sends after terminal)", async () => {
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "race-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    // Terminal resolves first
+    sendAnswer("1");
+    // Board sends after — should be ignored
+    await Promise.resolve();
+    capturedMessageHandler?.(
+      "kaiban-hitl-decisions",
+      boardMsg("race-task", "REJECT"),
+    );
+    await expect(promise).resolves.toBe("PUBLISH");
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("board wins race when terminal is slow (board sends before terminal)", async () => {
+    const { rl } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "race-board-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    // Board resolves first
+    capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      boardMsg("race-board-task", "REVISE"),
+    );
+    // Terminal never answers — promise should already be resolved
+    await expect(promise).resolves.toBe("REVISE");
+  });
+
+  it("ignores malformed (invalid JSON) board messages — unwrapVerified returns null, no throw", async () => {
+    // unwrapVerified catches JSON.parse errors internally and returns null.
+    // The try/catch in handleBoardMessage is only hit when unwrapVerified itself throws
+    // (e.g. HMAC buffer size mismatch). For plain bad JSON, the message is silently ignored.
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "malformed-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    // unwrapVerified returns null for bad JSON → parsed is null → early return, no warn
+    capturedMessageHandler!("kaiban-hitl-decisions", "{{not json}}");
+    // Promise remains pending — resolve via terminal
+    sendAnswer("1");
+    await expect(promise).resolves.toBe("PUBLISH");
+  });
 });

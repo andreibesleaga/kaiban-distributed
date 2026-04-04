@@ -305,13 +305,10 @@ details.task-result[open] summary::before { content: '▼ '; }
   50%      { opacity: 0.5; transform: scale(1.4); }
 }
 
-/* ── HITL decision buttons ── */
+/* ── HITL banner hint ── */
+.banner-hint { font-size: 0.78rem; color: #94a3b8; margin-top: 6px; font-style: italic; }
+
+/* ── HITL task groups (display-only — labels showing awaiting tasks) ── */
 .hitl-task-group { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
 .hitl-task-group:first-child { border-top: none; margin-top: 6px; }
-.hitl-task-label { font-size: 0.78rem; color: #94a3b8; margin-bottom: 6px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-.hitl-buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-.btn-hitl { padding: 8px 18px; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
-.btn-hitl:hover { opacity: 0.85; }
-.btn-approve { background: #16a34a; color: #fff; }
-.btn-revise  { background: #d97706; color: #fff; }
-.btn-reject  { background: #dc2626; color: #fff; }
+.hitl-task-label { font-size: 0.78rem; color: #94a3b8; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }

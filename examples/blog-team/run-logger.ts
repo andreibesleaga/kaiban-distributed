@@ -113,8 +113,12 @@ export class RunLogger {
       dir,
       `${new Date().toISOString().replace(/[:.]/g, '-')}-${slugify(this.record.topic || 'blog-run')}.json`,
     );
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, JSON.stringify(this.record, null, 2));
+    try {
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, JSON.stringify(this.record, null, 2));
+    } catch (err) {
+      console.error('[RunLogger] Failed to write run log:', err);
+    }
     return target;
   }
 }

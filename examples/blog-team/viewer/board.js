@@ -29,9 +29,6 @@ const state = {
   metadata: null,
 };
 
-// (hitlTaskId retained for backward compat with any external code, but no longer drives rendering)
-let hitlTaskId = null;
-
 // Live-duration timer — active while workflow is RUNNING
 let durationTimer = null;
 
@@ -53,41 +50,6 @@ function addLog(type, msg, highlight = false) {
   ].join('');
   box.insertBefore(entry, box.firstChild);
   if (box.children.length > 200) box.removeChild(box.lastChild);
-}
-
-// ── HITL Decision ────────────────────────────────────────────────────────
-
-/**
- * Send a HITL decision to the gateway via Socket.io.
- * Mirrors the React board's sendHitlDecision() in socketClient.ts.
- * Uses acknowledgement callback with 8-second timeout guard.
- */
-function sendHitlDecision(taskId, decision) {
-  if (!socket.connected) {
-    addLog('ERROR', `Cannot send decision — not connected (${decision})`, true);
-    return;
-  }
-  addLog('HITL', `Sending decision: ${decision} for task ${taskId.slice(-8)}…`, false);
-
-  const ACK_TIMEOUT_MS = 8000;
-  let ackReceived = false;
-
-  const timer = setTimeout(() => {
-    if (!ackReceived) {
-      addLog('ERROR', `Decision not confirmed by gateway within ${ACK_TIMEOUT_MS / 1000}s — try again`, true);
-    }
-  }, ACK_TIMEOUT_MS);
-
-  socket.emit('hitl:decision', { taskId, decision }, (response) => {
-    ackReceived = true;
-    clearTimeout(timer);
-    if (response?.ok) {
-      addLog('HITL', `Decision confirmed: ${decision} for task ${taskId.slice(-8)}`, true);
-    } else {
-      const reason = response?.error ?? 'gateway error';
-      addLog('ERROR', `Decision rejected by gateway: ${reason}`, true);
-    }
-  });
 }
 
 // ── Result parser ────────────────────────────────────────────────────────
@@ -397,7 +359,6 @@ socket.on('connect', () => {
   state.tasks  = [];
   state.workflowStatus = 'INITIAL';
   state.metadata = null;
-  hitlTaskId = null;
   if (durationTimer) { clearInterval(durationTimer); durationTimer = null; }
   // Request full snapshot replay from gateway
   socket.emit('state:request');

@@ -16,7 +16,7 @@ import {
 } from "../../infrastructure/security/channel-signing";
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
-const DEFAULT_DECISIONS = ["PUBLISH", "REVISE", "REJECT", "VIEW"];
+const DEFAULT_DECISIONS = ["PUBLISH", "REVISE", "REJECT"];
 
 /**
  * Accumulated state snapshot.

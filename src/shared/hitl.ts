@@ -71,8 +71,9 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
       handleBoardMessage(msg, taskId, finish);
     });
 
-    sub.subscribe("kaiban-hitl-decisions").catch(() => {
-      // Redis unavailable — terminal-only mode, no action needed
+    console.log(`[HITL] Subscribing to kaiban-hitl-decisions for taskId …${taskId.slice(-8)}`);
+    sub.subscribe("kaiban-hitl-decisions").catch((err: unknown) => {
+      console.warn("[HITL] Redis subscribe failed — terminal-only mode:", err);
     });
 
     const finish = (decision: HitlDecision): void => {
@@ -108,12 +109,18 @@ function handleBoardMessage(
     )
       return;
     const decision = BOARD_DECISION_MAP[parsed.decision];
-    if (parsed.taskId === taskId && decision) {
-      console.log(`\n[HITL] Board decision received: ${parsed.decision}`);
-      finish(decision);
+    if (!decision) {
+      console.warn(`[HITL] Unrecognised board decision: ${parsed.decision}`);
+      return;
     }
-  } catch {
-    // Ignore malformed / unsigned messages
+    if (parsed.taskId !== taskId) {
+      console.warn(`[HITL] taskId mismatch — expected …${taskId.slice(-8)}, got …${parsed.taskId.slice(-8)}`);
+      return;
+    }
+    console.log(`\n[HITL] Board decision received: ${parsed.decision} for taskId …${taskId.slice(-8)}`);
+    finish(decision);
+  } catch (err) {
+    console.warn("[HITL] Failed to parse/verify board message:", err);
   }
 }
 
@@ -129,9 +136,9 @@ function spawnTerminalPrompt(
   const ask = (): void => {
     rl.question(PROMPT, (answer) => {
       const a = answer.trim();
-      if (a === "1") finish("PUBLISH");
-      else if (a === "2") finish("REVISE");
-      else if (a === "3") finish("REJECT");
+      if (a === "1") { console.log("\n[HITL] Terminal decision: PUBLISH"); finish("PUBLISH"); }
+      else if (a === "2") { console.log("\n[HITL] Terminal decision: REVISE"); finish("REVISE"); }
+      else if (a === "3") { console.log("\n[HITL] Terminal decision: REJECT"); finish("REJECT"); }
       else {
         if (a === "4" && onView) onView();
         ask();

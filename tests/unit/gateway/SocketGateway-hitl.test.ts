@@ -182,4 +182,46 @@ describe("SocketGateway — HITL edge cases", () => {
     hitl({ taskId: "t1", decision: "APPROVE" }, ack2);
     await vi.waitFor(() => expect(ack2).toHaveBeenCalledWith({ ok: true }));
   });
+
+  it("rejects VIEW decision — VIEW is terminal-only, not a valid board decision", () => {
+    const { hitl } = connectSocket();
+    const ack = vi.fn();
+    hitl({ taskId: "abc-123", decision: "VIEW" }, ack);
+    expect(ack).toHaveBeenCalledWith({
+      ok: false,
+      error: "invalid decision value: VIEW",
+    });
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+
+  it("returns ok:false ACK when Redis publish fails", async () => {
+    mockPublish.mockRejectedValueOnce(new Error("Redis down"));
+    const { hitl } = connectSocket();
+    const ack = vi.fn();
+    hitl({ taskId: "redis-err-task", decision: "PUBLISH" }, ack);
+    await vi.waitFor(() =>
+      expect(ack).toHaveBeenCalledWith({
+        ok: false,
+        error: "Redis publish failed",
+      }),
+    );
+  });
+
+  it("calls ack with ok:true and logs after successful Redis publish", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { hitl } = connectSocket();
+    const ack = vi.fn();
+    hitl({ taskId: "log-task-12345678", decision: "REVISE" }, ack);
+    await vi.waitFor(() => expect(ack).toHaveBeenCalledWith({ ok: true }));
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("HITL decision received"),
+    );
+    logSpy.mockRestore();
+  });
+
+  it("handles missing ack callback gracefully (no-throw)", () => {
+    const { hitl } = connectSocket();
+    // No ack provided — should not throw
+    expect(() => hitl({ taskId: "no-ack-task", decision: "INVALID" })).not.toThrow();
+  });
 });
