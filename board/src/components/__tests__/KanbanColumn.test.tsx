@@ -54,8 +54,9 @@ describe('KanbanColumn', () => {
   });
 
   it('works without onTaskClick (no crash on card click)', () => {
-    render(<KanbanColumn title="To Do" tasks={tasks} agents={agents} accent="" />);
-    expect(() => fireEvent.click(screen.getByRole('button', { name: /Task Alpha/i }))).not.toThrow();
+    const { getByText } = render(<KanbanColumn title="To Do" tasks={tasks} agents={agents} accent="" />);
+    // Without onTaskClick cards have no onClick → no role="button"; find by visible text
+    expect(() => fireEvent.click(getByText('Task Alpha'))).not.toThrow();
   });
 
   it('passes the correct agent to each TaskCard', () => {

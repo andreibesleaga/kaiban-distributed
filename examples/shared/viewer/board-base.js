@@ -58,11 +58,15 @@
 
   // ── Gateway URL resolver ─────────────────────────────────────────────────
 
-  /** Resolve gateway URL from query param, window global, or localhost fallback. */
+  /** Resolve gateway URL from query param, body data attribute, window global, or localhost fallback. */
   function resolveGatewayUrl() {
     const fromQuery = new URLSearchParams(location.search).get('gateway');
     if (fromQuery) {
       try { return new URL(fromQuery).href; } catch (_) { /* fall through */ }
+    }
+    const fromDataAttr = document.body && document.body.dataset.gateway;
+    if (fromDataAttr) {
+      try { return new URL(fromDataAttr).href; } catch (_) { /* fall through */ }
     }
     if (window.GATEWAY_URL) {
       try { return new URL(window.GATEWAY_URL).href; } catch (_) { /* fall through */ }

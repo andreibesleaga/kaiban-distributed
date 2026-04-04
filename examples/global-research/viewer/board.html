@@ -20,8 +20,8 @@
 
   <title>Kaiban Distributed — Global Research Swarm</title>
 
-  <!-- PWA manifest -->
-  <link rel="manifest" href="../../shared/viewer/manifest.json">
+  <!-- PWA manifest (local copy so start_url resolves to this viewer's board.html) -->
+  <link rel="manifest" href="./manifest.json">
 
   <link rel="stylesheet" href="../../shared/viewer/board-base.css">
   <link rel="stylesheet" href="board.css">
@@ -162,13 +162,8 @@
   <script src="../../shared/viewer/board-base.js"></script>
   <script src="board.js"></script>
 
-  <!-- PWA service worker registration -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('../../shared/viewer/sw.js', { scope: './' })
-        .catch(function () { /* SW registration optional — silently ignore failures */ });
-    }
-  </script>
+  <!-- PWA service worker registration (external to comply with CSP script-src 'self') -->
+  <script src="../../shared/viewer/sw-register.js"></script>
 
 </body>
 

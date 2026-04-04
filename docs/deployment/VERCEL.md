@@ -71,11 +71,24 @@ During the first deployment, Vercel will ask:
 
 ### Step 4 — Configure the Gateway URL
 
-The viewer reads the gateway address from the `data-gateway` attribute on `<body>`. After deploying the gateway elsewhere, open the Vercel project's **Environment Variables** settings and inject the URL at build time, or set it directly in `board.html`:
+The viewer resolves the gateway address from the first of these sources (in priority order):
+
+1. **`?gateway=` query parameter** — append `?gateway=https://your-gateway.railway.app` to the URL.
+2. **`data-gateway` attribute on `<body>`** — set it directly in `board.html`:
 
 ```html
 <body data-gateway="https://your-gateway.railway.app">
 ```
+
+3. **`window.GATEWAY_URL` global** — set via a `<script>` block before `board-base.js` loads:
+
+```html
+<script>window.GATEWAY_URL = "https://your-gateway.railway.app";</script>
+```
+
+4. **Fallback** — `http://localhost:3000` (development default).
+
+After deploying the gateway elsewhere, open the Vercel project's **Environment Variables** settings and inject the URL at build time, or set it directly in `board.html` using option 2 above.
 
 ### Step 5 — Custom Domain (optional)
 

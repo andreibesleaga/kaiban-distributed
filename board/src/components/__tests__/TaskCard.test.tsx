@@ -94,22 +94,39 @@ describe('TaskCard', () => {
   });
 
   it('does not throw when onClick is not provided and card is clicked', () => {
-    render(<TaskCard task={baseTask} />);
-    expect(() => fireEvent.click(screen.getByRole('button'))).not.toThrow();
+    const { container } = render(<TaskCard task={baseTask} />);
+    // No onClick → no role="button"; find via the aria-label attribute directly
+    const card = container.firstChild as HTMLElement;
+    expect(() => fireEvent.click(card)).not.toThrow();
   });
 
-  it('has cursor-pointer class', () => {
-    render(<TaskCard task={baseTask} />);
+  it('has cursor-pointer class when onClick is provided', () => {
+    const onClick = vi.fn();
+    render(<TaskCard task={baseTask} onClick={onClick} />);
     expect(screen.getByRole('button').className).toContain('cursor-pointer');
   });
 
+  it('does not have cursor-pointer class when onClick is absent', () => {
+    const { container } = render(<TaskCard task={baseTask} />);
+    expect((container.firstChild as HTMLElement).className).not.toContain('cursor-pointer');
+  });
+
   it('has proper aria-label', () => {
-    render(<TaskCard task={baseTask} />);
+    const onClick = vi.fn();
+    render(<TaskCard task={baseTask} onClick={onClick} />);
     expect(screen.getByRole('button')).toHaveAttribute('aria-label', 'View details for task: Research AI trends');
   });
 
-  it('is keyboard focusable (tabIndex=0)', () => {
-    render(<TaskCard task={baseTask} />);
+  it('is keyboard focusable (tabIndex=0) when onClick is provided', () => {
+    const onClick = vi.fn();
+    render(<TaskCard task={baseTask} onClick={onClick} />);
     expect(screen.getByRole('button')).toHaveAttribute('tabindex', '0');
+  });
+
+  it('does not have tabIndex or role="button" when onClick is absent', () => {
+    const { container } = render(<TaskCard task={baseTask} />);
+    const card = container.firstChild as HTMLElement;
+    expect(card.getAttribute('role')).toBeNull();
+    expect(card.getAttribute('tabindex')).toBeNull();
   });
 });

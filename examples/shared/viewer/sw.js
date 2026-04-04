@@ -13,13 +13,17 @@
 
 const CACHE_VERSION = 'kaiban-viewer-v1';
 
-// Static assets to pre-cache on install
+// Static assets to pre-cache on install.
+// Example-specific files are resolved from the registered scope (the viewer
+// directory), while shared assets are resolved relative to this SW file.
+// self.registration.scope is set to the viewer directory when the SW is
+// registered with { scope: './' } from each example's board.html.
 const PRECACHE_URLS = [
-  './board.html',
-  './board.js',
-  './board.css',
-  '../../shared/viewer/board-base.js',
-  '../../shared/viewer/board-base.css',
+  self.registration.scope + 'board.html',
+  self.registration.scope + 'board.js',
+  self.registration.scope + 'board.css',
+  './board-base.js',
+  './board-base.css',
 ];
 
 // ── Install: pre-cache all static assets ─────────────────────────────────
@@ -68,7 +72,9 @@ self.addEventListener('fetch', event => {
           // Cache successful GET responses for static files
           if (response.ok && event.request.method === 'GET') {
             const clone = response.clone();
-            caches.open(CACHE_VERSION).then(cache => cache.put(event.request, clone));
+            caches.open(CACHE_VERSION)
+              .then(cache => cache.put(event.request, clone))
+              .catch(function () { /* quota exceeded or non-cacheable — ignore */ });
           }
           return response;
         })

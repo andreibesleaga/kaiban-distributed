@@ -30,7 +30,10 @@ window.KaibanViewer.createBoard({
     var nodesEl = document.getElementById('meta-nodes');
     if (!nodesEl) return;
 
-    if (!Array.isArray(meta.activeNodes) || meta.activeNodes.length === 0) return;
+    if (!Array.isArray(meta.activeNodes) || meta.activeNodes.length === 0) {
+      nodesEl.innerHTML = '<span style="color:#475569; font-size:0.8rem">No active nodes</span>';
+      return;
+    }
 
     nodesEl.innerHTML = meta.activeNodes
       .map(function (n) { return '<span class="node-badge" role="listitem">' + escHTML(n) + '</span>'; })

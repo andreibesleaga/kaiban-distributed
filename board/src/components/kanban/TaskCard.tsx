@@ -21,12 +21,22 @@ export default function TaskCard({ task, agent, onClick }: Props) {
 
   return (
     <div
-      className="group rounded-lg border border-slate-700 bg-slate-800 p-3 flex flex-col gap-2 hover:border-slate-500 transition-colors cursor-pointer"
+      className={clsx(
+        'group rounded-lg border border-slate-700 bg-slate-800 p-3 flex flex-col gap-2 hover:border-slate-500 transition-colors',
+        onClick && 'cursor-pointer',
+      )}
       onClick={onClick}
-      role="button"
-      tabIndex={0}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       aria-label={`View details for task: ${fullTitle}`}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick?.(); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          onClick?.();
+        } else if (e.key === ' ') {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       {/* Title — expands on hover to show full text */}
       <p
