@@ -57,34 +57,78 @@ const BOARD_DECISION_MAP: Record<string, HitlDecision> = {
  */
 export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
   const { taskId, rl, redisUrl, onView } = opts;
+  const listKey = `kaiban-hitl-decisions:${taskId}`;
 
   return new Promise<HitlDecision>((resolve) => {
     let resolved = false;
 
-    // ── Board path: subscribe to Redis HITL channel ─────────────────────
+    const finish = (decision: HitlDecision): void => {
+      if (resolved) return;
+      resolved = true;
+      sub.disconnect();
+      poller.disconnect();
+      // Feed empty line to release any pending rl.question callback so the
+      // readline interface is ready for a potential second HITL round (REVISE).
+      if (rl) rl.write("\n");
+      resolve(decision);
+    };
+
+    // ── Board path A: pub/sub (fast — delivers in <1ms when timing is right) ─
     // Register handler BEFORE subscribe() to avoid the race where a message
     // arrives between subscribe completing and .then() continuation.
     const sub = new Redis(redisUrl, { lazyConnect: false });
+
+    sub.on("error", (err: unknown) => {
+      if (!resolved) console.warn("[HITL] Redis subscriber error:", err);
+    });
 
     sub.on("message", (_ch: string, msg: string) => {
       if (resolved) return;
       handleBoardMessage(msg, taskId, finish);
     });
 
-    console.log(`[HITL] Subscribing to kaiban-hitl-decisions for taskId …${taskId.slice(-8)}`);
-    sub.subscribe("kaiban-hitl-decisions").catch((err: unknown) => {
-      console.warn("[HITL] Redis subscribe failed — terminal-only mode:", err);
+    console.log(
+      `[HITL] Subscribing to kaiban-hitl-decisions for taskId …${taskId.slice(-8)}`,
+    );
+    sub
+      .subscribe("kaiban-hitl-decisions")
+      .then(() => {
+        console.log(`[HITL] ✓ Subscribed (pub/sub path ready)`);
+      })
+      .catch((err: unknown) => {
+        console.warn(
+          "[HITL] Redis subscribe failed — falling back to list-poll only:",
+          err,
+        );
+      });
+
+    // ── Board path B: BRPOP polling (reliable — works even if pub/sub races) ─
+    // The gateway writes to `kaiban-hitl-decisions:<taskId>` via LPUSH so the
+    // message persists in Redis until BRPOP consumes it — no timing dependency.
+    const poller = new Redis(redisUrl, { lazyConnect: false });
+
+    poller.on("error", (err: unknown) => {
+      if (!resolved) console.warn("[HITL] Redis poller error:", err);
     });
 
-    const finish = (decision: HitlDecision): void => {
-      if (resolved) return;
-      resolved = true;
-      sub.disconnect();
-      // Feed empty line to release any pending rl.question callback so the
-      // readline interface is ready for a potential second HITL round (REVISE).
-      if (rl) rl.write("\n");
-      resolve(decision);
+    const runPoller = async (): Promise<void> => {
+      while (!resolved) {
+        try {
+          const item = await poller.brpop(listKey, 1);
+          if (item && !resolved) {
+            console.log(`[HITL] ✓ Received via list-poll path`);
+            handleBoardMessage(item[1], taskId, finish);
+          }
+        } catch (err) {
+          if (!resolved) {
+            console.warn("[HITL] BRPOP error (retrying):", err);
+            await new Promise<void>((r) => setTimeout(r, 500));
+          }
+        }
+      }
     };
+
+    void runPoller();
 
     // ── Terminal path ────────────────────────────────────────────────────
     if (rl) spawnTerminalPrompt(rl, finish, onView);
@@ -114,10 +158,14 @@ function handleBoardMessage(
       return;
     }
     if (parsed.taskId !== taskId) {
-      console.warn(`[HITL] taskId mismatch — expected …${taskId.slice(-8)}, got …${parsed.taskId.slice(-8)}`);
+      console.warn(
+        `[HITL] taskId mismatch — expected …${taskId.slice(-8)}, got …${parsed.taskId.slice(-8)}`,
+      );
       return;
     }
-    console.log(`\n[HITL] Board decision received: ${parsed.decision} for taskId …${taskId.slice(-8)}`);
+    console.log(
+      `\n[HITL] Board decision received: ${parsed.decision} for taskId …${taskId.slice(-8)}`,
+    );
     finish(decision);
   } catch (err) {
     console.warn("[HITL] Failed to parse/verify board message:", err);
@@ -136,10 +184,16 @@ function spawnTerminalPrompt(
   const ask = (): void => {
     rl.question(PROMPT, (answer) => {
       const a = answer.trim();
-      if (a === "1") { console.log("\n[HITL] Terminal decision: PUBLISH"); finish("PUBLISH"); }
-      else if (a === "2") { console.log("\n[HITL] Terminal decision: REVISE"); finish("REVISE"); }
-      else if (a === "3") { console.log("\n[HITL] Terminal decision: REJECT"); finish("REJECT"); }
-      else {
+      if (a === "1") {
+        console.log("\n[HITL] Terminal decision: PUBLISH");
+        finish("PUBLISH");
+      } else if (a === "2") {
+        console.log("\n[HITL] Terminal decision: REVISE");
+        finish("REVISE");
+      } else if (a === "3") {
+        console.log("\n[HITL] Terminal decision: REJECT");
+        finish("REJECT");
+      } else {
         if (a === "4" && onView) onView();
         ask();
       }

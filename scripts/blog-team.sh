@@ -72,7 +72,6 @@ case "$COMMAND" in
     # Stop any conflicting stacks seamlessly
     docker compose -f examples/blog-team/docker-compose.yml down --remove-orphans 2>/dev/null || true
     docker compose -f examples/blog-team/docker-compose.kafka.yml down --remove-orphans 2>/dev/null || true
-    docker network prune --force 2>/dev/null
 
     # Start docker compose in detached mode (excludes orchestrator — started separately)
     echo "Booting Docker containers..."
@@ -125,7 +124,11 @@ case "$COMMAND" in
       # readline-based HITL decisions [1/2/3/4] work from this terminal.
       # --rm removes the container automatically when the orchestrator exits.
       echo -e "\n\033[1;36mStarting Orchestrator container (interactive HITL attached)...\033[0m"
-      docker compose -f "$COMPOSE_FILE" --env-file .env run --rm \
+      # Rebuild the orchestrator image so it picks up the latest src/shared/hitl.ts
+      # changes (e.g. BRPOP fallback). The earlier `up -d --build` skips profiled
+      # services, so the orchestrator image must be rebuilt explicitly here.
+      docker compose -f "$COMPOSE_FILE" --env-file .env --profile cli-only build orchestrator
+      docker compose -f "$COMPOSE_FILE" --env-file .env --profile cli-only run --rm \
         -e TOPIC="$TOPIC" \
         orchestrator || true
     else

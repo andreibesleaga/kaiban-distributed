@@ -86,15 +86,10 @@ describe("loadConfig", () => {
     expect(config.otelEndpoint).toBe("http://otel:4318/v1/traces");
   });
 
-  it("validHitlDecisions defaults to PUBLISH,REVISE,REJECT,VIEW", () => {
+  it("validHitlDecisions defaults to PUBLISH,REVISE,REJECT (no VIEW — VIEW is terminal-only)", () => {
     delete process.env["VALID_HITL_DECISIONS"];
     const config = loadConfig();
-    expect(config.validHitlDecisions).toEqual([
-      "PUBLISH",
-      "REVISE",
-      "REJECT",
-      "VIEW",
-    ]);
+    expect(config.validHitlDecisions).toEqual(["PUBLISH", "REVISE", "REJECT"]);
   });
 
   it("validHitlDecisions reads from env and splits on comma", () => {

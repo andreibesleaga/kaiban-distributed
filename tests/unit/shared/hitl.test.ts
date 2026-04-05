@@ -2,33 +2,121 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { waitForHITLDecision } from "../../../src/shared";
 import type { HitlOptions } from "../../../src/shared";
 
-// ── ioredis mock ──────────────────────────────────────────────────────────────
+// ── channel-signing mock — default: plain JSON pass-through (no secret) ────────
+// Allows per-test override to test throw path in handleBoardMessage.
 
-let capturedMessageHandler: ((ch: string, msg: string) => void) | null = null;
-const mockOn = vi
-  .fn()
-  .mockImplementation(
-    (event: string, handler: (ch: string, msg: string) => void) => {
-      if (event === "message") capturedMessageHandler = handler;
-    },
-  );
-const mockSubscribe = vi.fn().mockResolvedValue(1);
-const mockDisconnect = vi.fn();
+const {
+  state,
+  mockUnwrapVerified,
+  mockSubscribe,
+  mockDisconnect,
+  mockBrpop,
+  mockSubOn,
+  mockPollerOn,
+} = vi.hoisted(() => {
+  const state = {
+    capturedMessageHandler: null as ((ch: string, msg: string) => void) | null,
+    capturedPollerErrorHandler: null as ((err: unknown) => void) | null,
+    redisCallCount: 0,
+  };
+
+  const mockUnwrapVerified = vi
+    .fn()
+    .mockImplementation((msg: string): Record<string, unknown> | null => {
+      try {
+        return JSON.parse(msg) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    });
+
+  const mockSubscribe = vi.fn().mockResolvedValue(1);
+  const mockDisconnect = vi.fn();
+  const mockBrpop = vi.fn().mockImplementation(() => new Promise(() => {}));
+
+  const mockSubOn = vi
+    .fn()
+    .mockImplementation(
+      (event: string, handler: (ch: string, msg: string) => void) => {
+        if (event === "message") state.capturedMessageHandler = handler;
+      },
+    );
+
+  const mockPollerOn = vi
+    .fn()
+    .mockImplementation((event: string, handler: (err: unknown) => void) => {
+      if (event === "error") state.capturedPollerErrorHandler = handler;
+    });
+
+  return {
+    state,
+    mockUnwrapVerified,
+    mockSubscribe,
+    mockDisconnect,
+    mockBrpop,
+    mockSubOn,
+    mockPollerOn,
+  };
+});
+
+vi.mock("../../../src/infrastructure/security/channel-signing", () => ({
+  unwrapVerified: mockUnwrapVerified,
+  wrapSigned: vi.fn((p: Record<string, unknown>) => JSON.stringify(p)),
+}));
+
+// ── ioredis mock — two distinct Redis instances: sub (pub/sub) + poller (BRPOP) ─
+//
+// waitForHITLDecision creates Redis instances in order:
+//   1st new Redis() → sub  (pub/sub subscriber)
+//   2nd new Redis() → poller (BRPOP list poller)
+//
+// redisCallCount tracks which instance is being created.
 
 vi.mock("ioredis", () => ({
   Redis: vi.fn().mockImplementation(function () {
-    return { on: mockOn, subscribe: mockSubscribe, disconnect: mockDisconnect };
+    state.redisCallCount++;
+    if (state.redisCallCount % 2 === 1) {
+      // Odd calls = sub (pub/sub subscriber)
+      return {
+        on: mockSubOn,
+        subscribe: mockSubscribe,
+        disconnect: mockDisconnect,
+      };
+    }
+    // Even calls = poller (BRPOP)
+    return {
+      on: mockPollerOn,
+      brpop: mockBrpop,
+      disconnect: mockDisconnect,
+    };
   }),
 }));
 
-// ── channel-signing: no CHANNEL_SIGNING_SECRET → plain JSON passthrough ──────
+// ── Helper: build a valid board message ───────────────────────────────────────
 
-// Helper: build a valid board message
 function boardMsg(taskId: string, decision: string): string {
   return JSON.stringify({ taskId, decision });
 }
 
-// Helper: build a readline mock whose question() calls the callback after setup
+function resetHoistedMocks(): void {
+  vi.clearAllMocks();
+  state.capturedMessageHandler = null;
+  state.capturedPollerErrorHandler = null;
+  state.redisCallCount = 0;
+  mockUnwrapVerified.mockImplementation(
+    (msg: string): Record<string, unknown> | null => {
+      try {
+        return JSON.parse(msg) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    },
+  );
+  delete process.env["CHANNEL_SIGNING_SECRET"];
+}
+
+// ── Helper: build a readline mock whose question() calls the callback ─────────
+
 function makeRlMock(): {
   rl: HitlOptions["rl"];
   sendAnswer: (answer: string) => void;
@@ -54,11 +142,11 @@ function makeRlMock(): {
   };
 }
 
+// ── Terminal path ─────────────────────────────────────────────────────────────
+
 describe("waitForHITLDecision — terminal path", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    capturedMessageHandler = null;
-    delete process.env["CHANNEL_SIGNING_SECRET"];
+    resetHoistedMocks();
   });
 
   it("resolves PUBLISH when user inputs '1'", async () => {
@@ -166,11 +254,11 @@ describe("waitForHITLDecision — terminal path", () => {
   });
 });
 
+// ── Board path (pub/sub) ──────────────────────────────────────────────────────
+
 describe("waitForHITLDecision — board path", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    capturedMessageHandler = null;
-    delete process.env["CHANNEL_SIGNING_SECRET"];
+    resetHoistedMocks();
   });
 
   it("resolves PUBLISH when board sends PUBLISH for matching taskId", async () => {
@@ -182,7 +270,7 @@ describe("waitForHITLDecision — board path", () => {
     });
     // Simulate board message arriving after subscribe
     await Promise.resolve(); // allow subscribe to be called
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("board-task", "PUBLISH"),
     );
@@ -197,7 +285,7 @@ describe("waitForHITLDecision — board path", () => {
       redisUrl: "redis://localhost:6379",
     });
     await Promise.resolve();
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("board-task-2", "REVISE"),
     );
@@ -212,7 +300,7 @@ describe("waitForHITLDecision — board path", () => {
       redisUrl: "redis://localhost:6379",
     });
     await Promise.resolve();
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("board-task-3", "REJECT"),
     );
@@ -228,7 +316,7 @@ describe("waitForHITLDecision — board path", () => {
     });
     await Promise.resolve();
     // Wrong taskId — should be ignored
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("other-task", "PUBLISH"),
     );
@@ -246,7 +334,7 @@ describe("waitForHITLDecision — board path", () => {
     });
     await Promise.resolve();
     // Bad JSON
-    capturedMessageHandler!("kaiban-hitl-decisions", "not valid json {{");
+    state.capturedMessageHandler!("kaiban-hitl-decisions", "not valid json {{");
     // Still pending — resolve via terminal
     sendAnswer("1");
     await expect(promise).resolves.toBe("PUBLISH");
@@ -261,12 +349,12 @@ describe("waitForHITLDecision — board path", () => {
     });
     await Promise.resolve();
     // Message with no taskId
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       JSON.stringify({ decision: "PUBLISH" }),
     );
     // Message with no decision
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       JSON.stringify({ taskId: "task-fields" }),
     );
@@ -284,7 +372,7 @@ describe("waitForHITLDecision — board path", () => {
     });
     await Promise.resolve();
     // Unknown decision value
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       JSON.stringify({ taskId: "task-unknown", decision: "MAYBE" }),
     );
@@ -301,12 +389,12 @@ describe("waitForHITLDecision — board path", () => {
       redisUrl: "redis://localhost:6379",
     });
     await Promise.resolve();
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("task-dup", "PUBLISH"),
     );
     // Second message after resolution — should be silently ignored
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("task-dup", "REJECT"),
     );
@@ -320,7 +408,7 @@ describe("waitForHITLDecision — board path", () => {
       redisUrl: "redis://localhost:6379",
     });
     await Promise.resolve();
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("auto-task", "PUBLISH"),
     );
@@ -361,7 +449,7 @@ describe("waitForHITLDecision — board path", () => {
     });
     await Promise.resolve();
     // Unrecognised decision (e.g. VIEW sent from board, now rejected)
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       JSON.stringify({ taskId: "warn-task", decision: "VIEW" }),
     );
@@ -383,7 +471,7 @@ describe("waitForHITLDecision — board path", () => {
       redisUrl: "redis://localhost:6379",
     });
     await Promise.resolve();
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       JSON.stringify({ taskId: "other-task", decision: "PUBLISH" }),
     );
@@ -425,12 +513,13 @@ describe("waitForHITLDecision — board path", () => {
     sendAnswer("1");
     // Board sends after — should be ignored
     await Promise.resolve();
-    capturedMessageHandler?.(
+    state.capturedMessageHandler?.(
       "kaiban-hitl-decisions",
       boardMsg("race-task", "REJECT"),
     );
     await expect(promise).resolves.toBe("PUBLISH");
-    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+    // sub.disconnect() + poller.disconnect() — both are called on resolution
+    expect(mockDisconnect).toHaveBeenCalledTimes(2);
   });
 
   it("board wins race when terminal is slow (board sends before terminal)", async () => {
@@ -442,7 +531,7 @@ describe("waitForHITLDecision — board path", () => {
     });
     await Promise.resolve();
     // Board resolves first
-    capturedMessageHandler!(
+    state.capturedMessageHandler!(
       "kaiban-hitl-decisions",
       boardMsg("race-board-task", "REVISE"),
     );
@@ -462,9 +551,163 @@ describe("waitForHITLDecision — board path", () => {
     });
     await Promise.resolve();
     // unwrapVerified returns null for bad JSON → parsed is null → early return, no warn
-    capturedMessageHandler!("kaiban-hitl-decisions", "{{not json}}");
+    state.capturedMessageHandler!("kaiban-hitl-decisions", "{{not json}}");
     // Promise remains pending — resolve via terminal
     sendAnswer("1");
     await expect(promise).resolves.toBe("PUBLISH");
+  });
+});
+
+// ── BRPOP path ────────────────────────────────────────────────────────────────
+
+describe("waitForHITLDecision — BRPOP path", () => {
+  beforeEach(() => {
+    resetHoistedMocks();
+  });
+
+  it("resolves via BRPOP when poller receives a matching message", async () => {
+    const taskId = "brpop-task-1";
+    const listKey = `kaiban-hitl-decisions:${taskId}`;
+    mockBrpop.mockResolvedValueOnce([listKey, boardMsg(taskId, "PUBLISH")]);
+
+    const promise = waitForHITLDecision({
+      taskId,
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+
+    await expect(promise).resolves.toBe("PUBLISH");
+  });
+
+  it("skips null BRPOP result (timeout) and resolves on next successful poll", async () => {
+    const taskId = "brpop-null-task";
+    const listKey = `kaiban-hitl-decisions:${taskId}`;
+    // First poll: timeout (null), second poll: message
+    mockBrpop
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([listKey, boardMsg(taskId, "REVISE")]);
+
+    const promise = waitForHITLDecision({
+      taskId,
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+
+    await expect(promise).resolves.toBe("REVISE");
+  });
+
+  it("logs warning and retries when BRPOP throws, then resolves", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const taskId = "brpop-error-task";
+    const listKey = `kaiban-hitl-decisions:${taskId}`;
+
+    // First poll throws, second poll succeeds
+    mockBrpop
+      .mockRejectedValueOnce(new Error("BRPOP connection lost"))
+      .mockResolvedValueOnce([listKey, boardMsg(taskId, "REJECT")]);
+
+    const promise = waitForHITLDecision({
+      taskId,
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+
+    // Let the first brpop rejection propagate through microtasks
+    await Promise.resolve();
+    await Promise.resolve();
+    // Warning should have fired before the 500ms retry delay
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("BRPOP error (retrying)"),
+      expect.any(Error),
+    );
+
+    // Advance past the 500ms retry delay → second brpop fires
+    vi.advanceTimersByTime(500);
+    await expect(promise).resolves.toBe("REJECT");
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("logs warning when poller emits an error event", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    waitForHITLDecision({
+      taskId: "poller-error-task",
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+
+    // capturedPollerErrorHandler is set synchronously during construction
+    expect(state.capturedPollerErrorHandler).not.toBeNull();
+    state.capturedPollerErrorHandler!(new Error("Redis disconnected"));
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Redis poller error"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("does not log poller error after resolution", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rl, sendAnswer } = makeRlMock();
+    const taskId = "poller-error-resolved-task";
+    const promise = waitForHITLDecision({
+      taskId,
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+
+    // Resolve via terminal first
+    sendAnswer("1");
+
+    // Then fire poller error — should be silently ignored (resolved=true)
+    state.capturedPollerErrorHandler?.(new Error("too late"));
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("Redis poller error"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+    return promise;
+  });
+});
+
+// ── handleBoardMessage error path ─────────────────────────────────────────────
+
+describe("waitForHITLDecision — handleBoardMessage error path", () => {
+  beforeEach(() => {
+    resetHoistedMocks();
+  });
+
+  it("logs warning when unwrapVerified throws (e.g. HMAC buffer mismatch)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockUnwrapVerified.mockImplementationOnce(() => {
+      throw new Error("HMAC buffer size mismatch");
+    });
+
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "throw-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+
+    await Promise.resolve(); // allow subscribe to register
+    // Trigger the pub/sub message handler — unwrapVerified will throw
+    state.capturedMessageHandler!("kaiban-hitl-decisions", "some-raw-message");
+
+    // Catch block fires: warning logged, promise stays pending
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to parse/verify board message"),
+      expect.any(Error),
+    );
+
+    // Resolve via terminal to clean up
+    sendAnswer("2");
+    await expect(promise).resolves.toBe("REVISE");
+
+    warnSpy.mockRestore();
   });
 });

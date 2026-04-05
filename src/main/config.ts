@@ -117,10 +117,7 @@ export function loadConfig(): AppConfig {
       .split(",")
       .map((id) => id.trim())
       .filter(Boolean),
-    validHitlDecisions: getEnv(
-      "VALID_HITL_DECISIONS",
-      "PUBLISH,REVISE,REJECT,VIEW",
-    )
+    validHitlDecisions: getEnv("VALID_HITL_DECISIONS", "PUBLISH,REVISE,REJECT")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),

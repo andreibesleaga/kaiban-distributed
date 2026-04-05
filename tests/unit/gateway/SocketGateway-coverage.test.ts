@@ -12,9 +12,13 @@ const wrapSignedMock = vi.fn((payload: Record<string, unknown>) =>
   JSON.stringify({ ...payload, _signed: true }),
 );
 
+const mockLpush = vi.fn().mockResolvedValue(1);
+const mockExpire = vi.fn().mockResolvedValue(1);
 const basePublisher = {
   publish: mockPublish,
   quit: mockPublisherQuit,
+  lpush: mockLpush,
+  expire: mockExpire,
 };
 const baseSubscriber = {
   subscribe: mockSubscribe,

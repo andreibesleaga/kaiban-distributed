@@ -18,7 +18,14 @@ const mockRedisSubscriber = {
   on: mockRedisOn,
   quit: mockQuit,
 };
-const mockRedisPublisher = { publish: mockPublish, quit: mockQuit };
+const mockLpush = vi.fn().mockResolvedValue(1);
+const mockExpire = vi.fn().mockResolvedValue(1);
+const mockRedisPublisher = {
+  publish: mockPublish,
+  quit: mockQuit,
+  lpush: mockLpush,
+  expire: mockExpire,
+};
 const redisSubscriber = mockRedisSubscriber as unknown as Redis;
 const redisPublisher = mockRedisPublisher as unknown as Redis;
 
@@ -222,6 +229,8 @@ describe("SocketGateway — HITL edge cases", () => {
   it("handles missing ack callback gracefully (no-throw)", () => {
     const { hitl } = connectSocket();
     // No ack provided — should not throw
-    expect(() => hitl({ taskId: "no-ack-task", decision: "INVALID" })).not.toThrow();
+    expect(() =>
+      hitl({ taskId: "no-ack-task", decision: "INVALID" }),
+    ).not.toThrow();
   });
 });

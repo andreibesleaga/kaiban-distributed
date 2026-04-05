@@ -29,16 +29,23 @@ vi.mock('../../store/boardStore', () => ({
 
 // ── Mock socket.io-client ────────────────────────────────────────────────────
 
-let capturedEmit: ReturnType<typeof vi.fn>;
+type GatewayAck = { ok: boolean; error?: string };
+type SocketEmit = (
+  event: string,
+  payload?: unknown,
+  ack?: (response: GatewayAck) => void,
+) => void;
+
+let capturedEmit = vi.fn<SocketEmit>();
 let mockConnected = true;
 const capturedHandlers: Record<string, (...args: unknown[]) => void> = {};
 
 vi.mock('socket.io-client', () => ({
   io: vi.fn(() => {
-    capturedEmit = vi.fn();
+    capturedEmit.mockReset();
     return {
-      get connected() { return mockConnected; },
-      emit: (...args: unknown[]) => capturedEmit(...args),
+      get connected(): boolean { return mockConnected; },
+      emit: capturedEmit,
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
         capturedHandlers[event] = handler;
       }),
@@ -56,7 +63,7 @@ describe('sendHitlDecision', () => {
     // Ensure socket instance is created (initSocket is idempotent)
     initSocket();
     // Reset emit mock after initSocket (which may call emit on connect)
-    capturedEmit = vi.fn();
+    capturedEmit.mockReset();
   });
 
   afterEach(() => {

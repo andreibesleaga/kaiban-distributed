@@ -212,12 +212,25 @@ export class SocketGateway {
           console.log(
             `[SocketGateway] HITL decision received: ${String(decision)} for task ${taskId.slice(-8)}`,
           );
+          const msg = wrapSigned({ taskId, decision });
+          // Dual delivery: pub/sub (fast) + per-task list (reliable fallback).
+          // Pub/sub can miss messages if the subscriber connects after publish;
+          // the list-based path guarantees delivery regardless of timing.
+          const listKey = `${HITL_CHANNEL}:${taskId}`;
           this.hitlPublisher
-            .publish(HITL_CHANNEL, wrapSigned({ taskId, decision }))
+            .publish(HITL_CHANNEL, msg)
             .then(() => {
               console.log(
                 `[SocketGateway] HITL decision forwarded to Redis: ${String(decision)}`,
               );
+              // Fire-and-forget: write to per-task list for BRPOP fallback.
+              // Errors here don't affect the board ACK — pub/sub already succeeded.
+              void this.hitlPublisher
+                .lpush(listKey, msg)
+                .then(() => this.hitlPublisher.expire(listKey, 300))
+                .catch((err: unknown) =>
+                  console.warn("[SocketGateway] HITL list write failed:", err),
+                );
               ack?.({ ok: true });
             })
             .catch((err: unknown) => {

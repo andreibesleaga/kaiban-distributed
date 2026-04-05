@@ -19,13 +19,7 @@
  *   8. Race: board wins first (resolves before terminal mock)
  *   9. Race: board deduplication (second message ignored after resolution)
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createServer, type Server as HttpServer } from "http";
 import { Redis } from "ioredis";
 import { io as ioclient, type Socket as ClientSocket } from "socket.io-client";
@@ -34,13 +28,16 @@ import { waitForHITLDecision } from "../../src/shared";
 
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
 
-
 /** Create a pair of Redis connections for the gateway (publisher + subscriber). */
 function makeRedisPair(): { pub: Redis; sub: Redis } {
   const pub = new Redis(REDIS_URL);
   const sub = new Redis(REDIS_URL);
-  pub.on("error", () => { /* suppress teardown noise */ });
-  sub.on("error", () => { /* suppress teardown noise */ });
+  pub.on("error", () => {
+    /* suppress teardown noise */
+  });
+  sub.on("error", () => {
+    /* suppress teardown noise */
+  });
   return { pub, sub };
 }
 
@@ -214,7 +211,10 @@ describe("E2E: Board HITL Integration (socket → gateway → Redis → orchestr
         taskId,
         rl: null,
         redisUrl: REDIS_URL,
-      }).then((d) => { resolved = true; return d; });
+      }).then((d) => {
+        resolved = true;
+        return d;
+      });
 
       await new Promise((r) => setTimeout(r, 300));
 
@@ -245,7 +245,10 @@ describe("E2E: Board HITL Integration (socket → gateway → Redis → orchestr
         taskId,
         rl: null,
         redisUrl: REDIS_URL,
-      }).then((d) => { resolved = true; return d; });
+      }).then((d) => {
+        resolved = true;
+        return d;
+      });
 
       await new Promise((r) => setTimeout(r, 300));
 
@@ -286,9 +289,15 @@ describe("E2E: Board HITL Integration (socket → gateway → Redis → orchestr
   it("Scenario 7 — Malformed payload: gateway rejects null payload with error ACK", async () => {
     const { socket, close } = await connectClient(gatewayUrl);
     try {
-      const ack = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-        socket.emit("hitl:decision", null, (r: { ok: boolean; error?: string }) => resolve(r));
-      });
+      const ack = await new Promise<{ ok: boolean; error?: string }>(
+        (resolve) => {
+          socket.emit(
+            "hitl:decision",
+            null,
+            (r: { ok: boolean; error?: string }) => resolve(r),
+          );
+        },
+      );
       expect(ack.ok).toBe(false);
       expect(ack.error).toBeDefined();
     } finally {

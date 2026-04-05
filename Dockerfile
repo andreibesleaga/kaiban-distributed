@@ -29,6 +29,11 @@ RUN npm install --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
+# Runtime loggers flush JSON transcripts under /app/examples/.../runs.
+# Pre-create those paths and hand ownership to the non-root runtime user.
+RUN mkdir -p /app/examples/blog-team/runs /app/examples/global-research/runs \
+  && chown -R kaiban:kaiban /app/examples
+
 USER kaiban
 
 # Allow the health-check port to be overridden at build time: --build-arg PORT=8080
