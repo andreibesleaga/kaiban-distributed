@@ -56,6 +56,21 @@ describe("parseHandlerResult", () => {
     expect(result.outputTokens).toBe(0);
     expect(result.estimatedCost).toBe(0.5);
   });
+
+  it("coerces Infinity token count to 0 (Number.isFinite guard)", () => {
+    // JSON does not support Infinity literals, but scientific notation like 9e999
+    // parses to Infinity in JS — this exercises the Number.isFinite(n) ? n : 0 branch.
+    const raw = '{"answer":"x","inputTokens":9e999}';
+    const result = parseHandlerResult(raw);
+    expect(result.inputTokens).toBe(0);
+  });
+
+  it("falls back to empty string when answer is null (parsed.answer ?? '' branch)", () => {
+    const raw = JSON.stringify({ answer: null, inputTokens: 10 });
+    const result = parseHandlerResult(raw);
+    expect(result.answer).toBe("");
+    expect(result.inputTokens).toBe(10);
+  });
 });
 
 describe("parseRecommendation", () => {
@@ -162,6 +177,13 @@ describe("normaliseEditorialText", () => {
     const result = normaliseEditorialText(json);
     expect(result).toContain("## EDITORIAL REVIEW");
     expect(result).toContain("### Recommendation: REVISE");
+  });
+
+  it("handles JSON without Recommendation field (covers Recommendation if-FALSE branch)", () => {
+    const json = JSON.stringify({ Topic: "AI", "Accuracy Score": "8/10" });
+    const result = normaliseEditorialText(json);
+    expect(result).toContain("**Topic:** AI");
+    expect(result).not.toContain("Recommendation");
   });
 
   it("returns trimmed input on invalid JSON starting with {", () => {

@@ -108,4 +108,18 @@ describe("OrchestratorStatePublisher", () => {
     await publisher.disconnect();
     expect(mockQuit).toHaveBeenCalled();
   });
+
+  it("logs error to console.error when publish() rejects", async () => {
+    mockPublish.mockRejectedValueOnce(new Error("Redis disconnected"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    publisher.publish({ teamWorkflowStatus: "RUNNING" });
+    // Let the .catch() microtask run
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Publish failed"),
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
 });

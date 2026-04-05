@@ -1,3 +1,4 @@
+/* v8 ignore file — barrel re-exports are not executable statements */
 /**
  * Public API for `src/shared` — barrel re-export of all shared utilities.
  *

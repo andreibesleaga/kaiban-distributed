@@ -111,4 +111,19 @@ describe("global-research RunLogger", () => {
     const filePath = await log.flush("runs");
     expect(filePath).toMatch(/research-run\.json$/);
   });
+
+  it("flush() logs error to console.error when writeFile rejects (line 122)", async () => {
+    const { writeFile } = await import("fs/promises");
+    vi.mocked(writeFile).mockRejectedValueOnce(new Error("ENOSPC: disk full"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const filePath = await runLog.flush("runs");
+
+    expect(errSpy).toHaveBeenCalledWith(
+      "[RunLogger] Failed to write run log:",
+      expect.any(Error),
+    );
+    expect(filePath).toMatch(/\.json$/);
+    errSpy.mockRestore();
+  });
 });

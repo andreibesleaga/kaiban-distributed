@@ -296,7 +296,7 @@ export async function handleDecision(deps: DecisionDeps): Promise<void> {
   const decision = autoPub ? 'PUBLISH' : await waitForHITLDecision({
     taskId: edit.taskId, rl, redisUrl,
     onView: () => {
-      process.stdout.write('\n' + '-'.repeat(70) + '\n' + (ctx.consolidatedDraft ?? '') + '\n' + '-'.repeat(70) + '\n\n');
+      process.stdout.write('\n' + '-'.repeat(70) + '\n' + (ctx.consolidatedDraft || '') + '\n' + '-'.repeat(70) + '\n\n');
     },
   });
 

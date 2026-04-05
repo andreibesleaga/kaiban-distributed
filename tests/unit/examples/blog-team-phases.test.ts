@@ -287,6 +287,29 @@ describe("runBlogRevision()", () => {
     expect(outcome).toBe("STOPPED");
     expect(mockPub.workflowStopped).toHaveBeenCalled();
   });
+
+  it("invokes onView callback when waitForHITL triggers it (line 165)", async () => {
+    const { deps, mockRpc, mockRouter } = baseRevDeps();
+    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
+    mockRouter.wait.mockResolvedValue(parsedResult("Revised draft"));
+
+    // Make mockWaitForHITL invoke the onView callback before resolving
+    mockWaitForHITL.mockImplementationOnce(
+      async (opts: { onView?: () => void }) => {
+        if (opts.onView) opts.onView();
+        return "PUBLISH";
+      },
+    );
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await runBlogRevision(deps);
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      expect.stringContaining("REVISED DRAFT"),
+    );
+    stdoutSpy.mockRestore();
+  });
 });
 
 // ── handleBlogDecision ───────────────────────────────────────────────────────
@@ -351,7 +374,7 @@ describe("handleBlogDecision()", () => {
     expect(mockRunLog.finish).toHaveBeenCalledWith("PUBLISHED");
   });
 
-  it("REVISE decision calls runBlogRevision (rpc creates revision task)", async () => {
+  it("REVISE decision calls runBlogRevision and finishes REVISED when revision publishes", async () => {
     const { deps, mockRpc, mockRouter, mockRunLog } = baseDecisionDeps();
     mockWaitForHITL
       .mockResolvedValueOnce("REVISE") // first call — handleBlogDecision
@@ -366,6 +389,49 @@ describe("handleBlogDecision()", () => {
       expect.objectContaining({ agentId: "writer" }),
     );
     expect(mockRunLog.finish).toHaveBeenCalledWith("REVISED");
+  });
+
+  it("REVISE decision finishes STOPPED when revision is rejected (line 226 false branch)", async () => {
+    const { deps, mockRpc, mockRouter, mockRunLog } = baseDecisionDeps();
+    mockWaitForHITL
+      .mockResolvedValueOnce("REVISE") // first call — handleBlogDecision
+      .mockResolvedValueOnce("REJECT"); // second call — runBlogRevision → STOPPED
+    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
+    mockRouter.wait.mockResolvedValue(parsedResult("revised"));
+
+    await handleBlogDecision(deps);
+
+    expect(mockRunLog.finish).toHaveBeenCalledWith("STOPPED");
+  });
+
+  it("REVISE recommendation icon shows [REVISE] (line 199 middle branch)", async () => {
+    const { deps } = baseDecisionDeps();
+    deps.edit = { ...deps.edit, recommendation: "REVISE" };
+    mockWaitForHITL.mockResolvedValue("REJECT"); // just end quickly
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await handleBlogDecision(deps);
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[REVISE]"),
+    );
+    stdoutSpy.mockRestore();
+  });
+
+  it("REJECT recommendation icon shows [REJECT] (line 199 last branch)", async () => {
+    const { deps } = baseDecisionDeps();
+    deps.edit = { ...deps.edit, recommendation: "REJECT" };
+    mockWaitForHITL.mockResolvedValue("REJECT");
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await handleBlogDecision(deps);
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[REJECT]"),
+    );
+    stdoutSpy.mockRestore();
   });
 
   it("REJECT decision with Rationale section extracts rationale", async () => {
@@ -398,5 +464,25 @@ describe("handleBlogDecision()", () => {
       expect.any(Number),
       "edit-1",
     );
+  });
+
+  it("invokes onView callback when waitForHITL triggers it (line 206)", async () => {
+    const { deps } = baseDecisionDeps();
+
+    mockWaitForHITL.mockImplementationOnce(
+      async (opts: { onView?: () => void }) => {
+        if (opts.onView) opts.onView();
+        return "PUBLISH";
+      },
+    );
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await handleBlogDecision(deps);
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      expect.stringContaining("FULL BLOG DRAFT"),
+    );
+    stdoutSpy.mockRestore();
   });
 });

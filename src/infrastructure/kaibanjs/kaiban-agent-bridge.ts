@@ -354,6 +354,7 @@ export function createKaibanTaskHandler(
       const failureReason =
         extractWorkflowFailureReason(team, result) ?? "unknown";
       throw new Error(
+        /* v8 ignore next — null/undefined status returns true from isSuccessfulWorkflowStatus so "failed" fallback is unreachable */
         `KaibanJS workflow ${String(result.status ?? "failed").toLowerCase()}: ${failureReason}`,
       );
     }

@@ -140,6 +140,23 @@ describe("runSearchPhase()", () => {
     expect(mockPub.searchPhaseComplete).toHaveBeenCalled();
   });
 
+  it("uses '' fallback for taskIds[i] and '' fallback for subTopics[i] when results exceed numSearchers (lines 91,93,95 branches)", async () => {
+    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    // rpc.call called once → taskIds has 1 entry; waitAll returns 3 results
+    mockRpc.call.mockResolvedValue({ taskId: "s-1" });
+    // Use JSON with null answer for index 1 → triggers parsed.answer || sr.result fallback
+    const nullAnswerResult = JSON.stringify({ answer: null, inputTokens: 0, outputTokens: 0, estimatedCost: 0 });
+    mockRouter.waitAll.mockResolvedValue([
+      { taskId: "s-1", result: parsedResult("ok") },     // index 0 → taskIds[0] = "s-1", subTopics[0] = exists
+      { taskId: "s-extra", result: nullAnswerResult },    // index 1 → taskIds[1]=undefined→'', subTopics[1]=undefined→'', answer=''→||sr.result
+      { taskId: "s-err", error: "boom" },                // index 2 → taskIds[2]=undefined→'', sr.error path
+    ]);
+
+    const ctx = makeCtx();
+    await runSearchPhase(ctx, "AI", 1, 60000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
+    expect(ctx.rawSearchData).toHaveLength(2);
+  });
+
   it("logs errors for failed searcher results", async () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "s-1" });
@@ -166,6 +183,19 @@ describe("runSearchPhase()", () => {
       expect.any(String),
       "timeout",
     );
+    expect(ctx.rawSearchData).toHaveLength(1);
+  });
+
+  it("skips results with neither result nor error (else-if false branch)", async () => {
+    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    mockRpc.call.mockResolvedValue({ taskId: "s-1" });
+    mockRouter.waitAll.mockResolvedValue([
+      { taskId: "s-1", result: parsedResult("ok") }, // covers sr.result path
+      { taskId: "s-empty" },                          // neither result nor error → skipped
+    ]);
+
+    const ctx = makeCtx();
+    await runSearchPhase(ctx, "AI", 2, 60000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
     expect(ctx.rawSearchData).toHaveLength(1);
   });
 
@@ -216,6 +246,41 @@ describe("runWritePhase() (global-research)", () => {
     expect(mockPub.taskDone).toHaveBeenCalledWith("write-1", "writer");
   });
 
+  it("builds searchSummary from populated rawSearchData (line 116 map callback)", async () => {
+    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    mockRpc.call.mockResolvedValue({ taskId: "write-2" });
+    mockRouter.wait.mockResolvedValue(parsedResult("Report with sources"));
+
+    const ctx = makeCtx({
+      rawSearchData: [
+        {
+          agentId: "searcher-0",
+          title: "AI Safety Overview",
+          snippet: "Key findings here",
+          sourceUrl: "research://searcher-0/1",
+          relevanceScore: 0.9,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const rpcCallSpy = mockRpc.call as ReturnType<typeof vi.fn>;
+    await runWritePhase(
+      ctx,
+      "AI safety",
+      120000,
+      mockRouter as never,
+      mockPub as never,
+      mockRpc as never,
+      mockRunLog as never,
+    );
+
+    // The rpc.call context should contain the formatted source line
+    const callArgs = rpcCallSpy.mock.calls[0]?.[1] as { context?: string };
+    expect(callArgs?.context).toContain("[Source 1] searcher-0");
+    expect(callArgs?.context).toContain("AI Safety Overview");
+  });
+
   it("calls taskFailed and rethrows on error", async () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "write-1" });
@@ -233,6 +298,18 @@ describe("runWritePhase() (global-research)", () => {
       ),
     ).rejects.toThrow("write err");
     expect(mockPub.taskFailed).toHaveBeenCalled();
+  });
+
+  it("falls back to raw when parsed.answer is empty (line 137 || branch)", async () => {
+    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    mockRpc.call.mockResolvedValue({ taskId: "write-fallback" });
+    // JSON with null answer → parseHandlerResult returns answer: ""
+    const rawFallback = JSON.stringify({ answer: null, inputTokens: 5, outputTokens: 3, estimatedCost: 0.001 });
+    mockRouter.wait.mockResolvedValue(rawFallback);
+
+    const ctx = makeCtx();
+    await runWritePhase(ctx, "AI", 120000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
+    expect(ctx.consolidatedDraft).toBe(rawFallback);
   });
 });
 
@@ -306,6 +383,25 @@ describe("runGovernancePhase()", () => {
     ).rejects.toThrow("gov error");
     expect(mockPub.taskFailed).toHaveBeenCalled();
   });
+
+  it("falls back to raw when parsed.answer is empty (line 169 || branch)", async () => {
+    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    mockRpc.call.mockResolvedValue({ taskId: "gov-fallback" });
+    const rawFallback = JSON.stringify({ answer: null, inputTokens: 2, outputTokens: 1, estimatedCost: 0.0 });
+    mockRouter.wait.mockResolvedValue(rawFallback);
+
+    const gov = await runGovernancePhase(
+      makeCtx({ consolidatedDraft: "draft" }),
+      "AI",
+      120000,
+      mockRouter as never,
+      mockPub as never,
+      mockRpc as never,
+      mockRunLog as never,
+    );
+    // parseRecommendation on rawFallback (JSON string) returns UNKNOWN
+    expect(gov.recommendation).toBe("UNKNOWN");
+  });
 });
 
 // ── runEditorialPhase ─────────────────────────────────────────────────────────
@@ -356,6 +452,26 @@ describe("runEditorialPhase() (global-research)", () => {
       ),
     ).rejects.toThrow("edit err");
     expect(mockPub.taskFailed).toHaveBeenCalled();
+  });
+
+  it("falls back to raw when parsed.answer is empty (line 211 || branch)", async () => {
+    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    mockRpc.call.mockResolvedValue({ taskId: "edit-fallback" });
+    const rawFallback = JSON.stringify({ answer: null, inputTokens: 1, outputTokens: 1, estimatedCost: 0.0 });
+    mockRouter.wait.mockResolvedValue(rawFallback);
+
+    const gov = { recommendation: "APPROVED", score: "9/10", text: "gov text" };
+    const result = await runEditorialPhase(
+      makeCtx({ consolidatedDraft: "draft" }),
+      "AI",
+      gov,
+      120000,
+      mockRouter as never,
+      mockPub as never,
+      mockRpc as never,
+      mockRunLog as never,
+    );
+    expect(result.taskId).toBe("edit-fallback");
   });
 });
 
@@ -435,6 +551,58 @@ describe("runRevisionPhase()", () => {
 
     expect(mockPub.workflowStopped).toHaveBeenCalled();
     expect(mockRunLog.finish).toHaveBeenCalledWith("STOPPED");
+  });
+
+  it("invokes onView callback when waitForHITL triggers it (line 261)", async () => {
+    const { deps, mockRpc, mockRouter } = makeRevDeps({ autoPub: false });
+    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
+    mockRouter.wait.mockResolvedValue(parsedResult("revised report"));
+
+    mockWaitForHITL.mockImplementationOnce(
+      async (opts: { onView?: () => void }) => {
+        if (opts.onView) opts.onView();
+        return "PUBLISH";
+      },
+    );
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await runRevisionPhase(deps as never);
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("---"));
+    stdoutSpy.mockRestore();
+  });
+
+  it("onView uses '' fallback when consolidatedDraft cleared before view (line 263 ?? branch)", async () => {
+    const { deps, mockRpc, mockRouter } = makeRevDeps({ autoPub: false });
+    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
+    mockRouter.wait.mockResolvedValue(parsedResult("revised report"));
+
+    mockWaitForHITL.mockImplementationOnce(
+      async (opts: { onView?: () => void; taskId?: string }) => {
+        // Clear consolidatedDraft before calling onView to trigger the ?? '' fallback
+        delete (deps.ctx as unknown as Record<string, unknown>)["consolidatedDraft"];
+        if (opts.onView) opts.onView();
+        return "PUBLISH";
+      },
+    );
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await runRevisionPhase(deps as never);
+    stdoutSpy.mockRestore();
+  });
+
+  it("falls back to raw when parsed.answer is empty (line 253 || branch)", async () => {
+    const { deps, mockRpc, mockRouter } = makeRevDeps({ autoPub: true });
+    mockRpc.call.mockResolvedValue({ taskId: "rev-fallback" });
+    const rawFallback = JSON.stringify({ answer: null, inputTokens: 2, outputTokens: 1, estimatedCost: 0.0 });
+    mockRouter.wait.mockResolvedValue(rawFallback);
+
+    await runRevisionPhase(deps as never);
+
+    expect(deps.ctx.consolidatedDraft).toBe(rawFallback);
   });
 });
 
@@ -517,5 +685,42 @@ describe("handleDecision()", () => {
       expect.anything(),
     );
     expect(mockRunLog.finish).toHaveBeenCalledWith("REJECTED");
+  });
+
+  it("invokes onView callback when waitForHITL triggers it (line 299)", async () => {
+    const { deps } = makeDecisionDeps({ autoPub: false });
+
+    mockWaitForHITL.mockImplementationOnce(
+      async (opts: { onView?: () => void }) => {
+        if (opts.onView) opts.onView();
+        return "PUBLISH";
+      },
+    );
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await handleDecision(deps as never);
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("---"));
+    stdoutSpy.mockRestore();
+  });
+
+  it("onView callback uses '' when consolidatedDraft is undefined (line 302 ?? branch)", async () => {
+    // ctx without consolidatedDraft → consolidatedDraft ?? '' falls back to ''
+    const { deps } = makeDecisionDeps({ autoPub: false, ctx: makeCtx() });
+    // makeCtx() does not set consolidatedDraft → undefined
+
+    mockWaitForHITL.mockImplementationOnce(
+      async (opts: { onView?: () => void }) => {
+        if (opts.onView) opts.onView();
+        return "PUBLISH";
+      },
+    );
+
+    const stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await handleDecision(deps as never);
+    stdoutSpy.mockRestore();
   });
 });

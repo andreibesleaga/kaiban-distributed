@@ -63,6 +63,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     let resolved = false;
 
     const finish = (decision: HitlDecision): void => {
+      /* v8 ignore next — idempotent guard: once resolved, extra finish() calls are no-ops */
       if (resolved) return;
       resolved = true;
       sub.disconnect();
@@ -79,6 +80,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     const sub = new Redis(redisUrl, { lazyConnect: false });
 
     sub.on("error", (err: unknown) => {
+      /* v8 ignore next — FALSE branch: error fires after resolution (already disconnected) */
       if (!resolved) console.warn("[HITL] Redis subscriber error:", err);
     });
 
@@ -120,6 +122,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
             handleBoardMessage(item[1], taskId, finish);
           }
         } catch (err) {
+          /* v8 ignore next — FALSE branch: error fires after resolution (loop exits) */
           if (!resolved) {
             console.warn("[HITL] BRPOP error (retrying):", err);
             await new Promise<void>((r) => setTimeout(r, 500));

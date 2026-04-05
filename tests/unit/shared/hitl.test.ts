@@ -16,6 +16,7 @@ const {
 } = vi.hoisted(() => {
   const state = {
     capturedMessageHandler: null as ((ch: string, msg: string) => void) | null,
+    capturedSubErrorHandler: null as ((err: unknown) => void) | null,
     capturedPollerErrorHandler: null as ((err: unknown) => void) | null,
     redisCallCount: 0,
   };
@@ -39,6 +40,10 @@ const {
     .mockImplementation(
       (event: string, handler: (ch: string, msg: string) => void) => {
         if (event === "message") state.capturedMessageHandler = handler;
+        if (event === "error")
+          state.capturedSubErrorHandler = handler as unknown as (
+            err: unknown,
+          ) => void;
       },
     );
 
@@ -101,6 +106,7 @@ function boardMsg(taskId: string, decision: string): string {
 function resetHoistedMocks(): void {
   vi.clearAllMocks();
   state.capturedMessageHandler = null;
+  state.capturedSubErrorHandler = null;
   state.capturedPollerErrorHandler = null;
   state.redisCallCount = 0;
   mockUnwrapVerified.mockImplementation(
@@ -537,6 +543,27 @@ describe("waitForHITLDecision — board path", () => {
     );
     // Terminal never answers — promise should already be resolved
     await expect(promise).resolves.toBe("REVISE");
+  });
+
+  it("logs warning when Redis subscriber emits an error event", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "sub-error-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve(); // allow sub.on("error") to be registered
+    expect(state.capturedSubErrorHandler).not.toBeNull();
+    state.capturedSubErrorHandler!(new Error("connection lost"));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Redis subscriber error"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+    // Clean up: resolve via terminal
+    sendAnswer("1");
+    await promise;
   });
 
   it("ignores malformed (invalid JSON) board messages — unwrapVerified returns null, no throw", async () => {

@@ -97,6 +97,17 @@ describe("ResearchStatePublisher", () => {
     pub = new ResearchStatePublisher("redis://localhost:6379");
   });
 
+  it("workflowStarted() silently swallows redis.del rejection (catch handler)", async () => {
+    mockDel.mockRejectedValueOnce(new Error("del failed"));
+    // Should not throw
+    pub.workflowStarted(1);
+    // Let the .catch() microtask run
+    await Promise.resolve();
+    await Promise.resolve();
+    // publish still called (del failure is fire-and-forget)
+    expect(mockPublish).toHaveBeenCalled();
+  });
+
   it("workflowStarted() calls redis.del and publishes RUNNING", () => {
     pub.workflowStarted(2);
     expect(mockDel).toHaveBeenCalledWith("kaiban:searcher:reg");

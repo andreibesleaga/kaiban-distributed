@@ -227,6 +227,31 @@ describe("SocketGateway — coverage branches", () => {
     errorSpy.mockRestore();
   });
 
+  it("logs warning when lpush rejects after successful publish (line 232)", async () => {
+    // For lpush to be called, publish must succeed first.
+    // Use redisPublisher (default hitlPublisher) where mockPublish succeeds.
+    mockLpush.mockRejectedValueOnce(new Error("Redis OOM"));
+    initGateway();
+
+    const socket = makeMockSocket();
+    connectionHandler!(socket);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ack = vi.fn();
+    getHitlHandler(socket)({ taskId: "task-lpush", decision: "PUBLISH" }, ack);
+
+    // Wait for publish .then() → lpush rejection → .catch()
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[SocketGateway] HITL list write failed:",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
   it("disconnects a distinct HITL publisher during shutdown", async () => {
     const hitlQuit = vi.fn().mockResolvedValue(undefined);
     const separateHitlPublisher = {

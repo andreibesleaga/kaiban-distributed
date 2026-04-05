@@ -106,4 +106,20 @@ describe("blog-team RunLogger", () => {
     const filePath = await log.flush("runs");
     expect(filePath).toMatch(/blog-run\.json$/);
   });
+
+  it("flush() logs error to console.error when writeFile rejects (line 120)", async () => {
+    const { writeFile } = await import("fs/promises");
+    vi.mocked(writeFile).mockRejectedValueOnce(new Error("ENOSPC: disk full"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const filePath = await runLog.flush("runs");
+
+    expect(errSpy).toHaveBeenCalledWith(
+      "[RunLogger] Failed to write run log:",
+      expect.any(Error),
+    );
+    // flush() still returns the target path even after error
+    expect(filePath).toMatch(/\.json$/);
+    errSpy.mockRestore();
+  });
 });

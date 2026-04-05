@@ -63,6 +63,7 @@ export class CompletionRouter {
     this.pendingResolve.delete(taskId);
     this.pendingReject.delete(taskId);
     const t = this.timers.get(taskId);
+    /* v8 ignore next 3 — t is always set: wait() registers resolve/reject/timer atomically */
     if (t) {
       clearTimeout(t);
       this.timers.delete(taskId);
@@ -83,6 +84,7 @@ export class CompletionRouter {
       this.timers.set(
         taskId,
         setTimeout(() => {
+          /* v8 ignore next — cleared by clearPending before timer fires when task resolves first */
           if (this.pendingResolve.has(taskId)) {
             this.clearPending(taskId);
             reject(

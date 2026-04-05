@@ -301,6 +301,36 @@ describe("CompletionRouter", () => {
     expect(results.find((r) => r.taskId === "t3")?.result).toBe("result-3");
   });
 
+  it("silently ignores failed message for unknown taskId (no pending reject)", async () => {
+    let failedHandler: SubscribeHandler | undefined;
+    const completedDriver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn().mockResolvedValue(undefined),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    const failedDriverObj: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi
+        .fn()
+        .mockImplementation((_q: string, h: SubscribeHandler) => {
+          failedHandler = h;
+          return Promise.resolve();
+        }),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    const router = new CompletionRouter(completedDriver, failedDriverObj);
+    const promise = router.wait("task-real", 5000, "test");
+
+    // Deliver failed message for a taskId nobody is waiting for
+    await failedHandler!(makeFailedPayload("completely-unknown-task", "oops"));
+
+    // The real task should remain pending and resolve normally via timeout
+    vi.advanceTimersByTime(5001);
+    await expect(promise).rejects.toThrow("Timeout");
+  });
+
   it("waitAll() includes error entry for timed-out tasks without rejecting", async () => {
     const { driver } = makeCapturingDriver();
     const router = new CompletionRouter(driver);

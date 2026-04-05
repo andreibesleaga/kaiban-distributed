@@ -236,6 +236,119 @@ describe("kaiban-agent-bridge — workflow log paths", () => {
     await expect(h(basePayload)).rejects.toThrow("First real message");
   });
 
+  // ── toErrorRecord: primitive (non-Error, non-object) value → undefined ──────
+
+  it("falls through all helpers when result.result is a number (lines 189 + 239)", async () => {
+    // result.result = 42 (a number): toErrorRecord(42) → undefined (line 189),
+    // extractNestedErrorMessage returns undefined (line 239),
+    // toNonEmptyString(42) → undefined → reason = "unknown"
+    mockTeamStart.mockResolvedValue(makeErrored(42));
+    mockWorkflowLogs = [];
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeDriver(),
+    );
+    await expect(h(basePayload)).rejects.toThrow("unknown");
+  });
+
+  it("skips root-cause log when metadata.error is a number (lines 189 + 206)", async () => {
+    // logType="AgentStatusUpdate" + metadata.error=42:
+    // extractRootCauseMessage(42) → toErrorRecord(42) → undefined (line 189),
+    // if (!record) → return undefined (line 206). Falls through to logDescription.
+    mockWorkflowLogs = [
+      {
+        logType: "AgentStatusUpdate",
+        metadata: { error: 42 },
+        logDescription: "numeric error fallback",
+      },
+    ];
+    mockTeamStart.mockResolvedValue(makeErrored());
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeDriver(),
+    );
+    await expect(h(basePayload)).rejects.toThrow("numeric error fallback");
+  });
+
+  // ── toErrorRecord: Error instance path (lines 173-182) ─────────────────────
+
+  it("extracts message from an actual Error instance passed as result.result (lines 173-182, 160-161)", async () => {
+    // result.result is a real Error with a cause: this triggers toErrorRecord's
+    // instanceof Error branch (line 173) AND extractNestedErrorMessageFromRecord's
+    // return nestedMessage branch (line 161) when the cause has a message.
+    mockWorkflowLogs = [];
+    const cause = new Error("root cause message");
+    const errWithCause = Object.assign(new Error("outer"), { cause });
+    mockTeamStart.mockResolvedValue(makeErrored(errWithCause));
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeDriver(),
+    );
+    await expect(h(basePayload)).rejects.toThrow("root cause message");
+  });
+
+  it("uses toNonEmptyString with empty string result (line 144 empty branch)", async () => {
+    // result.result is a plain object with message: "" — toNonEmptyString returns
+    // undefined for the empty trimmed string (line 144 false branch).
+    mockWorkflowLogs = [];
+    mockTeamStart.mockResolvedValue(makeErrored({ message: "" }));
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeDriver(),
+    );
+    // Falls through to "unknown" since message is empty
+    await expect(h(basePayload)).rejects.toThrow("unknown");
+  });
+
+  it("uses extractRootCauseMessage at depth=0 returning undefined (line 223 depth=0 branch)", async () => {
+    // extractRootCauseMessage at depth=0 returns undefined when record has no message
+    // (depth=0 takes the `undefined` branch of `depth > 0 ? ... : undefined`).
+    // Need a log with logType=AgentStatusUpdate but error has no extractable message.
+    mockWorkflowLogs = [
+      { logType: "AgentStatusUpdate", metadata: { error: { unknownField: "x" } } },
+      { logDescription: "fallback description" },
+    ];
+    mockTeamStart.mockResolvedValue(makeErrored());
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeDriver(),
+    );
+    await expect(h(basePayload)).rejects.toThrow("fallback description");
+  });
+
+  it("handles undefined workflowLogs from getStore (line 254 ?? [] branch)", async () => {
+    // Simulate getStore().getState() returning no workflowLogs key
+    // to exercise the `state.workflowLogs ?? []` null-coalescing branch.
+    // Override the Team mock just for this call.
+    vi.mocked(
+      (await import("kaibanjs")).Team,
+    ).mockImplementationOnce(function (params: Record<string, unknown>) {
+      return {
+        start: mockTeamStart,
+        getStore: () => ({ getState: () => ({}) }), // no workflowLogs → triggers ?? []
+        ...params,
+      };
+    } as never);
+    mockTeamStart.mockResolvedValue(makeErrored(new Error("no logs")));
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeDriver(),
+    );
+    await expect(h(basePayload)).rejects.toThrow("no logs");
+  });
+
+  it("returns true for empty-string status in isSuccessfulWorkflowStatus (line 118 branch)", async () => {
+    // result.status = undefined → String(undefined ?? "") = "" → !normalised = true → successful
+    mockTeamStart.mockResolvedValue({ status: undefined, result: "ok", stats: null });
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeDriver(),
+    );
+    // Status undefined → treated as successful → handler resolves
+    const result = await h(basePayload);
+    expect(result).toBeDefined();
+  });
+
   // ── RootCauseLog detection — logType AND agentStatus paths ───────────────
 
   it("treats logType=AgentStatusUpdate as root cause log", async () => {
