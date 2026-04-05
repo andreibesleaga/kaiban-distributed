@@ -305,7 +305,10 @@ describe("kaiban-agent-bridge — workflow log paths", () => {
     // (depth=0 takes the `undefined` branch of `depth > 0 ? ... : undefined`).
     // Need a log with logType=AgentStatusUpdate but error has no extractable message.
     mockWorkflowLogs = [
-      { logType: "AgentStatusUpdate", metadata: { error: { unknownField: "x" } } },
+      {
+        logType: "AgentStatusUpdate",
+        metadata: { error: { unknownField: "x" } },
+      },
       { logDescription: "fallback description" },
     ];
     mockTeamStart.mockResolvedValue(makeErrored());
@@ -320,11 +323,12 @@ describe("kaiban-agent-bridge — workflow log paths", () => {
     // Simulate getStore().getState() returning no workflowLogs key
     // to exercise the `state.workflowLogs ?? []` null-coalescing branch.
     // Override the Team mock just for this call.
-    vi.mocked(
-      (await import("kaibanjs")).Team,
-    ).mockImplementationOnce(function (params: Record<string, unknown>) {
+    vi.mocked((await import("kaibanjs")).Team).mockImplementationOnce(function (
+      params: Record<string, unknown>,
+    ) {
       return {
         start: mockTeamStart,
+        // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
         getStore: () => ({ getState: () => ({}) }), // no workflowLogs → triggers ?? []
         ...params,
       };
@@ -339,7 +343,11 @@ describe("kaiban-agent-bridge — workflow log paths", () => {
 
   it("returns true for empty-string status in isSuccessfulWorkflowStatus (line 118 branch)", async () => {
     // result.status = undefined → String(undefined ?? "") = "" → !normalised = true → successful
-    mockTeamStart.mockResolvedValue({ status: undefined, result: "ok", stats: null });
+    mockTeamStart.mockResolvedValue({
+      status: undefined,
+      result: "ok",
+      stats: null,
+    });
     const h = createKaibanTaskHandler(
       { name: "A", role: "R", goal: "G", background: "B" },
       makeDriver(),

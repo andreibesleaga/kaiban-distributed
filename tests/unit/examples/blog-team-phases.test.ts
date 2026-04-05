@@ -413,9 +413,7 @@ describe("handleBlogDecision()", () => {
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     await handleBlogDecision(deps);
-    expect(stdoutSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[REVISE]"),
-    );
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("[REVISE]"));
     stdoutSpy.mockRestore();
   });
 
@@ -428,9 +426,7 @@ describe("handleBlogDecision()", () => {
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     await handleBlogDecision(deps);
-    expect(stdoutSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[REJECT]"),
-    );
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining("[REJECT]"));
     stdoutSpy.mockRestore();
   });
 

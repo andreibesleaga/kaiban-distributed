@@ -145,15 +145,29 @@ describe("runSearchPhase()", () => {
     // rpc.call called once → taskIds has 1 entry; waitAll returns 3 results
     mockRpc.call.mockResolvedValue({ taskId: "s-1" });
     // Use JSON with null answer for index 1 → triggers parsed.answer || sr.result fallback
-    const nullAnswerResult = JSON.stringify({ answer: null, inputTokens: 0, outputTokens: 0, estimatedCost: 0 });
+    const nullAnswerResult = JSON.stringify({
+      answer: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCost: 0,
+    });
     mockRouter.waitAll.mockResolvedValue([
-      { taskId: "s-1", result: parsedResult("ok") },     // index 0 → taskIds[0] = "s-1", subTopics[0] = exists
-      { taskId: "s-extra", result: nullAnswerResult },    // index 1 → taskIds[1]=undefined→'', subTopics[1]=undefined→'', answer=''→||sr.result
-      { taskId: "s-err", error: "boom" },                // index 2 → taskIds[2]=undefined→'', sr.error path
+      { taskId: "s-1", result: parsedResult("ok") }, // index 0 → taskIds[0] = "s-1", subTopics[0] = exists
+      { taskId: "s-extra", result: nullAnswerResult }, // index 1 → taskIds[1]=undefined→'', subTopics[1]=undefined→'', answer=''→||sr.result
+      { taskId: "s-err", error: "boom" }, // index 2 → taskIds[2]=undefined→'', sr.error path
     ]);
 
     const ctx = makeCtx();
-    await runSearchPhase(ctx, "AI", 1, 60000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
+    await runSearchPhase(
+      ctx,
+      "AI",
+      1,
+      60000,
+      mockRouter as never,
+      mockPub as never,
+      mockRpc as never,
+      mockRunLog as never,
+    );
     expect(ctx.rawSearchData).toHaveLength(2);
   });
 
@@ -191,11 +205,20 @@ describe("runSearchPhase()", () => {
     mockRpc.call.mockResolvedValue({ taskId: "s-1" });
     mockRouter.waitAll.mockResolvedValue([
       { taskId: "s-1", result: parsedResult("ok") }, // covers sr.result path
-      { taskId: "s-empty" },                          // neither result nor error → skipped
+      { taskId: "s-empty" }, // neither result nor error → skipped
     ]);
 
     const ctx = makeCtx();
-    await runSearchPhase(ctx, "AI", 2, 60000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
+    await runSearchPhase(
+      ctx,
+      "AI",
+      2,
+      60000,
+      mockRouter as never,
+      mockPub as never,
+      mockRpc as never,
+      mockRunLog as never,
+    );
     expect(ctx.rawSearchData).toHaveLength(1);
   });
 
@@ -304,11 +327,24 @@ describe("runWritePhase() (global-research)", () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "write-fallback" });
     // JSON with null answer → parseHandlerResult returns answer: ""
-    const rawFallback = JSON.stringify({ answer: null, inputTokens: 5, outputTokens: 3, estimatedCost: 0.001 });
+    const rawFallback = JSON.stringify({
+      answer: null,
+      inputTokens: 5,
+      outputTokens: 3,
+      estimatedCost: 0.001,
+    });
     mockRouter.wait.mockResolvedValue(rawFallback);
 
     const ctx = makeCtx();
-    await runWritePhase(ctx, "AI", 120000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
+    await runWritePhase(
+      ctx,
+      "AI",
+      120000,
+      mockRouter as never,
+      mockPub as never,
+      mockRpc as never,
+      mockRunLog as never,
+    );
     expect(ctx.consolidatedDraft).toBe(rawFallback);
   });
 });
@@ -388,11 +424,20 @@ describe("runGovernancePhase()", () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "gov-viol" });
     // Include a compliance violation in the format the regex expects
-    const violationText = "Recommendation: REJECTED\nCompliance Score: 3/10\n- Data Privacy — Standard: GDPR — Severity: High";
+    const violationText =
+      "Recommendation: REJECTED\nCompliance Score: 3/10\n- Data Privacy — Standard: GDPR — Severity: High";
     mockRouter.wait.mockResolvedValue(parsedResult(violationText));
 
     const ctx = makeCtx({ consolidatedDraft: "draft" });
-    const gov = await runGovernancePhase(ctx, "AI", 120000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
+    const gov = await runGovernancePhase(
+      ctx,
+      "AI",
+      120000,
+      mockRouter as never,
+      mockPub as never,
+      mockRpc as never,
+      mockRunLog as never,
+    );
     expect(gov.recommendation).toBe("REJECTED");
     expect(ctx.feedback?.complianceViolations).toContain("Data Privacy");
   });
@@ -400,7 +445,12 @@ describe("runGovernancePhase()", () => {
   it("falls back to raw when parsed.answer is empty (line 169 || branch)", async () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "gov-fallback" });
-    const rawFallback = JSON.stringify({ answer: null, inputTokens: 2, outputTokens: 1, estimatedCost: 0.0 });
+    const rawFallback = JSON.stringify({
+      answer: null,
+      inputTokens: 2,
+      outputTokens: 1,
+      estimatedCost: 0.0,
+    });
     mockRouter.wait.mockResolvedValue(rawFallback);
 
     const gov = await runGovernancePhase(
@@ -470,7 +520,12 @@ describe("runEditorialPhase() (global-research)", () => {
   it("falls back to raw when parsed.answer is empty (line 211 || branch)", async () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "edit-fallback" });
-    const rawFallback = JSON.stringify({ answer: null, inputTokens: 1, outputTokens: 1, estimatedCost: 0.0 });
+    const rawFallback = JSON.stringify({
+      answer: null,
+      inputTokens: 1,
+      outputTokens: 1,
+      estimatedCost: 0.0,
+    });
     mockRouter.wait.mockResolvedValue(rawFallback);
 
     const gov = { recommendation: "APPROVED", score: "9/10", text: "gov text" };
@@ -594,7 +649,9 @@ describe("runRevisionPhase()", () => {
     mockWaitForHITL.mockImplementationOnce(
       async (opts: { onView?: () => void; taskId?: string }) => {
         // Clear consolidatedDraft before calling onView to trigger the ?? '' fallback
-        delete (deps.ctx as unknown as Record<string, unknown>)["consolidatedDraft"];
+        delete (deps.ctx as unknown as Record<string, unknown>)[
+          "consolidatedDraft"
+        ];
         if (opts.onView) opts.onView();
         return "PUBLISH";
       },
@@ -610,7 +667,12 @@ describe("runRevisionPhase()", () => {
   it("falls back to raw when parsed.answer is empty (line 253 || branch)", async () => {
     const { deps, mockRpc, mockRouter } = makeRevDeps({ autoPub: true });
     mockRpc.call.mockResolvedValue({ taskId: "rev-fallback" });
-    const rawFallback = JSON.stringify({ answer: null, inputTokens: 2, outputTokens: 1, estimatedCost: 0.0 });
+    const rawFallback = JSON.stringify({
+      answer: null,
+      inputTokens: 2,
+      outputTokens: 1,
+      estimatedCost: 0.0,
+    });
     mockRouter.wait.mockResolvedValue(rawFallback);
 
     await runRevisionPhase(deps as never);
