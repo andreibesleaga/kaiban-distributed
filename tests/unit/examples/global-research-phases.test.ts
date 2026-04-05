@@ -384,6 +384,19 @@ describe("runGovernancePhase()", () => {
     expect(mockPub.taskFailed).toHaveBeenCalled();
   });
 
+  it("extracts compliance violations from governance text (line 177 matchAll loop body)", async () => {
+    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    mockRpc.call.mockResolvedValue({ taskId: "gov-viol" });
+    // Include a compliance violation in the format the regex expects
+    const violationText = "Recommendation: REJECTED\nCompliance Score: 3/10\n- Data Privacy — Standard: GDPR — Severity: High";
+    mockRouter.wait.mockResolvedValue(parsedResult(violationText));
+
+    const ctx = makeCtx({ consolidatedDraft: "draft" });
+    const gov = await runGovernancePhase(ctx, "AI", 120000, mockRouter as never, mockPub as never, mockRpc as never, mockRunLog as never);
+    expect(gov.recommendation).toBe("REJECTED");
+    expect(ctx.feedback?.complianceViolations).toContain("Data Privacy");
+  });
+
   it("falls back to raw when parsed.answer is empty (line 169 || branch)", async () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "gov-fallback" });
