@@ -1,6 +1,6 @@
 # KaibanJS Integration Guide for kaiban-distributed
 
-Complete reference for integrating KaibanJS agents, teams, and KaibanBoard with the kaiban-distributed messaging layer. All code examples are production-ready TypeScript.
+System based on [KaibanJS](https://kaibanjs.com). Complete reference for integrating **KaibanJS agents, teams, and KaibanBoard** with the **kaiban-distributed** messaging layer. All code examples are production-ready TypeScript.
 
 ---
 
