@@ -9,7 +9,7 @@
 >
 > For running the examples see [EXAMPLES.md](EXAMPLES.md). For technical documentation, check the files in [docs/](docs/).
 >
-> *(System based on [KaibanJS](https://kaibanjs.com). For integrating KaibanJS, follow documents in [docs/KAIBANJS_INTEGRATION.md](docs/KAIBANJS_INTEGRATION.md)).*
+> *(For integrating **KaibanJS** system base, follow documents in [docs/KAIBANJS_INTEGRATION.md](docs/KAIBANJS_INTEGRATION.md)).*
 >
 
 - The very first project in the world to combine Enterprise Messaging (Kafka/Redis), Actor-Model Isolation, AI Multi-Agent Orchestration, and Kanban Visualization, into a JavaScript ecosystem, for agents and humans.
