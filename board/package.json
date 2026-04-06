@@ -1,8 +1,9 @@
 {
   "name": "kaiban-distributed-board",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "private": true,
-  "description": "Modern React board for kaiban-distributed — real-time agent & task visualisation via Socket.io",
+  "description": "Modern React board visualisation for kaiban-distributed — real-time agent & task visualisation via Socket.io",
+  "author": "Andrei Besleaga",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,7 +27,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
-    "jsdom": "^29.0.1",
+    "happy-dom": "^20.8.9",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.6.0",

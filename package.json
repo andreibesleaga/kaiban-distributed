@@ -1,7 +1,7 @@
 {
   "name": "kaiban-distributed",
-  "version": "1.3.0",
-  "description": "",
+  "version": "1.4.0",
+  "description": "Kaiban Distributed: Distributed Agentic AI Platform - Actor Model Kanban Framework Implementation with Enterprise Messaging Layer State (Redis/Kafka) and Individual Deployed AI Nodes (TypeScript).",
   "main": "index.js",
   "directories": {
     "test": "tests"
@@ -24,7 +24,7 @@
     "url": "git+https://github.com/andreibesleaga/kaiban-distributed.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Andrei Besleaga",
   "license": "GPL-3.0",
   "type": "commonjs",
   "bugs": {
