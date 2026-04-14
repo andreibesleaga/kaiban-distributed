@@ -37,7 +37,8 @@
     "file-type": ">=16.5.4",
     "@langchain/core": ">=0.3.80",
     "@langchain/community": ">=0.3.59",
-    "langchain": ">=0.3.37"
+    "langchain": ">=0.3.37",
+    "axios": ">=1.15.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
