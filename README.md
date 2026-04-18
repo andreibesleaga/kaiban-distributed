@@ -11,6 +11,8 @@
 >
 > *(For integrating **KaibanJS** system base, follow documents in [docs/KAIBANJS_INTEGRATION.md](docs/KAIBANJS_INTEGRATION.md)).*
 >
+> Some short articles can be read on [Medium](https://medium.com/towards-artificial-intelligence/kaiban-distributed-a-scaling-actor-model-agentic-workflow-system-8b5288e7bc17) and [Substack](https://andreibesleaga.substack.com/p/distributed-multi-agent-systems-with).
+>
 
 - The very first project in the world to combine Enterprise Messaging (Kafka/Redis), Actor-Model Isolation, AI Multi-Agent Orchestration, and Kanban Visualization, into a JavaScript ecosystem, for agents and humans.
 
