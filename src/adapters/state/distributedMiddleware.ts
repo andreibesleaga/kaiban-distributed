@@ -14,7 +14,12 @@ const PII_DENYLIST: ReadonlySet<string> = new Set([
   "dob",
 ]);
 
-function sanitizeDelta(partial: unknown): Record<string, unknown> {
+/**
+ * Strip PII-named top-level keys from a state delta before it leaves the process.
+ * Shared by {@link DistributedStateMiddleware} (Zustand path) and the worker
+ * `AgentStatePublisher` path so PII minimisation applies to both.
+ */
+export function sanitizeDelta(partial: unknown): Record<string, unknown> {
   if (partial === null || typeof partial !== "object") return {};
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(

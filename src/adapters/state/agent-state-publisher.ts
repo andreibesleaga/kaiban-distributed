@@ -11,6 +11,7 @@ import { Redis } from "ioredis";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
+import { sanitizeDelta } from "./distributedMiddleware";
 
 export interface AgentInfo {
   agentId: string;
@@ -63,8 +64,10 @@ export class AgentStatePublisher {
     tasks?: TaskState[];
     teamWorkflowStatus?: string;
   }): void {
+    // Defense-in-depth: strip any PII-named top-level keys on the worker path too
+    // (the middleware path already sanitizes via DistributedStateMiddleware).
     this.redis
-      .publish(STATE_CHANNEL, wrapSigned(delta as Record<string, unknown>))
+      .publish(STATE_CHANNEL, wrapSigned(sanitizeDelta(delta)))
       .catch((err: unknown) =>
         console.error("[StatePublisher] Failed to publish:", err),
       );
