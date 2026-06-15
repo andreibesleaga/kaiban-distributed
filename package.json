@@ -2,12 +2,27 @@
   "name": "kaiban-distributed",
   "version": "1.4.0",
   "description": "Kaiban Distributed: Distributed Agentic AI Platform - Actor Model Kanban Framework Implementation with Enterprise Messaging Layer State (Redis/Kafka) and Individual Deployed AI Nodes (TypeScript).",
-  "main": "index.js",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist/src",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md"
+  ],
   "directories": {
     "test": "tests"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
+    "prepublishOnly": "npm run build",
     "dev": "node dist/src/main/index.js",
     "lint": "eslint src tests",
     "format": "prettier --write src tests",
@@ -16,6 +31,7 @@
     "test:e2e": "vitest run --config vitest.e2e.config.mts",
     "test:e2e:kafka": "vitest run --config vitest.e2e.kafka.config.mts",
     "test:e2e:security": "vitest run --config vitest.e2e.security.config.mts",
+    "test:e2e:live": "vitest run --config vitest.e2e.live.config.ts",
     "typecheck": "tsc --noEmit",
     "lint:arch": "madge --circular --extensions ts src/"
   },
