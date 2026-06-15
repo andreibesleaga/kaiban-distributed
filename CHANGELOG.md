@@ -39,3 +39,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - Reconciled open Dependabot PRs #17/#18 into a single controlled refresh.
+- **Packaging**: added `src/index.ts` public-API barrel; `package.json`
+  `main`/`types`/`exports`/`files` for a clean **library publish** (ships `dist/src`
+  only — examples/board/tests excluded); `tsconfig.build` emits declarations.
+- Removed 4 divergent duplicate `vitest.*.config.ts` (kept `.mts` + wired `test:e2e:live`).
+- Docs softened to defensible/accurate wording: CI/Scorecard-backed badges; "one of
+  the first" (not "the very first in the world"); compliance → capability language with
+  a "library, not a certified product" disclaimer; corrected backoff (linear), result
+  cap (20 000), and circuit-breaker threshold (10).
+- `release.yml` now also builds, pushes, and **cosign-signs the container image**.
+
+### Security (additional)
+- Applied `sanitizeDelta` PII stripping on the worker `AgentStatePublisher` path
+  (defense-in-depth; previously only the middleware path).
+- Added `LICENSE-EXCEPTIONS.md` (GPL-3.0 SaaS-vs-distribution + commercial licensing).
