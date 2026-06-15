@@ -382,7 +382,7 @@ TLS_REJECT_UNAUTHORIZED=true
 
 | Boundary | Limit | Location |
 |----------|-------|----------|
-| Task result in state events | 800 characters | `AgentStatePublisher` — `MAX_RESULT_LEN` |
+| Task result in state events | 20,000 characters (20 KB) | `AgentStatePublisher` — `MAX_RESULT_LEN` |
 | Task title in state events | 60 characters | `AgentStatePublisher` |
 | Outbound task result in messages | 64 KB | `AgentActor` |
 | HTTP request body | 1 MB | `GatewayApp` — `express.json({ limit: '1mb' })` |

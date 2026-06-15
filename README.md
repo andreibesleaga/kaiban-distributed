@@ -821,7 +821,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 |---------|----------------|
 | **GDPR — PII in logs** | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` |
 | **GDPR — State deltas** | `sanitizeDelta()` strips: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` |
-| **GDPR — Data minimisation** | `result` capped at 800 chars in state events; outbound data capped at 64 KB in `AgentActor` |
+| **GDPR — Data minimisation** | `result` capped at 20,000 chars (20 KB) in state events; outbound data capped at 64 KB in `AgentActor` |
 | **SOC2 — Non-root container** | Dockerfile: `USER kaiban` |
 | **SOC2 — Secrets** | All secrets via env vars; `.env` gitignored; `.env.example` has no real values |
 | **ISO 27001 — Encryption** | mTLS for Redis/Kafka; HTTPS for LLM APIs; `scripts/generate-dev-certs.sh` for staging |

@@ -216,7 +216,7 @@ interface StateDelta {
     title: string;
     status: TaskStatus;          // 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'
     assignedToAgentId: string;
-    result?: string;             // capped at 800 chars
+    result?: string;             // capped at 20,000 chars (20 KB)
   }>;
 
   // Workflow lifecycle (set exclusively by the orchestrator — never by workers)

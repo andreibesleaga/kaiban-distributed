@@ -230,7 +230,7 @@ Process crash (e.g. writer-node.ts OOM):
 **Within an actor**:
 - Any exception from `taskHandler` → retry up to 3×
 - All retries failed → `circuitBreaker.recordFailure()` + DLQ publish
-- Circuit breaker open (5 failures) → subsequent messages routed to DLQ immediately
+- Circuit breaker open (default 10 failures, `CIRCUIT_BREAKER_THRESHOLD`) → subsequent messages routed to DLQ immediately
 
 This ensures a single failing LLM call does not crash the actor or lose the task.
 

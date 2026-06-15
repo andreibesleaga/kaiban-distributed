@@ -35,7 +35,7 @@ System based on [KaibanJS](https://kaibanjs.com). Complete reference for integra
 |---------|---------------|-------------------|
 | Execution | Single process | Multiple isolated worker nodes |
 | Messaging | In-process function calls | BullMQ (Redis) or Kafka |
-| Fault tolerance | None | 3× retry with exponential backoff + DLQ |
+| Fault tolerance | None | 3× retry with linear backoff (100 ms × attempt) + DLQ |
 | Visualization | React board (local) | Live board via Socket.io across nodes |
 | Orchestration | Sequential/parallel in-process | Event-driven via CompletionRouter |
 | External access | None | JSON-RPC 2.0 A2A + MCP protocol |
@@ -1615,7 +1615,7 @@ const result = await executeDag([
 
 ### 8.5 Retry and Error Handling
 
-`AgentActor` automatically retries up to 3 times with exponential backoff (100ms × attempt). After all retries, the task is sent to `kaiban-events-failed` (DLQ).
+`AgentActor` automatically retries up to 3 times with linear backoff (100ms × attempt → 100/200ms between attempts). After all retries, the task is sent to `kaiban-events-failed` (DLQ).
 
 ```typescript
 // AgentActor retry logic (from src/application/actor/AgentActor.ts)
