@@ -1,0 +1,50 @@
+name: Nightly (E2E · Kafka · chaos)
+
+# Heavy integration suites kept out of the fast PR path. The e2e setup files
+# (tests/e2e/setup/*) auto-provision Redis/Kafka via Docker on the runner.
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # daily 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-bullmq:
+    name: E2E — BullMQ / Redis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: E2E (BullMQ/Redis)
+        run: npm run test:e2e
+        env:
+          REDIS_URL: redis://localhost:6379
+          AGENT_IDS: test-agent
+      - name: Security E2E (firewall · JWT · channel signing)
+        run: npm run test:e2e:security
+        env:
+          REDIS_URL: redis://localhost:6379
+          AGENT_IDS: test-agent
+
+  e2e-kafka:
+    name: E2E — Kafka
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: E2E (Kafka)
+        run: npm run test:e2e:kafka
+        env:
+          KAFKA_BROKERS: localhost:9092
+          AGENT_IDS: test-agent
