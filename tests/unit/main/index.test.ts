@@ -122,7 +122,9 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   exitSpy = vi
     .spyOn(process, "exit")
-    .mockImplementation((() => undefined) as (code?: number) => never);
+    .mockImplementation((() => undefined) as (
+      code?: string | number | null,
+    ) => never);
   vi.spyOn(process, "on").mockImplementation(((
     event: string,
     cb: (...a: unknown[]) => void,
