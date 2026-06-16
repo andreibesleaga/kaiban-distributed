@@ -36,8 +36,14 @@ RUN apk upgrade --no-cache
 RUN addgroup -S kaiban && adduser -S kaiban -G kaiban
 
 COPY package*.json ./
-# Lock-faithful, prod-only install (see builder stage note).
-RUN npm ci --omit=dev
+# Lock-faithful, prod-only install (see builder stage note). Then strip the
+# bundled npm CLI: the runtime only runs `node` (see CMD), and the node base
+# image's vendored npm ships transitive deps (glob/minimatch/tar) with HIGH CVEs
+# that would otherwise fail the image scan despite never being reachable at
+# runtime. Removing it also shrinks the image and reduces attack surface.
+RUN npm ci --omit=dev \
+  && npm cache clean --force \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=builder /app/dist ./dist
 
