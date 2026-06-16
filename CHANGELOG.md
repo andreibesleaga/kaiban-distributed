@@ -85,6 +85,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   survivors are provably-equivalent mutants. (Stryker introduced no new HIGH/critical
   advisories.)
 - **Accessibility**: board axe-core a11y tests (`vitest-axe`) across 6 components — 0 violations.
+- **Container image scanning**: CI now scans the built Docker image with **Trivy**
+  (gates on fixable CRITICAL/HIGH OS+library CVEs, `ignore-unfixed`, SARIF to the
+  Security tab) — closing the image-layer gap the lockfile scanners can't see.
+- **Doc accuracy (final reconciliation)**: corrected the remaining stale claims —
+  unit/e2e **test counts** (769 unit / 77 files, 65 BullMQ-e2e) across README/EXAMPLES/
+  BLOG_TEAM_TEST; firewall verdict shape (`{ allowed, reason }`); Kafka auto-create
+  dev-vs-prod note; blog-team phase wait times (120/240/300 s); ADR-003 cost wording
+  (estimated via `MODEL_PRICING`); "linear backoff" in `ACTOR_MODEL.md`. Declared
+  `ts-node` as a devDep (the documented `npx ts-node` dev-run path). The in-repo audit
+  matrix now shows **zero open items**.
 - **Deployment**: verified + hardened Railway/Vercel/AWS/Azure — removed Vercel
   phantom steps; gateway `SOCKET_CORS_ORIGINS` everywhere; worker LLM keys/commands;
   health-check scoping (gateway-only); WEBSITES_PORT for Azure App Service.

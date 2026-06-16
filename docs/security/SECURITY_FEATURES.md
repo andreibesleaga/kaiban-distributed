@@ -276,7 +276,7 @@ This prevents crafted job payloads from injecting malformed OpenTelemetry trace 
 
 **File:** `src/infrastructure/security/heuristic-firewall.ts`
 
-**How it works:** Evaluates `instruction` and `context` fields against 10 regex patterns covering common injection vectors (ignore/override previous instructions, jailbreak commands, etc.). Returns `{ blocked: true, reason }` for matches.
+**How it works:** Evaluates `instruction` and `context` fields against 10 regex patterns covering common injection vectors (ignore/override previous instructions, jailbreak commands, etc.). Returns `{ allowed: false, reason }` for matches and `{ allowed: true }` otherwise.
 
 **Injected into:** `AgentActor` — evaluated before `handler(payload)` is called.
 
@@ -419,11 +419,19 @@ test: ["CMD", "redis-cli", "${REDIS_PASSWORD:+-a}", "${REDIS_PASSWORD:-}", "ping
 
 **File:** [`docker-compose.yml`](../../docker-compose.yml)
 
+The bundled dev compose enables auto-create for local convenience (the Kafka e2e
+tests rely on it):
+
 ```yaml
-KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"   # dev convenience
 ```
 
-Topics must be created explicitly before use. This prevents arbitrary topic creation from compromising the namespace.
+For production, disable it so topics must be created explicitly before use — this
+prevents arbitrary topic creation from compromising the namespace:
+
+```yaml
+KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # production
+```
 
 ---
 

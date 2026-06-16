@@ -63,7 +63,7 @@ actor.stop()
 
 - **64 KB data cap** (`capDataSize`): results are truncated before publishing to prevent oversized messages from overwhelming the messaging layer.
 - **SHA-256 ID hashing** (`sanitizeId`): actor IDs are hashed in logs — 8-char prefix preserves debuggability while preventing PII leakage.
-- **Exponential backoff**: retry delay = `100ms × attempt` (attempt 1 = 100ms, attempt 2 = 200ms, attempt 3 = 300ms).
+- **Linear backoff**: retry delay = `100ms × attempt` (attempt 1 = 100ms, attempt 2 = 200ms, attempt 3 = 300ms).
 
 ---
 
