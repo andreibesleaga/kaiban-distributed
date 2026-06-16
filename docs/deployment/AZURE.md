@@ -112,7 +112,7 @@ az containerapp create \
   --registry-server ${REGISTRY}.azurecr.io \
   --target-port 3000 \
   --ingress external \
-  --env-vars "GATEWAY_PORT=3000" "REDIS_URL=redis://..." \
+  --env-vars "PORT=3000" "AGENT_IDS=gateway" "REDIS_URL=redis://..." \
   --secrets "openai-api-key=keyvaultref:<key-vault-uri>,identityref:<mi-id>"
 
 # Worker (no public ingress)
@@ -150,7 +150,8 @@ az webapp config appsettings set \
   --resource-group $RESOURCE_GROUP \
   --settings OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=https://${KEYVAULT}.vault.azure.net/secrets/openai-api-key/) \
              REDIS_URL=redis://... \
-             GATEWAY_PORT=8080
+             PORT=8080 \
+             AGENT_IDS=gateway
 ```
 
 ---

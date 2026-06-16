@@ -135,7 +135,7 @@ npx ts-node examples/blog-team/orchestrator.ts
 |-----|-------|-------|
 | `REDIS_URL` | `redis://kaiban-redis:6379` | Internal cluster DNS |
 | `MESSAGING_DRIVER` | `bullmq` | BullMQ over Redis |
-| `GATEWAY_PORT` | `3000` | Gateway HTTP port |
+| `PORT` | `3000` | Gateway/worker HTTP port |
 | `SERVICE_NAME` | `kaiban-gateway` | Telemetry label |
 | `AGENT_IDS` | `gateway` | Gateway-role identifier |
 | `LLM_MODEL` | `gpt-4o-mini` | Override per agent if needed |

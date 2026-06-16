@@ -133,7 +133,7 @@ eb deploy
 Set env vars:
 
 ```bash
-eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... GATEWAY_PORT=8080
+eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... AGENT_IDS=gateway PORT=8080
 ```
 
 ---

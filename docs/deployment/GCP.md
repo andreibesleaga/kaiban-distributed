@@ -104,7 +104,7 @@ gcloud run deploy kaiban-gateway \
   --region=$REGION \
   --port=3000 \
   --allow-unauthenticated \
-  --set-env-vars="GATEWAY_PORT=3000,REDIS_URL=redis://..." \
+  --set-env-vars="PORT=3000,AGENT_IDS=gateway,REDIS_URL=redis://..." \
   --set-secrets="OPENAI_API_KEY=openai-api-key:latest" \
   --project=$PROJECT
 
@@ -123,7 +123,7 @@ for AGENT in researcher writer editor; do
 done
 ```
 
-> **Note:** Cloud Run workers must continuously poll Redis (BullMQ) rather than receiving push traffic. This works out-of-the-box with the existing BullMQ driver.
+> **Note:** Cloud Run workers must continuously poll Redis (BullMQ) rather than receiving push traffic. Because Cloud Run throttles CPU when there is no inbound request, deploy workers with `--no-cpu-throttling` and `--min-instances=1` so they keep consuming from the queue; otherwise they idle and stop polling.
 
 ---
 
@@ -136,7 +136,7 @@ gcloud compute instances create-with-container kaiban-vm \
   --container-image=${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/kaiban-distributed:latest \
   --machine-type=e2-medium \
   --zone=${REGION}-a \
-  --container-env="GATEWAY_PORT=3000,REDIS_URL=redis://..." \
+  --container-env="PORT=3000,AGENT_IDS=gateway,REDIS_URL=redis://..." \
   --tags=http-server \
   --project=$PROJECT
 
