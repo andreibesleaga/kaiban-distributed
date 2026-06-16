@@ -53,3 +53,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Applied `sanitizeDelta` PII stripping on the worker `AgentStatePublisher` path
   (defense-in-depth; previously only the middleware path).
 - Added `LICENSE-EXCEPTIONS.md` (GPL-3.0 SaaS-vs-distribution + commercial licensing).
+
+### Observability & quality (additional)
+- **OTel metrics**: `kaiban.message.processed` counter + `kaiban.message.latency`
+  histogram via a `PeriodicExportingMetricReader` (OTLP when configured, Console in
+  dev); emitted from the actor's success/DLQ paths.
+- **Anomaly events**: `recordAnomalyEvent` wired at the actor level
+  (`circuit_breaker.rejected`, `firewall.blocked`).
+- **Benchmarks**: `bench/throughput.bench.ts` + `npm run bench` (vitest bench) +
+  nightly job; **property tests** (fast-check) for channel-signing.
+- **Lint**: `--max-warnings 0`; `examples/` now linted (browser-globals override
+  for the viewer JS) — `npm run lint` covers src + tests + examples.
+- **Deploy docs/manifests**: HELM gateway `secretRef` + accurate image-tag default;
+  AWS ECS worker `CMD` note; Railway per-service guidance (no unsupported `railway.json`).

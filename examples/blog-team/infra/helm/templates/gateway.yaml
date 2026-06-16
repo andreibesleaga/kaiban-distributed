@@ -26,6 +26,8 @@ spec:
         envFrom:
         - configMapRef:
             name: {{ include "kaiban-blog-team.fullname" . }}-config
+        - secretRef:
+            name: {{ include "kaiban-blog-team.fullname" . }}-secrets
         env:
         - name: AGENT_IDS
           value: "gateway"

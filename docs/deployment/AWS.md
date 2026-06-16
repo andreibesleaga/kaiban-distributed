@@ -102,7 +102,16 @@ copilot svc init --name gateway     --svc-type "Load Balanced Web Service" --doc
 copilot svc init --name researcher  --svc-type "Worker Service"             --dockerfile Dockerfile
 copilot svc init --name writer      --svc-type "Worker Service"             --dockerfile Dockerfile
 copilot svc init --name editor      --svc-type "Worker Service"             --dockerfile Dockerfile
+```
 
+> **Important:** the worker services reuse the same image, whose default `CMD` is the
+> **gateway** (`node dist/src/main/index.js`). Override each worker's command in its
+> Copilot manifest (`copilot/<svc>/manifest.yml`) to run the agent node, e.g.
+> `command: node dist/examples/blog-team/researcher-node.js`, and give each worker
+> `REDIS_URL`, its `AGENT_ID`, and an LLM key. Otherwise every "worker" boots the
+> gateway and crashes on the missing `AGENT_IDS`.
+
+```bash
 # Deploy all
 copilot env init --name production
 copilot svc deploy --name gateway --env production

@@ -24,7 +24,7 @@
     "build": "tsc --project tsconfig.build.json",
     "prepublishOnly": "npm run build",
     "dev": "node dist/src/main/index.js",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "eslint src tests examples --max-warnings 0",
     "format": "prettier --write src tests",
     "test": "vitest run --config vitest.config.mts",
     "test:coverage": "vitest run --coverage --config vitest.config.mts",

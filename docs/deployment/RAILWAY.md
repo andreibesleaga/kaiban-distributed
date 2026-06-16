@@ -149,33 +149,21 @@ restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 ```
 
-**Per-service overrides** — Railway reads a `railway.json` to configure multiple services from one repo. Create `railway.json`:
+**Per-service overrides** — Railway does **not** support a single `railway.json` with a
+top-level `services[]` array. Instead, create one Railway **service per process**, each
+pointing at this repo, and set each service's **Custom Start Command** (Settings → Deploy)
+or use the maintained per-service config at
+[`examples/blog-team/infra/railway/railway.toml`](../../examples/blog-team/infra/railway/railway.toml).
+Suggested start commands:
 
-```json
-{
-  "$schema": "https://railway.app/railway.schema.json",
-  "services": [
-    {
-      "name": "gateway",
-      "startCommand": "node dist/src/main/index.js",
-      "healthcheckPath": "/health",
-      "port": 3000
-    },
-    {
-      "name": "researcher",
-      "startCommand": "node dist/examples/blog-team/researcher-node.js"
-    },
-    {
-      "name": "writer",
-      "startCommand": "node dist/examples/blog-team/writer-node.js"
-    },
-    {
-      "name": "editor",
-      "startCommand": "node dist/examples/blog-team/editor-node.js"
-    }
-  ]
-}
-```
+| Service | Custom Start Command |
+|---------|----------------------|
+| gateway | `node dist/src/main/index.js` (set `AGENT_IDS=gateway`, healthcheck `/health`) |
+| researcher | `node dist/examples/blog-team/researcher-node.js` |
+| writer | `node dist/examples/blog-team/writer-node.js` |
+| editor | `node dist/examples/blog-team/editor-node.js` |
+
+All services share the same `REDIS_URL` and LLM key environment variables.
 
 ---
 
