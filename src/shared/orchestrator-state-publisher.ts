@@ -28,6 +28,9 @@
 
 import { Redis } from "ioredis";
 import { wrapSigned } from "../infrastructure/security/channel-signing";
+import { createStructuredLogger } from "./structured-logger";
+
+const log = createStructuredLogger({ component: "OrchestratorStatePublisher" });
 
 export class OrchestratorStatePublisher {
   protected readonly redis: Redis;
@@ -44,7 +47,7 @@ export class OrchestratorStatePublisher {
     this.redis
       .publish("kaiban-state-events", wrapSigned(delta))
       .catch((err: unknown) =>
-        console.error("[OrchestratorStatePublisher] Publish failed:", err),
+        log.error({ err }, "Publish failed"),
       );
   }
 

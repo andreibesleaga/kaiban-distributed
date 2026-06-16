@@ -34,6 +34,8 @@ jobs:
         run: npm run typecheck
       - name: Architecture (no circular imports)
         run: npm run lint:arch
+      - name: API surface gate (api-extractor — fails on undocumented public-API drift)
+        run: npm run api:check
       - name: Unit tests + coverage (enforced 100% of src/**)
         run: npm run test:coverage
       - name: Upload coverage report

@@ -71,8 +71,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (pino-pretty) for readable local/demo output. Rolled out across **all production
   modules** (AgentActor, SocketGateway, GatewayApp, SlidingWindowBreaker,
   AgentStatePublisher, DistributedStateMiddleware, MCP client, KaibanAgentBridge,
-  Telemetry) with structured context. The demo `createLogger`, HITL prompts, and
-  bootstrap banners stay intentionally human-readable.
+  Telemetry) **and** the worker bootstrap (`main/index.ts`) + shared orchestration
+  (`agent-node`, `orchestrator-state-publisher`) — all operational logging is now
+  structured. The demo `createLogger` and HITL interactive prompts stay
+  intentionally human-readable (terminal UX, not operational logs).
+- **API-surface gate**: `@microsoft/api-extractor` (`api:check`/`api:update`) with a
+  committed `etc/kaiban-distributed.api.md` report; CI fails on undocumented public-API
+  drift — completing the 6-gate verification protocol.
 - **Accessibility**: board axe-core a11y tests (`vitest-axe`) across 6 components — 0 violations.
 - **Deployment**: verified + hardened Railway/Vercel/AWS/Azure — removed Vercel
   phantom steps; gateway `SOCKET_CORS_ORIGINS` everywhere; worker LLM keys/commands;

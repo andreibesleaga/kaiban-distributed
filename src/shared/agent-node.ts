@@ -34,6 +34,9 @@ import {
 import { AgentStatePublisher } from "../adapters/state/agent-state-publisher";
 import { createDriver } from "./driver-factory";
 import { buildSecurityDeps } from "./build-security-deps";
+import { createStructuredLogger } from "./structured-logger";
+
+const log = createStructuredLogger({ component: "agent-node" });
 
 export interface AgentNodeConfig {
   /** Unique agent identifier (also used as messaging group suffix). */
@@ -75,7 +78,7 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   const actor = new AgentActor(agentId, driver, queue, handler, actorDeps);
 
   await actor.start();
-  console.log(`${label} ${displayName} started → ${queue}`);
+  log.info({ label, agent: displayName, queue }, "Agent node started");
   statePublisher.publishIdle();
 
   process.on("SIGTERM", () => {

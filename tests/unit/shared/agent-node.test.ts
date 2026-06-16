@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { startAgentNode } from "../../../src/shared";
 
 // ── Mock all heavy dependencies ──────────────────────────────────────────────
@@ -93,12 +106,10 @@ describe("startAgentNode", () => {
     label: "[Researcher]",
   };
 
-  let logSpy: ReturnType<typeof vi.spyOn>;
   let sigTermListeners: Array<() => void>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     // Capture SIGTERM listeners so we can invoke them
     sigTermListeners = [];
     vi.spyOn(process, "on").mockImplementation((event, handler) => {
@@ -120,7 +131,7 @@ describe("startAgentNode", () => {
 
   it("logs a startup message with displayName and queue", async () => {
     await startAgentNode(baseConfig);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Ava"));
+    expect(JSON.stringify(mockLog.info.mock.calls)).toContain("Ava");
   });
 
   it("creates driver with agentId as suffix", async () => {
