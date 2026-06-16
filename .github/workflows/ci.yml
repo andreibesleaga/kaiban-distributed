@@ -138,7 +138,7 @@ jobs:
       # Blocking gate: fail the build on a FIXABLE CRITICAL/HIGH OS or library CVE
       # in the runtime image (unfixed base-image CVEs are reported but don't block).
       - name: Scan image (Trivy — gate on fixable CRITICAL/HIGH)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: kaiban-distributed:ci-${{ github.sha }}
           format: table
@@ -150,7 +150,7 @@ jobs:
       # Always publish the full SARIF to the Security tab, even when the gate fails.
       - name: Scan image (Trivy — SARIF report)
         if: always()
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: kaiban-distributed:ci-${{ github.sha }}
           format: sarif
