@@ -23,8 +23,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Governance: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`,
   `.github/dependabot.yml` (root + board + actions).
 - `@opentelemetry/api` added as a direct dependency (was imported but undeclared).
-- `docs/audit/` — full audit: baseline reality, pending-change reconciliation,
-  doc↔code verification matrix, external-standards research, book↔code consistency.
 - Unit test for the bootstrap/composition root (`src/main/index.ts`).
 
 ### Fixed

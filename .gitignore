@@ -22,7 +22,9 @@ coverage
 agents
 certs
 runs
-audit
+
+# In-repo audit deliverables — kept locally + mirrored in OpenSourceAudit, not published in the repo
+docs/audit/
 
 CHANGES_LOG.md
 CHANGES_GITLOG.md

@@ -27,15 +27,11 @@ Architecture is Clean/DDD: `domain` · `application` · `adapters` · `infrastru
 - [blog-team](examples/blog-team/): 3-agent editorial pipeline with HITL
 - [global-research](examples/global-research/): N-searcher fan-out/fan-in swarm with chaos mode
 
-## Audit & verification
-- [Audit (8-pillar)](docs/audit/audit.md): ground-truth audit and scoring
-- [Verification matrix](docs/audit/verification-matrix.md): doc↔code, examples, deployment findings
-- [Production readiness](docs/audit/production-readiness.md): general + distributed + agentic-AI gate
+## Security & governance
 - [SECURITY](SECURITY.md): reporting, key handling, supply-chain posture
+- [CONTRIBUTING](CONTRIBUTING.md): dev workflow + the 6 verification gates
 - [CHANGELOG](CHANGELOG.md): notable changes
 
 ## Optional
 - [Board UI](board/): React + Vite real-time Kanban dashboard
-- [External standards research](docs/audit/external-research.md): A2A/MCP/OWASP/OTel/SLSA verification
-- [Book↔code consistency](docs/audit/book-code-consistency.md): manuscript reconciliation
 - [LICENSE notes](LICENSE-EXCEPTIONS.md): GPL-3.0 SaaS-vs-distribution + commercial licensing

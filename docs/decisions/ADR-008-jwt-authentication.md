@@ -19,4 +19,4 @@ control is `additive`/backward-compatible. Token lifetimes are fixed in code
 - **+** Opt-in: trusted deployments stay simple; exposed ones harden with one env var.
 - **+** Pairs with HMAC channel signing (ADR for state integrity) for defense in depth.
 - **−** "Off by default" means operators must remember to enable it in production
-  (called out in the production-readiness checklist and SECURITY.md).
+  (called out in SECURITY.md).

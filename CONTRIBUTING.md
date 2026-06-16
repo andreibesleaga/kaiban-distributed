@@ -32,8 +32,8 @@ cd board && npm ci     # board UI deps (separate lockfile)
 - [ ] `typecheck`, `lint`, `lint:arch`, `test:coverage`, and the board tests pass.
 - [ ] **New behavior ships with new tests** covering golden-path **+ edge + error** cases.
 - [ ] Coverage stays at 100% of `src/**` (the gate fails otherwise).
-- [ ] **No breaking change to public behavior** unless intentional and documented
-      (see the 6 verification gates in `docs/audit/`): public API surface, CLI
+- [ ] **No breaking change to public behavior** unless intentional and documented.
+      The 6 verification gates: public API surface (`api:check`), CLI
       `--help`, config schema (env vars additive with safe defaults), on-wire
       message shapes, ≤5% perf delta, and a non-positive CVE delta.
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`.

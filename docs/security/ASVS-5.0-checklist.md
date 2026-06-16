@@ -26,5 +26,5 @@
 
 ## Notes
 - Auth/transport rows are **🟡 deploy-dependent**: the controls exist but are env-gated, so the deploying operator must enable them (secrets set) for full enforcement.
-- The single ⬜ item (global cross-agent rate/cost limiter for massive fan-out) is tracked as a v2 safety feature in [production-readiness.md](../audit/production-readiness.md).
+- The single ⬜ item (global cross-agent rate/cost limiter for massive fan-out) is tracked as a v2 safety feature.
 - OWASP LLM Top 10 (2025) and Agentic Applications Top 10 (2026, ASI01–ASI10) mappings are in [SECURITY_FEATURES.md](SECURITY_FEATURES.md).
