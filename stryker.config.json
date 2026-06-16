@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing scoped to the pure domain layer (entities, result, errors, security primitives). Deterministic, no IO/timers — fast and stable for nightly. Broader layers (adapters/infra) involve Redis/Kafka/sockets and are covered by e2e instead.",
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "vitest": { "configFile": "vitest.config.mts" },
+  "mutate": ["src/domain/**/*.ts"],
+  "reporters": ["clear-text", "progress", "html"],
+  "htmlReporter": { "fileName": "reports/mutation/index.html" },
+  "coverageAnalysis": "perTest",
+  "tsconfigFile": "tsconfig.json",
+  "concurrency": 2,
+  "thresholds": { "high": 95, "low": 85, "break": 85 }
+}

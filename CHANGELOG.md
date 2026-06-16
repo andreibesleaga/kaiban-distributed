@@ -78,6 +78,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **API-surface gate**: `@microsoft/api-extractor` (`api:check`/`api:update`) with a
   committed `etc/kaiban-distributed.api.md` report; CI fails on undocumented public-API
   drift — completing the 6-gate verification protocol.
+- **Chaos / broker fault-injection e2e**: `test:e2e:chaos` pauses the Redis broker
+  mid-flight and asserts every buffered publish flushes on recovery with **zero dropped
+  agent messages**; fully isolated (own config, `afterAll`/`finally` always restore the
+  broker) and wired into `nightly.yml`.
+- **Mutation testing (Stryker)**: `test:mutation` over the pure `src/domain/**` layer —
+  **96.61%** mutation score (break gate 85%), nightly job + HTML report. Remaining
+  survivors are provably-equivalent mutants. (Stryker introduced no new HIGH/critical
+  advisories.)
 - **Accessibility**: board axe-core a11y tests (`vitest-axe`) across 6 components — 0 violations.
 - **Deployment**: verified + hardened Railway/Vercel/AWS/Azure — removed Vercel
   phantom steps; gateway `SOCKET_CORS_ORIGINS` everywhere; worker LLM keys/commands;

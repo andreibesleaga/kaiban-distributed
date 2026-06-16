@@ -29,3 +29,5 @@ CHANGES_GITLOG.md
 
 
 temp/
+reports/
+.stryker-tmp/

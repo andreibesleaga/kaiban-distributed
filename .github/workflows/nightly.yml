@@ -49,6 +49,41 @@ jobs:
           KAFKA_BROKERS: localhost:9092
           AGENT_IDS: test-agent
 
+  chaos:
+    name: Chaos — broker fault injection (Redis pause/unpause)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Broker resilience (pause Redis mid-flight, assert zero dropped)
+        run: npm run test:e2e:chaos
+        env:
+          REDIS_URL: redis://localhost:6379
+          AGENT_IDS: test-agent
+
+  mutation:
+    name: Mutation testing (domain layer — Stryker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Stryker mutation (break < 85% domain score)
+        run: npm run test:mutation
+      - name: Upload mutation HTML report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: reports/mutation/
+
   bench:
     name: Micro-benchmarks (perf baseline)
     runs-on: ubuntu-latest

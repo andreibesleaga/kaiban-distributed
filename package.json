@@ -31,12 +31,14 @@
     "test:e2e": "vitest run --config vitest.e2e.config.mts",
     "test:e2e:kafka": "vitest run --config vitest.e2e.kafka.config.mts",
     "test:e2e:security": "vitest run --config vitest.e2e.security.config.mts",
+    "test:e2e:chaos": "vitest run --config vitest.e2e.chaos.config.mts",
     "test:e2e:live": "vitest run --config vitest.e2e.live.config.ts",
     "typecheck": "tsc --noEmit",
     "lint:arch": "madge --circular --extensions ts src/",
     "bench": "vitest bench --run --config vitest.bench.config.mts",
     "api:check": "npm run build && api-extractor run --verbose",
-    "api:update": "npm run build && api-extractor run --local --verbose"
+    "api:update": "npm run build && api-extractor run --local --verbose",
+    "test:mutation": "stryker run"
   },
   "repository": {
     "type": "git",
@@ -75,6 +77,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@microsoft/api-extractor": "^7.58.9",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.5",
     "@types/supertest": "^7.2.0",
