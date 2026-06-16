@@ -39,17 +39,18 @@ Several transitive advisories reach the tree via `@langchain/*` (used by
 `kaibanjs`) and the OpenTelemetry/gRPC stack. `package.json` `overrides` pin
 patched versions: `@langchain/core`, `@langchain/community`, `langchain`,
 `langsmith`, `axios`, `protobufjs`, `@grpc/grpc-js`, `ws`, `hono`, `fast-uri`,
-`fast-xml-parser`, `qs`, `uuid`, `ip-address`, `@opentelemetry/exporter-prometheus`.
+`fast-xml-parser`, `qs`, `uuid`, `ip-address`, `@opentelemetry/exporter-prometheus`,
+`form-data` (>=4.0.6), `vite` (>=8.0.16).
 
-### Accepted residual advisories (dev/build only)
+### Residual advisories (moderate only)
 
-| Package | Severity | Why accepted |
-|---------|----------|--------------|
-| `brace-expansion` | moderate | Dev-only transitive (glob/minimatch in tooling); not in the runtime artifact |
-| `postcss` | moderate | Build-only (board CSS pipeline); not in the runtime artifact |
-
-These do not ship in the deployed worker/gateway image. They are tracked and
-will be cleared when upstream tooling updates; CI does not block on moderates.
+`npm audit` reports **0 high/critical** (CI fails the build on HIGH+). A number of
+**moderate** advisories remain — these fluctuate as the npm advisory database is
+updated against existing dependency versions, and are predominantly **dev/build
+tooling and transitive** packages (e.g. `brace-expansion`, `postcss`, and various
+test/build transitives) that **do not ship in the deployed worker/gateway image or
+the published `dist/src` library**. They are tracked and cleared as upstream fixes
+land; CI intentionally does not block on moderates.
 
 ## Sensitive-data handling (operator responsibility)
 
