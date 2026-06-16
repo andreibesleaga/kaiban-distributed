@@ -78,7 +78,7 @@ jobs:
       - name: Stryker mutation (break < 85% domain score)
         run: npm run test:mutation
       - name: Upload mutation HTML report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-report
