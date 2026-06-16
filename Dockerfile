@@ -10,7 +10,10 @@ WORKDIR /app
 RUN apk upgrade --no-cache
 
 COPY package*.json ./
-RUN npm install --include=dev
+# `npm ci` (not `npm install`): install the EXACT, audited lockfile versions so the
+# image can't silently re-resolve a transitive to a vulnerable version (which is
+# what the Trivy gate caught — glob/minimatch/tar drifting above the clean lock).
+RUN npm ci --include=dev
 
 COPY tsconfig.json tsconfig.build.json ./
 COPY src/ ./src/
@@ -33,7 +36,8 @@ RUN apk upgrade --no-cache
 RUN addgroup -S kaiban && adduser -S kaiban -G kaiban
 
 COPY package*.json ./
-RUN npm install --omit=dev
+# Lock-faithful, prod-only install (see builder stage note).
+RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
