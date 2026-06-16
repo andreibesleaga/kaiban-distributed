@@ -220,7 +220,7 @@ interface StateDelta {
   }>;
 
   // Workflow lifecycle (set exclusively by the orchestrator — never by workers)
-  teamWorkflowStatus?: 'RUNNING' | 'FINISHED' | 'STOPPED';
+  teamWorkflowStatus?: 'RUNNING' | 'FINISHED' | 'STOPPED' | 'ERRORED';
 }
 ```
 

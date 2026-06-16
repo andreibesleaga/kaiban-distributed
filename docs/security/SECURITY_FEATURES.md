@@ -306,7 +306,7 @@ CIRCUIT_BREAKER_THRESHOLD=10      # failures before breaker trips (default: 10)
 CIRCUIT_BREAKER_WINDOW_MS=60000   # sliding window duration in ms (default: 60 s)
 ```
 
-**OWASP:** ASI10 (Rogue Agents), LLM10 (Model DoS)
+**OWASP:** ASI08 (Cascading Failures), LLM10 (Unbounded Consumption)
 
 ---
 
@@ -374,7 +374,7 @@ TLS_REJECT_UNAUTHORIZED=true
 | `sanitizeDelta(delta)` | Strips fields: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` |
 | `sanitizeId(agentId)` | SHA-256 hashes agent IDs; logs 8-char prefix only |
 
-**OWASP / Compliance:** LLM02, GDPR data minimization
+**OWASP / Compliance:** LLM02 (Sensitive Information Disclosure), GDPR data minimization
 
 ---
 

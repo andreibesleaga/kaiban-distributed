@@ -591,7 +591,7 @@ const result = await bridge.start({ topic: 'AI agents 2025' });
 
 ## A2A Protocol (Agent-to-Agent)
 
-The Edge Gateway implements the [A2A protocol](https://google-deepmind.github.io/a2a/) for interoperability with other AI systems.
+The Edge Gateway exposes an **A2A** JSON-RPC surface for interoperability with other AI systems. It serves an agent card at the spec-recommended path (`/.well-known/agent-card.json`), but the RPC method names (`tasks.create`, `tasks.get`, `agent.status`) and the card schema are a pragmatic subset and are **not wire-compatible** with the current [A2A Protocol](https://a2a-protocol.org/) spec (Linux Foundation, v1.0 — which uses `message/send`, `tasks/get`, etc. and a richer `AgentCard`). Full A2A conformance is tracked for a future version.
 
 ### Agent Card
 

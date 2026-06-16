@@ -2514,7 +2514,7 @@ SEMANTIC_FIREWALL_ENABLED=true node dist/examples/blog-team/researcher-node.js
 
 Blocked payloads are routed directly to `kaiban-events-failed` (DLQ) without retries.
 
-### 14.2 Circuit Breaker (OWASP ASI10 — Abnormal Agent Behavior)
+### 14.2 Circuit Breaker (OWASP ASI08 — Cascading Failures)
 
 ```typescript
 import { SlidingWindowBreaker } from '../src/infrastructure/security/sliding-window-breaker';
