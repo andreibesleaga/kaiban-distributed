@@ -16,7 +16,7 @@ jobs:
     name: E2E — BullMQ / Redis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -37,7 +37,7 @@ jobs:
     name: E2E — Kafka
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -53,7 +53,7 @@ jobs:
     name: Chaos — broker fault injection (Redis pause/unpause)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -69,7 +69,7 @@ jobs:
     name: Mutation testing (domain layer — Stryker)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -78,7 +78,7 @@ jobs:
       - name: Stryker mutation (break < 85% domain score)
         run: npm run test:mutation
       - name: Upload mutation HTML report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutation-report
@@ -88,7 +88,7 @@ jobs:
     name: Micro-benchmarks (perf baseline)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

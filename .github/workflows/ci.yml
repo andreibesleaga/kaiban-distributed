@@ -22,7 +22,7 @@ jobs:
     name: Quality (lint · typecheck · 100% coverage · arch)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -39,26 +39,30 @@ jobs:
       - name: Unit tests + coverage (enforced 100% of src/**)
         run: npm run test:coverage
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage
           path: coverage/
 
   board:
-    name: Board UI (typecheck · build · tests)
+    name: Board UI (audit · typecheck · build · tests)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: board
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: board/package-lock.json
       - run: npm ci
+      # Gate the board on HIGH+ advisories too (root has this; the board
+      # previously had no audit step, which let an esbuild HIGH go uncaught).
+      - name: Dependency audit (fail on HIGH+)
+        run: npm audit --audit-level=high
       # `build` is `tsc --noEmit && vite build` — typechecks then bundles.
       - run: npm run build
       - run: npm test
@@ -70,7 +74,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
@@ -83,16 +87,16 @@ jobs:
       - name: Generate CycloneDX 1.6 SBOM
         run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-format JSON --spec-version 1.6 --output-file sbom.json
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-cyclonedx
           path: sbom.json
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: OSV-Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@v2.2.2
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
         continue-on-error: true
         with:
           scan-args: |-
@@ -113,7 +117,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
@@ -127,8 +131,8 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v6
         with:
           context: .
