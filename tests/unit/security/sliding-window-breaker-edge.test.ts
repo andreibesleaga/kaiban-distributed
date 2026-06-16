@@ -1,8 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { SlidingWindowBreaker } from "../../../src/infrastructure/security/sliding-window-breaker";
 
 describe("SlidingWindowBreaker — edge cases", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.useFakeTimers();
   });
   afterEach(() => {
@@ -31,8 +45,9 @@ describe("SlidingWindowBreaker — edge cases", () => {
     const breaker = new SlidingWindowBreaker(2, 1000);
     breaker.recordFailure();
     breaker.recordFailure();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Circuit OPEN"),
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.stringContaining("Circuit breaker OPEN"),
     );
     warnSpy.mockRestore();
   });
@@ -45,8 +60,8 @@ describe("SlidingWindowBreaker — edge cases", () => {
     breaker.recordFailure(); // trips
     vi.advanceTimersByTime(1100); // window expires
     breaker.recordSuccess(); // should close and log
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Circuit closed"),
+    expect(mockLog.info).toHaveBeenCalledWith(
+      expect.stringContaining("Circuit breaker closed"),
     );
     logSpy.mockRestore();
     warnSpy.mockRestore();
@@ -83,7 +98,7 @@ describe("SlidingWindowBreaker — edge cases", () => {
     breaker.recordFailure();
     breaker.recordFailure(); // trips — 1 warn
     breaker.recordFailure(); // already open — no new warn
-    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(mockLog.warn).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
   });
 });

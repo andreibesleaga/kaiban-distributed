@@ -8,6 +8,9 @@ import {
 } from "@opentelemetry/sdk-metrics";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { metrics, trace } from "@opentelemetry/api";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "Telemetry" });
 
 export interface TelemetryConfig {
   serviceName: string;
@@ -18,8 +21,8 @@ let sdk: NodeSDK | null = null;
 
 export function initTelemetry(config: TelemetryConfig): void {
   if (!config.exporterEndpoint) {
-    console.warn(
-      "[Telemetry] No OTEL_EXPORTER_OTLP_ENDPOINT configured — using ConsoleSpanExporter (dev only)",
+    log.warn(
+      "No OTEL_EXPORTER_OTLP_ENDPOINT configured — using Console exporters (dev only)",
     );
   }
   const exporter = config.exporterEndpoint
@@ -45,7 +48,9 @@ export function initTelemetry(config: TelemetryConfig): void {
   sdk.start();
 
   process.on("SIGTERM", () => {
-    sdk?.shutdown().catch(console.error);
+    sdk?.shutdown().catch((err: unknown) =>
+      log.error({ err }, "Telemetry SDK shutdown failed"),
+    );
   });
 }
 

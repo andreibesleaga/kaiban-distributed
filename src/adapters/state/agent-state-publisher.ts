@@ -12,6 +12,9 @@ import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import { sanitizeDelta } from "./distributedMiddleware";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "AgentStatePublisher" });
 
 export interface AgentInfo {
   agentId: string;
@@ -69,7 +72,7 @@ export class AgentStatePublisher {
     this.redis
       .publish(STATE_CHANNEL, wrapSigned(sanitizeDelta(delta)))
       .catch((err: unknown) =>
-        console.error("[StatePublisher] Failed to publish:", err),
+        log.error({ err }, "Failed to publish state"),
       );
   }
 

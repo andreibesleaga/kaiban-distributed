@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { createServer } from "http";
 import type Redis from "ioredis";
 import { SocketGateway } from "../../../src/adapters/gateway/SocketGateway";
@@ -121,7 +134,9 @@ describe("SocketGateway", () => {
     sg.initialize();
     getRedisMessageHandler()("kaiban-state-events", "{invalid}");
     // unwrapVerified returns null on bad JSON → triggers 'Rejected unsigned/invalid' warn
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Rejected"));
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Rejected"),
+    );
     warnSpy.mockRestore();
   });
 

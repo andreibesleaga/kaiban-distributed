@@ -11,6 +11,9 @@ import {
   type JsonRpcRequest,
 } from "../../infrastructure/federation/a2a-connector";
 import { verifyA2AToken } from "../../infrastructure/security/a2a-auth";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "GatewayApp" });
 
 interface ApiResponse<T> {
   data: T | null;
@@ -111,7 +114,15 @@ export class GatewayApp {
   private requestLogger(req: Request, res: Response, next: NextFunction): void {
     const requestId = randomUUID();
     res.on("finish", () => {
-      console.log(`[${requestId}] ${req.method} ${req.path} ${res.statusCode}`);
+      log.info(
+        {
+          requestId,
+          method: req.method,
+          path: req.path,
+          status: res.statusCode,
+        },
+        "request",
+      );
     });
     next();
   }

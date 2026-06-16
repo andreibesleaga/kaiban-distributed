@@ -1,6 +1,9 @@
 import { Redis } from "ioredis";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "DistributedStateMiddleware" });
 
 const PII_DENYLIST: ReadonlySet<string> = new Set([
   "email",
@@ -65,10 +68,7 @@ export class DistributedStateMiddleware {
       try {
         await this.redis.publish(this.channelName, JSON.stringify(payload));
       } catch (err) {
-        console.error(
-          "[DistributedStateMiddleware] Failed to publish state delta:",
-          err,
-        );
+        log.error({ err }, "Failed to publish state delta");
       }
     };
 
@@ -86,10 +86,7 @@ export class DistributedStateMiddleware {
           const payload = JSON.parse(message) as MessagePayload;
           onStateChange(payload.data["stateUpdate"] as Record<string, unknown>);
         } catch (e) {
-          console.error(
-            "[DistributedStateMiddleware] Failed to parse message:",
-            e,
-          );
+          log.error({ err: e }, "Failed to parse state message");
         }
       }
     });

@@ -14,6 +14,9 @@ import {
   recordMessageProcessed,
   recordMessageLatency,
 } from "../../infrastructure/telemetry/telemetry";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "AgentActor" });
 
 export type TaskHandler = (payload: MessagePayload) => Promise<unknown>;
 
@@ -77,20 +80,23 @@ export class AgentActor {
 
   public async start(): Promise<void> {
     if (!this.taskHandler) {
-      console.warn(
-        `[Actor ${sanitizeId(this.id)}] No taskHandler provided — received messages will be silently dropped`,
+      log.warn(
+        { agentId: sanitizeId(this.id) },
+        "No taskHandler provided — received messages will be silently dropped",
       );
     }
-    console.log(
-      `[Actor ${sanitizeId(this.id)}] Starting on queue ${this.queueName}`,
+    log.info(
+      { agentId: sanitizeId(this.id), queue: this.queueName },
+      "Actor starting",
     );
     await this.driver.subscribe(this.queueName, this.processTask.bind(this));
   }
 
   private async processTask(payload: MessagePayload): Promise<void> {
     if (payload.agentId !== this.id && payload.agentId !== "*") {
-      console.log(
-        `[Actor ${sanitizeId(this.id)}] Ignored task for different agent`,
+      log.debug(
+        { agentId: sanitizeId(this.id), target: payload.agentId },
+        "Ignored task for a different agent",
       );
       return;
     }
@@ -102,8 +108,9 @@ export class AgentActor {
 
   private async isBlockedByGuards(payload: MessagePayload): Promise<boolean> {
     if (this.circuitBreaker?.isOpen()) {
-      console.warn(
-        `[Actor ${sanitizeId(this.id)}] Circuit breaker OPEN — rejecting task`,
+      log.warn(
+        { agentId: sanitizeId(this.id), taskId: payload.taskId },
+        "Circuit breaker OPEN — rejecting task",
       );
       recordAnomalyEvent("circuit_breaker.rejected", {
         agentId: sanitizeId(this.id),
@@ -116,8 +123,9 @@ export class AgentActor {
     if (this.firewall) {
       const verdict = await this.firewall.evaluate(payload);
       if (!verdict.allowed) {
-        console.warn(
-          `[Actor ${sanitizeId(this.id)}] Blocked by firewall: ${verdict.reason}`,
+        log.warn(
+          { agentId: sanitizeId(this.id), reason: verdict.reason ?? "unknown" },
+          "Blocked by semantic firewall",
         );
         recordAnomalyEvent("firewall.blocked", {
           agentId: sanitizeId(this.id),
@@ -158,8 +166,9 @@ export class AgentActor {
         return;
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[Actor ${sanitizeId(this.id)}] Attempt ${attempt} failed: ${lastError}`,
+        log.error(
+          { agentId: sanitizeId(this.id), attempt, err: lastError },
+          "Task attempt failed",
         );
         if (attempt < RETRY_ATTEMPTS) {
           await delay(RETRY_BASE_DELAY_MS * attempt);
@@ -207,7 +216,7 @@ export class AgentActor {
   }
 
   public async stop(): Promise<void> {
-    console.log(`[Actor ${sanitizeId(this.id)}] Stopping`);
+    log.info({ agentId: sanitizeId(this.id) }, "Actor stopping");
     await this.driver.unsubscribe(this.queueName);
   }
 }

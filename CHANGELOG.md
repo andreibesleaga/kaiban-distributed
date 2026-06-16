@@ -66,3 +66,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for the viewer JS) — `npm run lint` covers src + tests + examples.
 - **Deploy docs/manifests**: HELM gateway `secretRef` + accurate image-tag default;
   AWS ECS worker `CMD` note; Railway per-service guidance (no unsupported `railway.json`).
+- **Structured logging (pino)**: `src/shared/structured-logger.ts` — JSON logs with
+  PII redaction, child loggers, level via `LOG_LEVEL`, and opt-in `LOG_PRETTY=true`
+  (pino-pretty) for readable local/demo output. Rolled out across **all production
+  modules** (AgentActor, SocketGateway, GatewayApp, SlidingWindowBreaker,
+  AgentStatePublisher, DistributedStateMiddleware, MCP client, KaibanAgentBridge,
+  Telemetry) with structured context. The demo `createLogger`, HITL prompts, and
+  bootstrap banners stay intentionally human-readable.
+- **Accessibility**: board axe-core a11y tests (`vitest-axe`) across 6 components — 0 violations.
+- **Deployment**: verified + hardened Railway/Vercel/AWS/Azure — removed Vercel
+  phantom steps; gateway `SOCKET_CORS_ORIGINS` everywhere; worker LLM keys/commands;
+  health-check scoping (gateway-only); WEBSITES_PORT for Azure App Service.
