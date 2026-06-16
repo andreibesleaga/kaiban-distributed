@@ -9,7 +9,11 @@ import {
 } from "../../infrastructure/messaging/channels";
 import type { ISemanticFirewall } from "../../domain/security/semantic-firewall";
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
-import { recordAnomalyEvent } from "../../infrastructure/telemetry/telemetry";
+import {
+  recordAnomalyEvent,
+  recordMessageProcessed,
+  recordMessageLatency,
+} from "../../infrastructure/telemetry/telemetry";
 
 export type TaskHandler = (payload: MessagePayload) => Promise<unknown>;
 
@@ -132,6 +136,7 @@ export class AgentActor {
   }
 
   private async executeWithRetries(payload: MessagePayload): Promise<void> {
+    const start = Date.now();
     let lastError = "Max retries exceeded";
     for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
       try {
@@ -148,6 +153,8 @@ export class AgentActor {
               `Actor ${sanitizeId(this.id)} executed successfully`,
           }),
         });
+        recordMessageProcessed("completed");
+        recordMessageLatency(Date.now() - start, "completed");
         return;
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
@@ -161,6 +168,7 @@ export class AgentActor {
     }
 
     this.circuitBreaker?.recordFailure();
+    recordMessageLatency(Date.now() - start, "failed");
     await this.publishToDlq(payload, lastError);
   }
 
@@ -169,6 +177,7 @@ export class AgentActor {
     error: string,
     reason?: string,
   ): Promise<void> {
+    recordMessageProcessed("failed");
     await this.driver.publish(DLQ_CHANNEL, {
       taskId: payload.taskId,
       agentId: this.id,

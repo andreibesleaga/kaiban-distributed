@@ -17,10 +17,23 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 vi.mock("@opentelemetry/sdk-trace-node", () => ({
   ConsoleSpanExporter: vi.fn(),
 }));
+vi.mock("@opentelemetry/sdk-metrics", () => ({
+  PeriodicExportingMetricReader: vi.fn(),
+  ConsoleMetricExporter: vi.fn(),
+}));
+vi.mock("@opentelemetry/exporter-metrics-otlp-http", () => ({
+  OTLPMetricExporter: vi.fn(),
+}));
 vi.mock("@opentelemetry/api", () => ({
   trace: { getActiveSpan: vi.fn().mockReturnValue(null) },
   propagation: { inject: vi.fn(), extract: vi.fn().mockReturnValue({}) },
   context: { active: vi.fn().mockReturnValue({}) },
+  metrics: {
+    getMeter: vi.fn().mockReturnValue({
+      createCounter: vi.fn().mockReturnValue({ add: vi.fn() }),
+      createHistogram: vi.fn().mockReturnValue({ record: vi.fn() }),
+    }),
+  },
   ROOT_CONTEXT: {},
 }));
 
