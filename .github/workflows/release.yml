@@ -113,7 +113,10 @@ jobs:
       - name: Sign the image (keyless OIDC)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          # Pass the (multi-line) tag list via env, not inline interpolation, so a
+          # second tag doesn't break the shell. Iterate line-by-line.
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            cosign sign --yes "${tag}@${DIGEST}"
+          echo "$TAGS" | while read -r tag; do
+            [ -n "$tag" ] && cosign sign --yes "${tag}@${DIGEST}"
           done
