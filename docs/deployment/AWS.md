@@ -124,6 +124,16 @@ copilot secret init --name OPENAI_API_KEY
 copilot secret init --name OPENROUTER_API_KEY
 ```
 
+> **Reminder:** `copilot secret init` only stores the secret — it does not wire it into a
+> service. You must reference the LLM secret in **each worker's** manifest
+> (`copilot/<svc>/manifest.yml`) under its `secrets:` block so the worker can actually call
+> the model, e.g.:
+>
+> ```yaml
+> secrets:
+>   OPENAI_API_KEY: /copilot/${COPILOT_APPLICATION_NAME}/${COPILOT_ENVIRONMENT_NAME}/secrets/OPENAI_API_KEY
+> ```
+
 ---
 
 ## Option C — AWS Elastic Beanstalk (single-instance, quick start)
@@ -142,7 +152,7 @@ eb deploy
 Set env vars:
 
 ```bash
-eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... AGENT_IDS=gateway PORT=8080
+eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... AGENT_IDS=gateway PORT=8080 SOCKET_CORS_ORIGINS=https://<your-viewer-domain>
 ```
 
 ---

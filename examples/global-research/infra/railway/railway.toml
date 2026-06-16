@@ -4,6 +4,10 @@ dockerfilePath = "../../Dockerfile"
 
 [deploy]
 restartPolicyType = "on_failure"
+# NOTE: healthcheckPath = "/health" applies ONLY to the gateway service (the only one
+# with an HTTP server). For WORKER services (searcher/writer/reviewer/editor), leave the
+# Healthcheck Path BLANK in Railway — workers have no HTTP server, so Railway falls back
+# to process-up (liveness) checks.
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 

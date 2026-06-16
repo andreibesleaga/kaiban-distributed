@@ -8,7 +8,7 @@ Vercel is a frontend-focused platform. It does **not** support long-running Node
 
 | Component             | Deploy on Vercel? | Notes                                                |
 |-----------------------|-------------------|------------------------------------------------------|
-| Static viewer (HTML)  | ✅ Yes             | `board.html`, `board.js`, `board.css`, `sw.js`       |
+| Static viewer (HTML)  | ✅ Yes             | `board.html`, `board.js`, `board.css`                |
 | Gateway (Socket.IO)   | ❌ No              | Requires persistent WebSocket connection             |
 | Agent workers         | ❌ No              | Long-running Node.js processes                       |
 | Redis / BullMQ        | ❌ No              | Stateful service                                     |
@@ -39,20 +39,9 @@ Create a `vercel.json` in the example you want to deploy:
 
 Place it alongside `board.html` inside `examples/blog-team/viewer/`.
 
-### Step 2 — Shared Assets
+The viewer is self-contained (`board.html` + `board.js` + `board.css`) — there is nothing to copy; deploy `examples/blog-team/viewer/` as-is.
 
-The viewer loads assets from a relative path (`../../shared/viewer/board-base.js`). On Vercel each example is its own deployment, so you need to copy the shared files in or serve them from a public URL.
-
-Simplest approach — copy the shared files before deploying:
-
-```bash
-# From the repo root
-cp -r examples/shared/viewer examples/blog-team/viewer/shared
-```
-
-Then update `board.html` to reference `./shared/board-base.js` instead of `../../shared/viewer/board-base.js`.
-
-### Step 3 — Deploy via the Vercel CLI
+### Step 2 — Deploy via the Vercel CLI
 
 ```bash
 # Install the CLI once
@@ -69,28 +58,23 @@ During the first deployment, Vercel will ask:
 - **Root directory**: `.` (current directory)
 - **Framework**: Other
 
-### Step 4 — Configure the Gateway URL
+### Step 3 — Configure the Gateway URL
 
 The viewer resolves the gateway address from the first of these sources (in priority order):
 
-1. **`?gateway=` query parameter** — append `?gateway=https://your-gateway.railway.app` to the URL.
-2. **`data-gateway` attribute on `<body>`** — set it directly in `board.html`:
-
-```html
-<body data-gateway="https://your-gateway.railway.app">
-```
-
-3. **`window.GATEWAY_URL` global** — set via a `<script>` block before `board-base.js` loads:
+1. **`window.GATEWAY_URL` global** — set via a `<script>` block before `board.js` loads:
 
 ```html
 <script>window.GATEWAY_URL = "https://your-gateway.railway.app";</script>
 ```
 
-4. **Fallback** — `http://localhost:3000` (development default).
+2. **`?gateway=` query parameter** — append `?gateway=https://your-gateway.railway.app` to the URL.
 
-After deploying the gateway elsewhere, open the Vercel project's **Environment Variables** settings and inject the URL at build time, or set it directly in `board.html` using option 2 above.
+3. **Fallback** — `http://localhost:3000` (development default).
 
-### Step 5 — Custom Domain (optional)
+After deploying the gateway elsewhere, set the URL directly in `board.html` using option 1 above (the `window.GATEWAY_URL` global), or pass it at runtime via the `?gateway=` query parameter (option 2).
+
+### Step 4 — Custom Domain (optional)
 
 ```bash
 vercel domains add viewer.yourdomain.com

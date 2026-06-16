@@ -85,6 +85,7 @@ AGENT_IDS=gateway
 MESSAGING_DRIVER=bullmq
 PORT=3000
 SERVICE_NAME=kaiban-gateway
+SOCKET_CORS_ORIGINS=https://<your-viewer-url>   # Required in production — gateway refuses wildcard CORS
 # REDIS_URL is set automatically by the Redis plugin
 # OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-endpoint (optional)
 ```
@@ -149,6 +150,11 @@ restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 ```
 
+> **Note:** `healthcheckPath = "/health"` applies **only to the gateway service** — it is
+> the only service with an HTTP server. For **worker** services (researcher/writer/editor),
+> leave the Healthcheck Path **blank** in Railway (Settings → Deploy). Workers have no HTTP
+> server, so Railway falls back to process-up (liveness) checks.
+
 **Per-service overrides** — Railway does **not** support a single `railway.json` with a
 top-level `services[]` array. Instead, create one Railway **service per process**, each
 pointing at this repo, and set each service's **Custom Start Command** (Settings → Deploy)
@@ -196,12 +202,15 @@ Set these in Railway **Project → Variables** (shared across all services) or p
 |----------|-------|-------|
 | `AGENT_IDS` | `gateway` | The gateway service itself doesn't run agents |
 | `PORT` | `3000` | Gateway HTTP port |
+| `SOCKET_CORS_ORIGINS` | `https://<viewer-url>` | **Required in production** — the gateway refuses wildcard CORS, so set this to your viewer URL |
 
 ### Worker-Only Variables
 
 | Variable | Value | Notes |
 |----------|-------|-------|
 | `AGENT_IDS` | _(not required for workers using example scripts)_ | Worker scripts use hardcoded agent IDs |
+| `REDIS_URL` | `${{Redis.REDIS_URL}}` | **Required** — workers connect to Redis/BullMQ for tasks |
+| `OPENAI_API_KEY` / `OPENROUTER_API_KEY` | `sk-...` / `sk-or-v1-...` | **Required** for real agent execution (one LLM key) |
 
 ### Optional Observability
 
@@ -264,34 +273,15 @@ All writer instances share the same `kaiban-agents-writer` BullMQ queue — Bull
 
 ## Dockerfile for Railway
 
-Railway uses our existing `Dockerfile` at the repo root:
+Railway uses our existing multi-stage `Dockerfile` at the repo root — see
+[`../../Dockerfile`](../../Dockerfile). Do not duplicate it here; the repo-root Dockerfile
+is the single source of truth.
 
-```dockerfile
-# Stage 1: Build TypeScript
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --include=dev
-COPY tsconfig.json ./
-COPY src/ ./src/
-COPY examples/ ./examples/        # ← Important: include examples for worker scripts
-RUN npm run build
-
-# Stage 2: Production runtime
-FROM node:22-alpine AS runner
-WORKDIR /app
-RUN addgroup -S kaiban && adduser -S kaiban -G kaiban
-COPY package*.json ./
-RUN npm ci --omit=dev
-COPY --from=builder /app/dist ./dist
-USER kaiban
-EXPOSE 3000
-HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
-CMD ["node", "dist/src/main/index.js"]
-```
-
-> **Note:** The Dockerfile already copies `examples/` in the builder stage, so `dist/examples/blog-team/researcher-node.js` etc. are available for worker services. The build output lands under `dist/src/` (for `src/`) and `dist/examples/` (for `examples/`).
+> **Note:** The repo-root Dockerfile already copies `examples/` in the builder stage, so
+> `dist/examples/blog-team/researcher-node.js` etc. are available for worker services. The
+> build output lands under `dist/src/` (for `src/`) and `dist/examples/` (for `examples/`).
+> Its default `CMD` is the gateway (`node dist/src/main/index.js`); worker services override
+> the start command (see Step 4).
 
 ---
 
