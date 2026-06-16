@@ -9,6 +9,7 @@ import {
 } from "../../infrastructure/messaging/channels";
 import type { ISemanticFirewall } from "../../domain/security/semantic-firewall";
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
+import { recordAnomalyEvent } from "../../infrastructure/telemetry/telemetry";
 
 export type TaskHandler = (payload: MessagePayload) => Promise<unknown>;
 
@@ -100,6 +101,10 @@ export class AgentActor {
       console.warn(
         `[Actor ${sanitizeId(this.id)}] Circuit breaker OPEN — rejecting task`,
       );
+      recordAnomalyEvent("circuit_breaker.rejected", {
+        agentId: sanitizeId(this.id),
+        taskId: payload.taskId,
+      });
       await this.publishToDlq(payload, "circuit_breaker_open");
       return true;
     }
@@ -110,6 +115,10 @@ export class AgentActor {
         console.warn(
           `[Actor ${sanitizeId(this.id)}] Blocked by firewall: ${verdict.reason}`,
         );
+        recordAnomalyEvent("firewall.blocked", {
+          agentId: sanitizeId(this.id),
+          reason: verdict.reason ?? "unknown",
+        });
         await this.publishToDlq(
           payload,
           "blocked_by_semantic_firewall",
