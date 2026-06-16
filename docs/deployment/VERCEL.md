@@ -110,10 +110,11 @@ Vercel (static viewer)  ──→  Railway Gateway  ──→  Railway Redis
                                    Railway Agent Workers
 ```
 
-Set `CORS_ORIGIN` on the Railway gateway to your Vercel viewer URL:
+Set `SOCKET_CORS_ORIGINS` on the Railway gateway to your Vercel viewer URL
+(this is read by the Socket.io gateway and is required in production):
 
 ```
-CORS_ORIGIN=https://kaiban-blog-team-viewer.vercel.app
+SOCKET_CORS_ORIGINS=https://kaiban-blog-team-viewer.vercel.app
 ```
 
 ---

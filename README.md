@@ -708,8 +708,8 @@ KAFKA_GROUP_ID=kaiban-group
 ### Driver factory (for custom node code)
 
 ```typescript
-// examples/blog-team/driver-factory.ts
-import { createDriver, getDriverType } from './driver-factory';
+// src/shared/driver-factory.ts (shared helpers; also re-exported from src/shared)
+import { createDriver, getDriverType } from './src/shared';
 const driver = createDriver('researcher');   // BullMQ or Kafka based on MESSAGING_DRIVER env
 ```
 

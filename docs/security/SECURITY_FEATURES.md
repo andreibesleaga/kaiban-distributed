@@ -61,8 +61,7 @@
 
 **Configuration:**
 ```bash
-BOARD_JWT_SECRET=<random 32+ bytes, base64>   # activates auth
-BOARD_JWT_EXPIRY=3600                         # optional, default 3600 s
+BOARD_JWT_SECRET=<random 32+ bytes, base64>   # activates auth (token lifetime is 3600 s, set in code)
 ```
 
 **Board app:** Set `VITE_BOARD_TOKEN=<token>` in `board/.env` before running `npm run dev` or building the production bundle. The token is injected at build time (Vite `import.meta.env`).
