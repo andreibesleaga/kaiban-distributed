@@ -1,6 +1,6 @@
 {
   "name": "kaiban-distributed-board",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Modern React board visualisation for kaiban-distributed — real-time agent & task visualisation via Socket.io",
   "author": "Andrei Besleaga",

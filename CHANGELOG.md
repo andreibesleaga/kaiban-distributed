@@ -6,11 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-16
+
 ### Pre-merge hardening pass (audit follow-up)
-- **Container image CVEs**: `Dockerfile` now runs `apk upgrade --no-cache` in both
-  stages (self-heals base-image openssl/musl/zlib CVEs at build time) and pins
-  `glob >= 10.5.0` via `overrides` — clears the fixable CRITICAL/HIGH the new Trivy
-  gate flagged.
+- **Container image CVEs** (cleared the new Trivy gate to 0 fixable CRITICAL/HIGH):
+  `Dockerfile` runs `apk upgrade --no-cache` in both stages (self-heals base-image
+  openssl/musl/zlib — incl. a CRITICAL openssl); installs with `npm ci` (lock-faithful,
+  no transitive drift above the audited 0-high lock) and pins `glob >= 10.5.0` via
+  `overrides`; and **removes the bundled npm CLI from the runtime stage** (the node
+  base image's vendored npm shipped HIGH-CVE glob/minimatch/tar that the runtime —
+  which only runs `node` — never uses). Also shrinks the image and reduces attack
+  surface.
 - **Kafka poison-message resilience**: the consumer now skips an unparseable
   (non-JSON) record (logs a warning, advances the offset) instead of throwing and
   crash-looping on it — matching the BullMQ path's tolerance.
