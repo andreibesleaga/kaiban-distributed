@@ -46,7 +46,7 @@ jobs:
           path: coverage/
 
   board:
-    name: Board UI (typecheck · build · tests)
+    name: Board UI (audit · typecheck · build · tests)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -59,6 +59,10 @@ jobs:
           cache: "npm"
           cache-dependency-path: board/package-lock.json
       - run: npm ci
+      # Gate the board on HIGH+ advisories too (root has this; the board
+      # previously had no audit step, which let an esbuild HIGH go uncaught).
+      - name: Dependency audit (fail on HIGH+)
+        run: npm audit --audit-level=high
       # `build` is `tsc --noEmit && vite build` — typechecks then bundles.
       - run: npm run build
       - run: npm test
