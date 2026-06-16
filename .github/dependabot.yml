@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # Root package (framework)
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      production-dependencies:
+        dependency-type: production
+      development-dependencies:
+        dependency-type: development
+    labels:
+      - dependencies
+
+  # Board UI (separate lockfile)
+  - package-ecosystem: npm
+    directory: "/board"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      board-dependencies:
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - board
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - github-actions

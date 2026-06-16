@@ -6,6 +6,18 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 // Plain vi.fn() — no implementation — used with `new` safely
 vi.mock("@opentelemetry/sdk-node", () => ({ NodeSDK: vi.fn() }));
 vi.mock("@opentelemetry/auto-instrumentations-node", () => ({
@@ -17,10 +29,23 @@ vi.mock("@opentelemetry/exporter-trace-otlp-http", () => ({
 vi.mock("@opentelemetry/sdk-trace-node", () => ({
   ConsoleSpanExporter: vi.fn(),
 }));
+vi.mock("@opentelemetry/sdk-metrics", () => ({
+  PeriodicExportingMetricReader: vi.fn(),
+  ConsoleMetricExporter: vi.fn(),
+}));
+vi.mock("@opentelemetry/exporter-metrics-otlp-http", () => ({
+  OTLPMetricExporter: vi.fn(),
+}));
 vi.mock("@opentelemetry/api", () => ({
   trace: { getActiveSpan: vi.fn().mockReturnValue(null) },
   propagation: { inject: vi.fn(), extract: vi.fn().mockReturnValue({}) },
   context: { active: vi.fn().mockReturnValue({}) },
+  metrics: {
+    getMeter: vi.fn().mockReturnValue({
+      createCounter: vi.fn().mockReturnValue({ add: vi.fn() }),
+      createHistogram: vi.fn().mockReturnValue({ record: vi.fn() }),
+    }),
+  },
   ROOT_CONTEXT: {},
 }));
 
@@ -91,8 +116,8 @@ describe("initTelemetry — exporter selection", () => {
 
   it("logs a dev-only warning when ConsoleSpanExporter fallback is used", () => {
     initTelemetry({ serviceName: "svc" });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("ConsoleSpanExporter"),
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.stringContaining("OTEL_EXPORTER_OTLP_ENDPOINT"),
     );
   });
 
@@ -165,7 +190,10 @@ describe("initTelemetry — SIGTERM handler", () => {
     process.emit("SIGTERM");
     await new Promise<void>((r) => setTimeout(r, 20));
     expect(shutdownSpy).toHaveBeenCalledOnce();
-    expect(errorSpy).toHaveBeenCalledWith(shutdownError);
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: shutdownError }),
+      "Telemetry SDK shutdown failed",
+    );
   });
 
   it("multiple calls each register their own SIGTERM listener", () => {

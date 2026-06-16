@@ -19,12 +19,17 @@ node_modules
 dist
 build
 coverage
-agents
+/agents/
 certs
 runs
+
+# In-repo audit deliverables — kept locally + mirrored in OpenSourceAudit, not published in the repo
+docs/audit/
 
 CHANGES_LOG.md
 CHANGES_GITLOG.md
 
 
-
+temp/
+reports/
+.stryker-tmp/

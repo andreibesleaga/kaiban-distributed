@@ -49,7 +49,10 @@ This installs the chart with release name `blog-team` using default values (Bull
 image:
   repository: kaiban-distributed
   pullPolicy: IfNotPresent
-  tag: "latest"
+  # Empty tag → uses Chart.AppVersion. A default `helm install` therefore pulls
+  # kaiban-distributed:<AppVersion>; if you built a local `:latest` image, tag it
+  # with the AppVersion or install with `--set image.tag=latest`.
+  tag: ""
 
 redis:
   enabled: true            # set false to use an external Redis

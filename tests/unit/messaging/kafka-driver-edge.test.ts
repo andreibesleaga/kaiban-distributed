@@ -46,6 +46,18 @@ vi.mock("@opentelemetry/api", () => ({
   ROOT_CONTEXT: {},
 }));
 
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 describe("KafkaDriver — SSL constructor (line 24 branch)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -136,21 +148,27 @@ describe("KafkaDriver — eachMessage edge cases", () => {
     });
   });
 
-  it("eachMessage propagates JSON.parse errors (malformed message value)", async () => {
+  it("eachMessage skips a malformed (non-JSON) message instead of crash-looping", async () => {
     const handler = vi.fn();
     await driver.subscribe("t", handler);
     const runCb = mockRun.mock.calls[0][0] as {
       eachMessage: (m: { message: { value: Buffer } }) => Promise<void>;
     };
+    // Must NOT throw — a thrown error would leave the offset uncommitted and the
+    // consumer would crash-loop on this poison message (head-of-line block).
     await expect(
       runCb.eachMessage({
         message: { value: Buffer.from("not-valid-json{{{") },
       }),
-    ).rejects.toThrow();
+    ).resolves.toBeUndefined();
     expect(handler).not.toHaveBeenCalled();
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: "t" }),
+      "Skipping unparseable Kafka message",
+    );
   });
 
-  it("eachMessage with empty string value throws JSON parse error", async () => {
+  it("eachMessage skips an empty-string message value (unparseable) without throwing", async () => {
     const handler = vi.fn();
     await driver.subscribe("t", handler);
     const runCb = mockRun.mock.calls[0][0] as {
@@ -158,7 +176,9 @@ describe("KafkaDriver — eachMessage edge cases", () => {
     };
     await expect(
       runCb.eachMessage({ message: { value: Buffer.from("") } }),
-    ).rejects.toThrow();
+    ).resolves.toBeUndefined();
+    expect(handler).not.toHaveBeenCalled();
+    expect(mockLog.warn).toHaveBeenCalledOnce();
   });
 
   it("eachMessage passes complete payload to handler including data field", async () => {

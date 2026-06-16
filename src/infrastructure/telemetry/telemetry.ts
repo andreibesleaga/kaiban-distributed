@@ -2,7 +2,15 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ConsoleSpanExporter } from "@opentelemetry/sdk-trace-node";
-import { trace } from "@opentelemetry/api";
+import {
+  PeriodicExportingMetricReader,
+  ConsoleMetricExporter,
+} from "@opentelemetry/sdk-metrics";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { metrics, trace } from "@opentelemetry/api";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "Telemetry" });
 
 export interface TelemetryConfig {
   serviceName: string;
@@ -13,25 +21,57 @@ let sdk: NodeSDK | null = null;
 
 export function initTelemetry(config: TelemetryConfig): void {
   if (!config.exporterEndpoint) {
-    console.warn(
-      "[Telemetry] No OTEL_EXPORTER_OTLP_ENDPOINT configured — using ConsoleSpanExporter (dev only)",
+    log.warn(
+      "No OTEL_EXPORTER_OTLP_ENDPOINT configured — using Console exporters (dev only)",
     );
   }
   const exporter = config.exporterEndpoint
     ? new OTLPTraceExporter({ url: config.exporterEndpoint })
     : new ConsoleSpanExporter();
 
+  const metricExporter = config.exporterEndpoint
+    ? new OTLPMetricExporter({ url: config.exporterEndpoint })
+    : new ConsoleMetricExporter();
+
+  const metricReader = new PeriodicExportingMetricReader({
+    exporter: metricExporter,
+    exportIntervalMillis: 60000,
+  });
+
   sdk = new NodeSDK({
     serviceName: config.serviceName,
     traceExporter: exporter,
+    metricReader,
     instrumentations: [getNodeAutoInstrumentations()],
   });
 
   sdk.start();
 
   process.on("SIGTERM", () => {
-    sdk?.shutdown().catch(console.error);
+    sdk?.shutdown().catch((err: unknown) =>
+      log.error({ err }, "Telemetry SDK shutdown failed"),
+    );
   });
+}
+
+// ── Metrics instruments ──────────────────────────────────────────────────────
+const meter = metrics.getMeter("kaiban-distributed");
+const messageProcessedCounter = meter.createCounter("kaiban.message.processed", {
+  description: "Count of agent tasks processed, labelled by terminal status",
+});
+const messageLatencyHistogram = meter.createHistogram(
+  "kaiban.message.latency",
+  { unit: "ms", description: "Agent task processing latency in milliseconds" },
+);
+
+/** Increment the processed-message counter for a terminal status (e.g. completed|failed). */
+export function recordMessageProcessed(status: string): void {
+  messageProcessedCounter.add(1, { status });
+}
+
+/** Record agent task processing latency (ms) for a terminal status. */
+export function recordMessageLatency(ms: number, status: string): void {
+  messageLatencyHistogram.record(ms, { status });
 }
 
 /**

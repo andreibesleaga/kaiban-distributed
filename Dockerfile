@@ -5,8 +5,15 @@ FROM node:22.14-alpine AS builder
 
 WORKDIR /app
 
+# Apply the latest Alpine security patches on top of the pinned base (openssl,
+# musl, zlib, etc.) so the image self-heals against base-image CVEs at build time.
+RUN apk upgrade --no-cache
+
 COPY package*.json ./
-RUN npm install --include=dev
+# `npm ci` (not `npm install`): install the EXACT, audited lockfile versions so the
+# image can't silently re-resolve a transitive to a vulnerable version (which is
+# what the Trivy gate caught — glob/minimatch/tar drifting above the clean lock).
+RUN npm ci --include=dev
 
 COPY tsconfig.json tsconfig.build.json ./
 COPY src/ ./src/
@@ -21,11 +28,22 @@ FROM node:22.14-alpine AS runner
 
 WORKDIR /app
 
+# Apply the latest Alpine security patches (the scanned runtime image must carry
+# patched openssl/musl/zlib — Trivy gates CI on fixable CRITICAL/HIGH OS CVEs).
+RUN apk upgrade --no-cache
+
 # Non-root user for security (SOC2/ISO 27001)
 RUN addgroup -S kaiban && adduser -S kaiban -G kaiban
 
 COPY package*.json ./
-RUN npm install --omit=dev
+# Lock-faithful, prod-only install (see builder stage note). Then strip the
+# bundled npm CLI: the runtime only runs `node` (see CMD), and the node base
+# image's vendored npm ships transitive deps (glob/minimatch/tar) with HIGH CVEs
+# that would otherwise fail the image scan despite never being reachable at
+# runtime. Removing it also shrinks the image and reduces attack surface.
+RUN npm ci --omit=dev \
+  && npm cache clean --force \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=builder /app/dist ./dist
 

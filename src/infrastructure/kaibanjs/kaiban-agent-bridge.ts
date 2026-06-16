@@ -2,6 +2,9 @@ import { Agent, Task, Team } from "kaibanjs";
 import type { IAgentParams } from "kaibanjs";
 import type { MessagePayload, IMessagingDriver } from "../messaging/interfaces";
 import type { ITokenProvider } from "../../domain/security/token-provider";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "KaibanAgentBridge" });
 
 export type KaibanAgentConfig = IAgentParams;
 
@@ -344,10 +347,14 @@ export function createKaibanTaskHandler(
     // pricing table — this line prints the correct value from our MODEL_PRICING.
     const model = agentConfig.llmConfig?.model ?? "default";
     const handlerResult = toHandlerResult(result, model);
-    console.log(
-      `[Cost] model=${model} ` +
-        `input=${handlerResult.inputTokens} output=${handlerResult.outputTokens} ` +
-        `cost=$${handlerResult.estimatedCost.toFixed(6)}`,
+    log.info(
+      {
+        model,
+        inputTokens: handlerResult.inputTokens,
+        outputTokens: handlerResult.outputTokens,
+        estimatedCost: handlerResult.estimatedCost,
+      },
+      "LLM cost",
     );
 
     if (!isSuccessfulWorkflowStatus(result.status)) {

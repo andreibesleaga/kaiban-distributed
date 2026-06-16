@@ -61,8 +61,7 @@
 
 **Configuration:**
 ```bash
-BOARD_JWT_SECRET=<random 32+ bytes, base64>   # activates auth
-BOARD_JWT_EXPIRY=3600                         # optional, default 3600 s
+BOARD_JWT_SECRET=<random 32+ bytes, base64>   # activates auth (token lifetime is 3600 s, set in code)
 ```
 
 **Board app:** Set `VITE_BOARD_TOKEN=<token>` in `board/.env` before running `npm run dev` or building the production bundle. The token is injected at build time (Vite `import.meta.env`).
@@ -277,7 +276,7 @@ This prevents crafted job payloads from injecting malformed OpenTelemetry trace 
 
 **File:** `src/infrastructure/security/heuristic-firewall.ts`
 
-**How it works:** Evaluates `instruction` and `context` fields against 10 regex patterns covering common injection vectors (ignore/override previous instructions, jailbreak commands, etc.). Returns `{ blocked: true, reason }` for matches.
+**How it works:** Evaluates `instruction` and `context` fields against 10 regex patterns covering common injection vectors (ignore/override previous instructions, jailbreak commands, etc.). Returns `{ allowed: false, reason }` for matches and `{ allowed: true }` otherwise.
 
 **Injected into:** `AgentActor` — evaluated before `handler(payload)` is called.
 
@@ -297,7 +296,7 @@ SEMANTIC_FIREWALL_LLM_URL=http://...        # optional: deep LLM-based analysis
 
 **File:** `src/infrastructure/security/sliding-window-breaker.ts`
 
-**How it works:** Tracks failure timestamps in a sliding window. When `failures >= threshold` within `windowMs`, the breaker opens and rejects new calls. Closes automatically when the window expires. Emits OTLP `recordAnomalyEvent()` on state transitions.
+**How it works:** Tracks failure timestamps in a sliding window. When `failures >= threshold` within `windowMs`, the breaker opens and rejects new calls. Closes automatically when the window expires. Logs on state transitions; `recordAnomalyEvent()` (in `telemetry.ts`) is available to emit OTLP span events when wired at the caller (`AgentActor`) level.
 
 **Configuration:**
 ```bash
@@ -306,7 +305,7 @@ CIRCUIT_BREAKER_THRESHOLD=10      # failures before breaker trips (default: 10)
 CIRCUIT_BREAKER_WINDOW_MS=60000   # sliding window duration in ms (default: 60 s)
 ```
 
-**OWASP:** ASI10 (Rogue Agents), LLM10 (Model DoS)
+**OWASP:** ASI08 (Cascading Failures), LLM10 (Unbounded Consumption)
 
 ---
 
@@ -374,7 +373,7 @@ TLS_REJECT_UNAUTHORIZED=true
 | `sanitizeDelta(delta)` | Strips fields: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` |
 | `sanitizeId(agentId)` | SHA-256 hashes agent IDs; logs 8-char prefix only |
 
-**OWASP / Compliance:** LLM02, GDPR data minimization
+**OWASP / Compliance:** LLM02 (Sensitive Information Disclosure), GDPR data minimization
 
 ---
 
@@ -382,7 +381,7 @@ TLS_REJECT_UNAUTHORIZED=true
 
 | Boundary | Limit | Location |
 |----------|-------|----------|
-| Task result in state events | 800 characters | `AgentStatePublisher` — `MAX_RESULT_LEN` |
+| Task result in state events | 20,000 characters (20 KB) | `AgentStatePublisher` — `MAX_RESULT_LEN` |
 | Task title in state events | 60 characters | `AgentStatePublisher` |
 | Outbound task result in messages | 64 KB | `AgentActor` |
 | HTTP request body | 1 MB | `GatewayApp` — `express.json({ limit: '1mb' })` |
@@ -420,11 +419,19 @@ test: ["CMD", "redis-cli", "${REDIS_PASSWORD:+-a}", "${REDIS_PASSWORD:-}", "ping
 
 **File:** [`docker-compose.yml`](../../docker-compose.yml)
 
+The bundled dev compose enables auto-create for local convenience (the Kafka e2e
+tests rely on it):
+
 ```yaml
-KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"   # dev convenience
 ```
 
-Topics must be created explicitly before use. This prevents arbitrary topic creation from compromising the namespace.
+For production, disable it so topics must be created explicitly before use — this
+prevents arbitrary topic creation from compromising the namespace:
+
+```yaml
+KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # production
+```
 
 ---
 
@@ -459,7 +466,7 @@ All services in `docker-compose.yml` declare CPU and memory limits to prevent on
 |---------|--------|
 | **OpenTelemetry** | Auto-instrumented; OTLP export to configurable endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT`) |
 | **W3C traceparent** | Injected into BullMQ/Kafka job headers; propagated across async hops; validated on receive |
-| **Anomaly events** | `recordAnomalyEvent()` emits OTLP span events on circuit breaker state changes |
+| **Anomaly events** | `recordAnomalyEvent()` (telemetry) is available to emit OTLP span events; wire it at the actor level on breaker/retry transitions |
 | **Request logging** | UUID per HTTP request; method, path, status logged on response finish |
 | **HITL decision logging** | Decision + truncated task ID logged on receipt and Redis publish |
 | **Channel signing warnings** | `console.warn` when an unsigned/invalid Redis message is rejected |

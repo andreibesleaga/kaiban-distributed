@@ -59,6 +59,22 @@ describe("DistributedTask", () => {
   it("isDistributedTask() returns false when payload is null", () => {
     expect(isDistributedTask({ ...validTask, payload: null })).toBe(false);
   });
+  it("isDistributedTask() returns false when payload is a non-object primitive", () => {
+    expect(isDistributedTask({ ...validTask, payload: "not-an-object" })).toBe(
+      false,
+    );
+  });
+  it("isDistributedTask() returns false for a function carrying task-like props", () => {
+    // typeof fn === "function" (not "object") — the guard must still reject it.
+    const fn = (): void => {};
+    Object.assign(fn, {
+      taskId: "t",
+      status: "TODO",
+      logs: [],
+      payload: {},
+    });
+    expect(isDistributedTask(fn)).toBe(false);
+  });
   it("all valid task statuses are accepted", () => {
     const statuses: TaskStatus[] = [
       "TODO",
@@ -113,6 +129,11 @@ describe("DistributedAgentState", () => {
   });
   it("isDistributedAgentState() returns false for non-object", () => {
     expect(isDistributedAgentState(42)).toBe(false);
+  });
+  it("isDistributedAgentState() returns false for a function carrying state-like props", () => {
+    const fn = (): void => {};
+    Object.assign(fn, { agentId: "a", status: "IDLE", version: "v1" });
+    expect(isDistributedAgentState(fn)).toBe(false);
   });
   it("all valid agent statuses are accepted", () => {
     const statuses: AgentStatus[] = ["IDLE", "THINKING", "EXECUTING", "ERROR"];

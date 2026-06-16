@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { startAgentNode } from "../../../src/shared";
 
 // ── Mock all heavy dependencies ──────────────────────────────────────────────
@@ -93,12 +106,10 @@ describe("startAgentNode", () => {
     label: "[Researcher]",
   };
 
-  let logSpy: ReturnType<typeof vi.spyOn>;
   let sigTermListeners: Array<() => void>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     // Capture SIGTERM listeners so we can invoke them
     sigTermListeners = [];
     vi.spyOn(process, "on").mockImplementation((event, handler) => {
@@ -120,7 +131,7 @@ describe("startAgentNode", () => {
 
   it("logs a startup message with displayName and queue", async () => {
     await startAgentNode(baseConfig);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Ava"));
+    expect(JSON.stringify(mockLog.info.mock.calls)).toContain("Ava");
   });
 
   it("creates driver with agentId as suffix", async () => {
@@ -140,6 +151,7 @@ describe("startAgentNode", () => {
         name: "Ava",
         role: "News Researcher",
       }),
+      expect.any(Object),
     );
   });
 
@@ -154,6 +166,7 @@ describe("startAgentNode", () => {
     expect(AgentStatePublisher).toHaveBeenCalledWith(
       "redis://custom:6380",
       expect.any(Object),
+      expect.any(Object),
     );
   });
 
@@ -166,8 +179,23 @@ describe("startAgentNode", () => {
     expect(AgentStatePublisher).toHaveBeenCalledWith(
       "redis://envhost:6379",
       expect.any(Object),
+      expect.any(Object),
     );
     delete process.env["REDIS_URL"];
+  });
+
+  it("forwards MAX_TOKEN_BUDGET env to the AgentStatePublisher", async () => {
+    process.env["MAX_TOKEN_BUDGET"] = "50000";
+    const { AgentStatePublisher } =
+      await import("../../../src/adapters/state/agent-state-publisher");
+    vi.clearAllMocks();
+    await startAgentNode(baseConfig);
+    expect(AgentStatePublisher).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object),
+      expect.objectContaining({ maxTokenBudget: 50000 }),
+    );
+    delete process.env["MAX_TOKEN_BUDGET"];
   });
 
   it("registers SIGTERM handler", async () => {

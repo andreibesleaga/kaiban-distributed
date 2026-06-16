@@ -475,8 +475,11 @@ describe("runEditorialPhase() (global-research)", () => {
   it("creates editor task and calls awaitingHITL", async () => {
     const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRpc.call.mockResolvedValue({ taskId: "edit-1" });
+    // The editor (Morgan) emits an "Accuracy Score", NOT "Compliance Score"
+    // (that is the governance reviewer's label). Parsing the wrong label made
+    // the editorial score always render "N/A" — guard against the regression.
     mockRouter.wait.mockResolvedValue(
-      parsedResult("Recommendation: PUBLISH\nCompliance Score: 8/10"),
+      parsedResult("Recommendation: PUBLISH\nAccuracy Score: 8/10"),
     );
 
     const gov = { recommendation: "APPROVED", score: "9/10", text: "gov text" };
@@ -493,6 +496,7 @@ describe("runEditorialPhase() (global-research)", () => {
     );
 
     expect(result.taskId).toBe("edit-1");
+    expect(result.score).toBe("8/10");
     expect(mockPub.awaitingHITL).toHaveBeenCalled();
   });
 

@@ -1,4 +1,7 @@
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "CircuitBreaker" });
 
 /**
  * Sliding-window circuit breaker.
@@ -24,7 +27,7 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
     this.pruneOldFailures();
     if (this.opened && this.failures.length < this.threshold) {
       this.opened = false;
-      console.log("[CircuitBreaker] Circuit closed — recovered");
+      log.info("Circuit breaker closed — recovered");
     }
   }
 
@@ -34,8 +37,9 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
 
     if (!this.opened && this.failures.length >= this.threshold) {
       this.opened = true;
-      console.warn(
-        `[CircuitBreaker] Circuit OPEN — ${this.failures.length} failures in ${this.windowMs}ms window`,
+      log.warn(
+        { failures: this.failures.length, windowMs: this.windowMs },
+        "Circuit breaker OPEN",
       );
     }
   }

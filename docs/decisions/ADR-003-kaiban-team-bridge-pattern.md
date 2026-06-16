@@ -21,7 +21,7 @@ createKaibanTaskHandler(agentConfig: KaibanAgentConfig, driver: IMessagingDriver
   → (payload: MessagePayload) => Promise<unknown>
 ```
 
-Maps a `MessagePayload` to a KaibanJS `Team` (one Team per task), calls `team.start(inputs)`, and returns a structured `KaibanHandlerResult` with `{ answer, inputTokens, outputTokens, estimatedCost }`. Token counts and cost come directly from `WorkflowResult.stats` — no extraction hacks needed.
+Maps a `MessagePayload` to a KaibanJS `Team` (one Team per task), calls `team.start(inputs)`, and returns a structured `KaibanHandlerResult` with `{ answer, inputTokens, outputTokens, estimatedCost }`. Token counts come directly from `WorkflowResult.stats` (no extraction hacks needed); `estimatedCost` is then computed from those token counts via a built-in `MODEL_PRICING` table.
 
 ### KaibanTeamBridge (`src/infrastructure/kaibanjs/kaiban-team-bridge.ts`)
 

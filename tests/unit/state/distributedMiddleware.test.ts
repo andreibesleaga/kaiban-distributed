@@ -1,4 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { DistributedStateMiddleware } from "../../../src/adapters/state/distributedMiddleware";
 import { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
 
@@ -133,9 +146,9 @@ describe("DistributedStateMiddleware", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     capturedHandler("kaiban-state-events", "invalid json");
 
-    expect(errSpy).toHaveBeenCalledWith(
-      "[DistributedStateMiddleware] Failed to parse message:",
-      expect.any(SyntaxError),
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(SyntaxError) }),
+      "Failed to parse state message",
     );
     errSpy.mockRestore();
   });
@@ -153,7 +166,7 @@ describe("DistributedStateMiddleware", () => {
     const store = makeStore();
     mw.attach(store);
     await expect(store.setState({ x: 1 })).resolves.not.toThrow();
-    expect(errSpy).toHaveBeenCalled();
+    expect(mockLog.error).toHaveBeenCalled();
     errSpy.mockRestore();
   });
 

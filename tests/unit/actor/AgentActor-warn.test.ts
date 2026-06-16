@@ -4,7 +4,20 @@
  * Covers: start() warning for missing taskHandler, warning message content,
  * warning appears before subscribe, and that actor still functions normally.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { AgentActor } from "../../../src/application/actor/AgentActor";
 import type {
   IMessagingDriver,
@@ -32,6 +45,8 @@ describe("AgentActor — console.warn when taskHandler is missing", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    mockLog.warn.mockClear();
+    mockLog.info.mockClear();
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
@@ -48,8 +63,8 @@ describe("AgentActor — console.warn when taskHandler is missing", () => {
     };
     const actor = new AgentActor("agent-1", d, "q");
     await actor.start();
-    expect(warnSpy).toHaveBeenCalledOnce();
-    expect(warnSpy.mock.calls[0][0]).toContain("silently dropped");
+    expect(mockLog.warn).toHaveBeenCalledOnce();
+    expect(mockLog.warn.mock.calls[0][1]).toContain("silently dropped");
   });
 
   it("warn message contains sanitised (hashed) agent ID, not raw ID", async () => {
@@ -62,7 +77,7 @@ describe("AgentActor — console.warn when taskHandler is missing", () => {
     const rawId = "super-secret-agent-id";
     const actor = new AgentActor(rawId, d, "q");
     await actor.start();
-    expect(warnSpy.mock.calls[0][0]).not.toContain(rawId);
+    expect(JSON.stringify(mockLog.warn.mock.calls[0])).not.toContain(rawId);
   });
 
   it("does NOT log console.warn when a taskHandler IS provided", async () => {
@@ -74,7 +89,7 @@ describe("AgentActor — console.warn when taskHandler is missing", () => {
     };
     const actor = new AgentActor("agent-1", d, "q", vi.fn());
     await actor.start();
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(mockLog.warn).not.toHaveBeenCalled();
   });
 
   it("actor still subscribes to queue even without taskHandler", async () => {
@@ -139,6 +154,8 @@ describe("AgentActor — wildcard agentId (*) routing", () => {
 describe("AgentActor — taskHandler result propagation", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
+    mockLog.warn.mockClear();
+    mockLog.info.mockClear();
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
   afterEach(() => {
@@ -239,6 +256,8 @@ describe("AgentActor — taskHandler result propagation", () => {
 describe("AgentActor — data field on payload", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
+    mockLog.warn.mockClear();
+    mockLog.info.mockClear();
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
   afterEach(() => {

@@ -35,19 +35,8 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "1000m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 20
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          failureThreshold: 3
+        # Worker nodes expose NO HTTP server (they consume from the queue), so
+        # HTTP /health probes would CrashLoopBackOff the pod. Kubernetes restarts
+        # the pod if the worker process exits — the correct liveness signal here.
 ---
 {{- end }}

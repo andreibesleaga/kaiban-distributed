@@ -162,7 +162,7 @@ TOPIC="Large Language Models in 2025: Capabilities and Limitations" \
 STEP 1 — Ava (Researcher) is gathering information...
 ────────────────────────────────────────────────────────────
   ↳ Task queued: task-1710000001000
-  ↳ Waiting up to 45s for research...
+  ↳ Waiting up to 120s for research...
 ```
 
 **On the Live Board, you should see:**
@@ -196,7 +196,7 @@ STEP 1 — Ava (Researcher) is gathering information...
 ```
 STEP 2 — Kai (Writer) is drafting the blog post...
   ↳ Task queued: task-1710000002000
-  ↳ Waiting up to 60s for draft...
+  ↳ Waiting up to 240s for draft...
 
 ✅ DRAFT COMPLETE
 ────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ STEP 2 — Kai (Writer) is drafting the blog post...
 ```
 STEP 3 — Morgan (Editor) is reviewing for accuracy...
   ↳ Task queued: task-1710000003000
-  ↳ Waiting up to 45s for editorial review...
+  ↳ Waiting up to 300s for editorial review...
 ```
 
 **Live Board:** Editor task in DOING, Morgan's status shows THINKING/EXECUTING.
@@ -288,7 +288,7 @@ Your decision [1/2/3/4]:
 ```
 🔄 Sending back to writer with editorial notes...
   ↳ Revision task queued: task-1710000004000
-  ↳ Waiting up to 60s for revised draft...
+  ↳ Waiting up to 240s for revised draft...
 [Revised draft appears]
 Publish the revised draft? [y/n]:
 ```
@@ -415,7 +415,7 @@ Once the bridge is running:
 Run the full automated test suite to verify all flows:
 
 ```bash
-# Unit tests (340+ tests, 100% coverage)
+# Unit tests (769 tests, 100% coverage)
 npm run test:coverage
 
 # BullMQ E2E (requires Docker)
@@ -428,12 +428,12 @@ npm run test:e2e:kafka
 Expected output:
 
 ```
-Test Files  37 passed (37)
-Tests       344 passed (344)
+Test Files  77 passed (77)
+Tests       769 passed (769)
 All files   | 100% | 100% | 100% | 100% |
 
-# E2E BullMQ: 22/22 passing
-# E2E Kafka:  2/2 passing
+# E2E BullMQ: 65/65 passing
+# E2E Kafka:  3/3 passing
 ```
 
 ---

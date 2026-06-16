@@ -14,6 +14,19 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import {
   GatewayApp,
   SlidingWindowRateLimiter,
@@ -269,27 +282,27 @@ describe("GatewayApp — handleRpc connector error path", () => {
 
 describe("GatewayApp — request logger", () => {
   it("logs request info after response finishes", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockLog.info.mockClear();
     const gw = makeGateway();
     await request(gw.app).get("/health");
     // The logger fires on 'finish' event — give the event loop a tick
     await new Promise<void>((r) => setImmediate(r));
-    const logged = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
-    expect(logged).toMatch(/GET \/health 200/);
-    logSpy.mockRestore();
+    const logged = JSON.stringify(mockLog.info.mock.calls);
+    expect(logged).toContain('"method":"GET"');
+    expect(logged).toContain('"path":"/health"');
+    expect(logged).toContain('"status":200');
   });
 
   it("request logger includes a UUID request ID", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockLog.info.mockClear();
     const gw = makeGateway();
     await request(gw.app).get("/health");
     await new Promise<void>((r) => setImmediate(r));
-    const logged = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    const logged = JSON.stringify(mockLog.info.mock.calls);
     // UUID format: 8-4-4-4-12 hex chars
     expect(logged).toMatch(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
     );
-    logSpy.mockRestore();
   });
 });
 

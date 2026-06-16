@@ -4,8 +4,12 @@ import { IMessagingDriver, MessagePayload } from "./interfaces";
 import {
   injectTraceContext,
   extractTraceContext,
+  sanitizeTraceHeaders,
 } from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "KafkaDriver" });
 
 export interface KafkaDriverConfig {
   brokers: string[];
@@ -103,8 +107,21 @@ export class KafkaDriver implements IMessagingDriver {
     await this.consumer.run({
       eachMessage: async ({ message }) => {
         if (!message.value) return;
-        const parsed = JSON.parse(message.value.toString()) as MessagePayload;
-        const ctx = extractTraceContext(parsed.traceHeaders ?? {});
+        let parsed: MessagePayload;
+        try {
+          parsed = JSON.parse(message.value.toString()) as MessagePayload;
+        } catch (err) {
+          // Poison / non-JSON message: skip it so the offset advances instead of
+          // crash-looping the consumer on the same unparseable record (HOL block).
+          log.warn(
+            { err: String(err), topic },
+            "Skipping unparseable Kafka message",
+          );
+          return;
+        }
+        const ctx = extractTraceContext(
+          sanitizeTraceHeaders(parsed.traceHeaders),
+        );
         await otelContext.with(ctx, () => handler(parsed));
       },
     });

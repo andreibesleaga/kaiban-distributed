@@ -16,21 +16,26 @@ import type { ITokenProvider } from "../domain/security/token-provider";
 import { HeuristicFirewall } from "../infrastructure/security/heuristic-firewall";
 import { EnvTokenProvider } from "../infrastructure/security/env-token-provider";
 import { SlidingWindowBreaker } from "../infrastructure/security/sliding-window-breaker";
+import { createStructuredLogger } from "../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "worker" });
 
 function buildMessagingDriver(
   config: ReturnType<typeof loadConfig>,
 ): IMessagingDriver {
   if (config.messagingDriver === "kafka") {
-    console.log(
-      `[kaiban-worker] Messaging: KafkaDriver (brokers: ${config.kafka.brokers.join(",")})`,
+    log.info(
+      { driver: "kafka", brokers: config.kafka.brokers },
+      "Messaging driver selected",
     );
     return new KafkaDriver({
       ...config.kafka,
       ssl: config.kafka.ssl,
     });
   }
-  console.log(
-    `[kaiban-worker] Messaging: BullMQDriver (redis: ${config.redis.host}:${config.redis.port})`,
+  log.info(
+    { driver: "bullmq", redis: `${config.redis.host}:${config.redis.port}` },
+    "Messaging driver selected",
   );
   return new BullMQDriver({
     connection: { host: config.redis.host, port: config.redis.port },
@@ -58,12 +63,9 @@ function buildSecurityDeps(config: ReturnType<typeof loadConfig>): {
     ? new EnvTokenProvider()
     : undefined;
 
-  if (firewall)
-    console.log("[kaiban-worker] Security: Semantic Firewall ENABLED");
-  if (circuitBreaker)
-    console.log("[kaiban-worker] Security: Circuit Breaker ENABLED");
-  if (tokenProvider)
-    console.log("[kaiban-worker] Security: JIT Token Provider ENABLED");
+  if (firewall) log.info("Security: Semantic Firewall enabled");
+  if (circuitBreaker) log.info("Security: Circuit Breaker enabled");
+  if (tokenProvider) log.info("Security: JIT Token Provider enabled");
 
   return { firewall, circuitBreaker, tokenProvider };
 }
@@ -132,12 +134,14 @@ async function main(): Promise<void> {
   await Promise.all(actors.map((actor) => actor.start()));
 
   httpServer.listen(config.port, () => {
-    console.log(`[kaiban-worker] Listening on port ${config.port}`);
-    console.log(`[kaiban-worker] Agents: ${config.agentIds.join(", ")}`);
+    log.info(
+      { port: config.port, agents: config.agentIds },
+      "Worker listening",
+    );
   });
 
   const shutdown = async (signal: string): Promise<void> => {
-    console.log(`[kaiban-worker] ${signal} received — shutting down...`);
+    log.info({ signal }, "Shutting down");
     await Promise.all(actors.map((actor) => actor.stop()));
     await socketGateway.shutdown();
     await messagingDriver.disconnect();
@@ -149,6 +153,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("[kaiban-worker] Fatal startup error:", err);
+  log.error({ err }, "Fatal startup error");
   process.exit(1);
 });

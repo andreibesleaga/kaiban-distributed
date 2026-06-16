@@ -210,10 +210,10 @@ export async function runEditorialPhase(
   ctx.metadata.estimatedCost += parsed.estimatedCost;
   const text = normaliseEditorialText(parsed.answer || raw);
   ctx.metadata.activeNodes.push('editor');
-  pub.awaitingHITL(taskId, parseRecommendation(text), parseScore(text, 'Compliance'));
+  pub.awaitingHITL(taskId, parseRecommendation(text), parseScore(text, 'Accuracy'));
   runLog.logTask('editorial', taskId, 'editor', { ...parsed, answer: text });
 
-  return { taskId, recommendation: parseRecommendation(text), score: parseScore(text, 'Compliance'), text };
+  return { taskId, recommendation: parseRecommendation(text), score: parseScore(text, 'Accuracy'), text };
 }
 
 // ── Step 5 — Revision (called on REVISE decision) ─────────────────────────────

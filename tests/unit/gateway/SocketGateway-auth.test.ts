@@ -236,6 +236,27 @@ describe("SocketGateway — JWT auth middleware", () => {
       expect(socket.disconnect).not.toHaveBeenCalled();
       vi.useRealTimers();
     });
+
+    it("clears the scheduled expiry disconnect when the client disconnects first", () => {
+      vi.useFakeTimers();
+      const sg = getGateway();
+      sg.initialize();
+      const socket = makeMockSocket();
+      socket.data["exp"] = Math.floor(Date.now() / 1000) + 60;
+      capturedConnectionHandler!(socket);
+      // The connection handler registered a 'disconnect' listener; invoke it to
+      // simulate an early client disconnect, which must clear the expiry timer.
+      const disconnectCall = socket.on.mock.calls.find(
+        (c): boolean => c[0] === "disconnect",
+      );
+      expect(disconnectCall).toBeDefined();
+      (disconnectCall![1] as () => void)();
+      socket.disconnect.mockClear();
+      // Past expiry, the cleared timer must NOT fire a second disconnect.
+      vi.advanceTimersByTime(61_000);
+      expect(socket.disconnect).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
   });
 
   // ─── CORS configuration ───────────────────────────────────────────────────

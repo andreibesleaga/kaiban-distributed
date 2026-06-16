@@ -1,5 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "MCPClient" });
 
 export class MCPFederationClient {
   private client: Client;
@@ -24,15 +27,16 @@ export class MCPFederationClient {
   }
 
   public async connect(): Promise<void> {
-    console.log(
-      `[MCP] Connecting to server: ${this.serverCommand} ${this.serverArgs.join(" ")}`,
+    log.info(
+      { command: this.serverCommand, args: this.serverArgs },
+      "Connecting to MCP server",
     );
     this.transport = new StdioClientTransport({
       command: this.serverCommand,
       args: this.serverArgs,
     });
     await this.client.connect(this.transport);
-    console.log("[MCP] Connected successfully");
+    log.info("Connected to MCP server");
   }
 
   public async listTools(): Promise<unknown> {
@@ -53,7 +57,7 @@ export class MCPFederationClient {
     if (this.transport) {
       await this.client.close();
       this.transport = null;
-      console.log("[MCP] Disconnected");
+      log.info("Disconnected from MCP server");
     }
   }
 }

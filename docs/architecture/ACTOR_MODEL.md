@@ -63,7 +63,7 @@ actor.stop()
 
 - **64 KB data cap** (`capDataSize`): results are truncated before publishing to prevent oversized messages from overwhelming the messaging layer.
 - **SHA-256 ID hashing** (`sanitizeId`): actor IDs are hashed in logs — 8-char prefix preserves debuggability while preventing PII leakage.
-- **Exponential backoff**: retry delay = `100ms × attempt` (attempt 1 = 100ms, attempt 2 = 200ms, attempt 3 = 300ms).
+- **Linear backoff**: retry delay = `100ms × attempt` (attempt 1 = 100ms, attempt 2 = 200ms, attempt 3 = 300ms).
 
 ---
 
@@ -87,7 +87,7 @@ MESSAGING_DRIVER=bullmq   # (default) BullMQ on Redis
 MESSAGING_DRIVER=kafka    # Apache Kafka
 ```
 
-Worker code is identical regardless of which driver is active. The driver factory (`examples/blog-team/driver-factory.ts`) constructs the right implementation at startup.
+Worker code is identical regardless of which driver is active. The driver factory (`src/shared/driver-factory.ts`) constructs the right implementation at startup.
 
 ### BullMQ Driver
 - One `Worker` per queue subscription
@@ -230,7 +230,7 @@ Process crash (e.g. writer-node.ts OOM):
 **Within an actor**:
 - Any exception from `taskHandler` → retry up to 3×
 - All retries failed → `circuitBreaker.recordFailure()` + DLQ publish
-- Circuit breaker open (5 failures) → subsequent messages routed to DLQ immediately
+- Circuit breaker open (default 10 failures, `CIRCUIT_BREAKER_THRESHOLD`) → subsequent messages routed to DLQ immediately
 
 This ensures a single failing LLM call does not crash the actor or lose the task.
 
@@ -260,9 +260,9 @@ Security is applied at the actor boundary — before `taskHandler` is invoked:
 
 | Guard | File | When Active |
 |-------|------|-------------|
-| `HeuristicFirewall` | `src/domain/security/` | `SEMANTIC_FIREWALL_ENABLED=true` |
-| `SlidingWindowBreaker` | `src/domain/security/` | `CIRCUIT_BREAKER_ENABLED=true` |
-| `EnvTokenProvider` | `src/infrastructure/security/` | `SECURE_TOKEN_PROVIDER=true` |
+| `HeuristicFirewall` | `src/infrastructure/security/` | `SEMANTIC_FIREWALL_ENABLED=true` |
+| `SlidingWindowBreaker` | `src/infrastructure/security/` | `CIRCUIT_BREAKER_ENABLED=true` |
+| `EnvTokenProvider` | `src/infrastructure/security/` | `JIT_TOKENS_ENABLED=true` |
 
 `sanitizeDelta()` in `DistributedStateMiddleware` scrubs PII (email, name, phone, IP, password, token, secret, SSN, DOB) from state deltas before they reach the board.
 

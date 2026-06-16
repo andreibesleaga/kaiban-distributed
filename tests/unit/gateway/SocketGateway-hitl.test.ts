@@ -5,6 +5,19 @@
  * duplicate payloads to ensure robust validation at the gateway boundary.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { createServer } from "http";
 import type Redis from "ioredis";
 import { SocketGateway } from "../../../src/adapters/gateway/SocketGateway";
@@ -220,7 +233,8 @@ describe("SocketGateway — HITL edge cases", () => {
     const ack = vi.fn();
     hitl({ taskId: "log-task-12345678", decision: "REVISE" }, ack);
     await vi.waitFor(() => expect(ack).toHaveBeenCalledWith({ ok: true }));
-    expect(logSpy).toHaveBeenCalledWith(
+    expect(mockLog.info).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.stringContaining("HITL decision received"),
     );
     logSpy.mockRestore();

@@ -313,6 +313,26 @@ describe("AgentActor — DLQ payload shape", () => {
     warnSpy.mockRestore();
   });
 
+  it("firewall block with no reason still routes to DLQ (anomaly reason defaults)", async () => {
+    const { driver, getHandler } = makeCapturingDriver();
+    const firewall = {
+      evaluate: vi.fn().mockResolvedValue({ allowed: false }),
+    };
+    const actor = new AgentActor("agent-1", driver, "q", undefined, {
+      firewall,
+    });
+    await actor.start();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await getHandler()(makePayload());
+
+    const dlqCall = (
+      driver.publish as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c: unknown[]) => c[0] === "kaiban-events-failed");
+    expect(dlqCall).toBeDefined();
+    expect(dlqCall![1].data.error).toBe("blocked_by_semantic_firewall");
+    warnSpy.mockRestore();
+  });
+
   it("DLQ from circuit breaker has error but no reason", async () => {
     const { driver, getHandler } = makeCapturingDriver();
     const breaker: ICircuitBreaker = {

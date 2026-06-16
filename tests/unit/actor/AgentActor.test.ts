@@ -1,4 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { AgentActor } from "../../../src/application/actor/AgentActor";
 import {
   IMessagingDriver,
@@ -147,14 +160,15 @@ describe("AgentActor", () => {
     const actor = new AgentActor("agent-1", driver, "q", failHandler);
     await actor.start();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockLog.error.mockClear();
     await getHandler()({
       taskId: "t",
       agentId: "agent-1",
       timestamp: 0,
       data: {},
     });
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining("plain string error"),
+    expect(JSON.stringify(mockLog.error.mock.calls)).toContain(
+      "plain string error",
     );
     errSpy.mockRestore();
   });

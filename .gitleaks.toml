@@ -1,0 +1,16 @@
+# gitleaks configuration for kaiban-distributed.
+# Extends the full built-in ruleset and adds a narrow allowlist for deterministic,
+# non-secret test fixtures. These are hard-coded constants in the security tests
+# (e.g. a fixed HMAC signing key used to exercise channel-signing) — not real
+# credentials. Keep this allowlist tight: only known fixture tokens, never broad
+# paths, so genuine leaks are still caught.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic non-secret test fixtures (security unit/property tests)"
+regexes = [
+  # tests/unit/security/channel-signing-property.test.ts — fixed HMAC test key
+  '''test-signing-secret-key[-0-9a-z]*''',
+]

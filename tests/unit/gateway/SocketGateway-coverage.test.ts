@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { createServer } from "http";
 import type Redis from "ioredis";
 
@@ -204,9 +217,9 @@ describe("SocketGateway — coverage branches", () => {
       ok: false,
       error: "Redis publish failed",
     });
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[SocketGateway] Failed to publish HITL decision to Redis:",
-      expect.any(Error),
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "Failed to publish HITL decision to Redis",
     );
 
     errorSpy.mockRestore();
@@ -221,8 +234,8 @@ describe("SocketGateway — coverage branches", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     getRedisMessageHandler()("kaiban-state-events", "not-json");
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      "[SocketGateway] Failed to parse state message",
+    expect(mockLog.error).toHaveBeenCalledWith(
+      "Failed to parse state message",
     );
     errorSpy.mockRestore();
   });
@@ -245,9 +258,9 @@ describe("SocketGateway — coverage branches", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      "[SocketGateway] HITL list write failed:",
-      expect.any(Error),
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "HITL list write failed",
     );
     warnSpy.mockRestore();
   });

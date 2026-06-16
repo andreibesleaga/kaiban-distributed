@@ -8,6 +8,12 @@ vi.mock("@opentelemetry/api", () => {
     trace: {
       getActiveSpan: vi.fn().mockReturnValue({ addEvent: addEventMock }),
     },
+    metrics: {
+      getMeter: vi.fn().mockReturnValue({
+        createCounter: vi.fn().mockReturnValue({ add: vi.fn() }),
+        createHistogram: vi.fn().mockReturnValue({ record: vi.fn() }),
+      }),
+    },
     // re-export the mock so tests can access it
     __mockAddEvent: addEventMock,
   };

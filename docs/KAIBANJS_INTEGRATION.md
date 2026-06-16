@@ -35,7 +35,7 @@ System based on [KaibanJS](https://kaibanjs.com). Complete reference for integra
 |---------|---------------|-------------------|
 | Execution | Single process | Multiple isolated worker nodes |
 | Messaging | In-process function calls | BullMQ (Redis) or Kafka |
-| Fault tolerance | None | 3× retry with exponential backoff + DLQ |
+| Fault tolerance | None | 3× retry with linear backoff (100 ms × attempt) + DLQ |
 | Visualization | React board (local) | Live board via Socket.io across nodes |
 | Orchestration | Sequential/parallel in-process | Event-driven via CompletionRouter |
 | External access | None | JSON-RPC 2.0 A2A + MCP protocol |
@@ -293,13 +293,18 @@ const writeTask = new Task({
   agent: writer,
 });
 
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+// NOTE: KaibanTeamBridge is @deprecated — prefer createKaibanTaskHandler (below) for
+// per-task token/cost tracking. Use it only for long-running multi-task teams that
+// need full Zustand state streaming to the board. The bridge takes a *state
+// middleware* (not a messaging driver).
+import { DistributedStateMiddleware } from './src/adapters/state/distributedMiddleware';
+const middleware = new DistributedStateMiddleware('redis://localhost:6379');
 
 const bridge = new KaibanTeamBridge({
   name: 'Blog Team',
   agents: [researcher, writer],
   tasks: [researchTask, writeTask],
-}, driver);
+}, middleware);
 
 // Every Zustand setState() → Redis Pub/Sub → Socket.io → board
 const result = await bridge.start({ topic: 'AI Agents in 2025' });
@@ -311,12 +316,18 @@ console.log(result.status, result.result);
 ```typescript
 // From src/infrastructure/kaibanjs/kaiban-team-bridge.ts
 export class KaibanTeamBridge {
-  constructor(config: KaibanTeamConfig, driver: IMessagingDriver, stateChannel = 'kaiban-state-events') {
-    this.team = new Team({ name, agents, tasks, env: config.env ?? {} });
-    this.middleware = new DistributedStateMiddleware(driver, stateChannel);
+  // The state middleware is INJECTED (keeps the infrastructure layer free of
+  // adapter imports). Pass a DistributedStateMiddleware, not a messaging driver.
+  constructor(config: KaibanTeamConfig, middleware?: IStateMiddleware) {
+    this.team = new Team({
+      name: config.name, agents: config.agents, tasks: config.tasks, env: config.env ?? {},
+    });
+    this.middleware = middleware ?? null;
 
-    const store = this.team.getStore() as unknown as { setState: ... };
-    this.middleware.attach(store);  // intercepts ALL setState() calls
+    if (this.middleware) {
+      const store = this.team.getStore() as unknown as { setState: (p: Record<string, unknown>) => void };
+      this.middleware.attach(store);  // intercepts ALL setState() calls
+    }
   }
 }
 ```
@@ -1615,7 +1626,7 @@ const result = await executeDag([
 
 ### 8.5 Retry and Error Handling
 
-`AgentActor` automatically retries up to 3 times with exponential backoff (100ms × attempt). After all retries, the task is sent to `kaiban-events-failed` (DLQ).
+`AgentActor` automatically retries up to 3 times with linear backoff (100ms × attempt → 100/200ms between attempts). After all retries, the task is sent to `kaiban-events-failed` (DLQ).
 
 ```typescript
 // AgentActor retry logic (from src/application/actor/AgentActor.ts)
@@ -2514,7 +2525,7 @@ SEMANTIC_FIREWALL_ENABLED=true node dist/examples/blog-team/researcher-node.js
 
 Blocked payloads are routed directly to `kaiban-events-failed` (DLQ) without retries.
 
-### 14.2 Circuit Breaker (OWASP ASI10 — Abnormal Agent Behavior)
+### 14.2 Circuit Breaker (OWASP ASI08 — Cascading Failures)
 
 ```typescript
 import { SlidingWindowBreaker } from '../src/infrastructure/security/sliding-window-breaker';

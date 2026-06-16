@@ -37,7 +37,7 @@ The active driver is selected at runtime via the `MESSAGING_DRIVER` environment 
 
 **Positive:**
 - BullMQ and Kafka are both fully supported with identical agent code
-- All 113 unit tests use mock implementations — no real infrastructure needed for unit testing
+- All unit tests use mock implementations — no real infrastructure needed for unit testing
 - Driver can be changed per-environment via env var with no code changes
 
 **Negative:**

@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { OrchestratorStatePublisher } from "../../../src/shared";
 
 const mockPublish = vi.fn().mockResolvedValue(1);
@@ -116,9 +129,9 @@ describe("OrchestratorStatePublisher", () => {
     // Let the .catch() microtask run
     await Promise.resolve();
     await Promise.resolve();
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Publish failed"),
-      expect.any(Error),
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "Publish failed",
     );
     errSpy.mockRestore();
   });

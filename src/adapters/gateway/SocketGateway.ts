@@ -14,6 +14,9 @@ import {
   unwrapVerified,
   wrapSigned,
 } from "../../infrastructure/security/channel-signing";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "SocketGateway" });
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
 const DEFAULT_DECISIONS = ["PUBLISH", "REVISE", "REJECT"];
@@ -179,7 +182,13 @@ export class SocketGateway {
           socket.disconnect(true);
           return;
         }
-        setTimeout(() => socket.disconnect(true), msUntilExpiry);
+        const expiryTimer = setTimeout(
+          () => socket.disconnect(true),
+          msUntilExpiry,
+        );
+        // Clear the expiry timer if the client disconnects first, so it doesn't
+        // linger (holding a closure over the dead socket) until token expiry.
+        socket.on("disconnect", () => clearTimeout(expiryTimer));
       }
 
       // Replay current full state to newly connected / reconnected client
@@ -209,8 +218,9 @@ export class SocketGateway {
             ack?.({ ok: false, error: `invalid decision value: ${decision}` });
             return;
           }
-          console.log(
-            `[SocketGateway] HITL decision received: ${String(decision)} for task ${taskId.slice(-8)}`,
+          log.info(
+            { decision: String(decision), taskId: taskId.slice(-8) },
+            "HITL decision received",
           );
           const msg = wrapSigned({ taskId, decision });
           // Dual delivery: pub/sub (fast) + per-task list (reliable fallback).
@@ -220,8 +230,9 @@ export class SocketGateway {
           this.hitlPublisher
             .publish(HITL_CHANNEL, msg)
             .then(() => {
-              console.log(
-                `[SocketGateway] HITL decision forwarded to Redis: ${String(decision)}`,
+              log.info(
+                { decision: String(decision) },
+                "HITL decision forwarded to Redis",
               );
               // Fire-and-forget: write to per-task list for BRPOP fallback.
               // Errors here don't affect the board ACK — pub/sub already succeeded.
@@ -229,15 +240,12 @@ export class SocketGateway {
                 .lpush(listKey, msg)
                 .then(() => this.hitlPublisher.expire(listKey, 300))
                 .catch((err: unknown) =>
-                  console.warn("[SocketGateway] HITL list write failed:", err),
+                  log.warn({ err }, "HITL list write failed"),
                 );
               ack?.({ ok: true });
             })
             .catch((err: unknown) => {
-              console.error(
-                "[SocketGateway] Failed to publish HITL decision to Redis:",
-                err,
-              );
+              log.error({ err }, "Failed to publish HITL decision to Redis");
               ack?.({ ok: false, error: "Redis publish failed" });
             });
         },
@@ -249,15 +257,13 @@ export class SocketGateway {
       try {
         const parsed = unwrapVerified(data);
         if (!parsed) {
-          console.warn(
-            "[SocketGateway] Rejected unsigned/invalid channel message",
-          );
+          log.warn("Rejected unsigned/invalid channel message");
           return;
         }
         this.applyToSnapshot(parsed); // keep snapshot current
         this.io?.emit(STATE_EVENT, parsed); // broadcast incremental delta to all
       } catch {
-        console.error("[SocketGateway] Failed to parse state message");
+        log.error("Failed to parse state message");
       }
     });
   }

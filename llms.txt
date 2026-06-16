@@ -1,71 +1,37 @@
-# Kaiban Distributed: Distributed Actor-Model Runtime for Agentic AI
+# Kaiban Distributed
 
-> This repository contains the official implementation of the "Distributed Actor Model for Agentic AI" (as featured in *Agentic AI Architectures*). It provides a horizontally scalable, fault-tolerant runtime for AI swarms using TypeScript, KaibanJS, Enterprise Messaging (Redis/Kafka), and React.
+> A horizontally-scalable, fault-tolerant **Distributed Actor-Model runtime for agentic AI swarms** (TypeScript). Isolated worker nodes communicate via a pluggable messaging layer (BullMQ/Redis or Kafka), with real-time Kanban visualization, A2A/MCP federation, and OpenTelemetry observability. Companion code for the book *Agentic AI Architectures* (Chapter 9).
 
-## 1. Core Philosophy & Architecture
-This project abandons standard sequential LLM chains (DAGs) in favor of the **Distributed Actor Model**. 
-- **No Shared State:** Agents operate in isolated worker nodes.
-- **Message-Driven:** Agents communicate exclusively via asynchronous messages.
-- **"Let it Crash":** Relies on message brokers for retries, exponential backoff, and Dead Letter Queues (DLQs).
-- **Clean Architecture:** Strictly enforces Domain, Application, Adapters, and Infrastructure layers.
+Architecture is Clean/DDD: `domain` · `application` · `adapters` · `infrastructure` · `shared`. **Two channels** — durable tasks via the messaging driver (`kaiban-agents-*`, `kaiban-events-*`); ephemeral UI state via Redis Pub/Sub (`kaiban-state-events`); never use Kafka for state events. **Task lifecycle:** TODO → DOING → DONE/BLOCKED, with AWAITING_VALIDATION for human-in-the-loop. Conventions for contributors and AI assistants: strict TypeScript (no `any`; `Result<T,E>` for domain errors), program to the `IMessagingDriver` interface (never hardcode BullMQ/Kafka), keep workers stateless, configure via `process.env` with defaults + update `.env.example`, and keep 100% coverage of `src/**` (CI-enforced). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### 1.1 The Two-Channel Strategy (CRITICAL)
-When writing or analyzing code for this repo, you must respect the dual-channel network design:
-1. **Durable Tasks (MAL):** Handled by `BullMQDriver` or `KafkaDriver`. Used for actual agent workflows (TODO -> DOING -> DONE).
-2. **Ephemeral State:** Handled EXCLUSIVELY by Redis Pub/Sub (`AgentStatePublisher` / `SocketGateway`). Used for real-time UI updates to the Kanban board. **Never use Kafka for state events.**
+## Documentation
+- [README](README.md): overview, quick start, API reference, configuration, compliance-supporting controls
+- [EXAMPLES](EXAMPLES.md): runnable examples and deployment recipes
+- [Architecture — Actor Model](docs/architecture/ACTOR_MODEL.md): actor lifecycle, 3× linear-backoff retry, DLQ, drivers
+- [API Spec](docs/api/SPEC.md): domain models + messaging interface
+- [KaibanJS Integration](docs/KAIBANJS_INTEGRATION.md): bridging KaibanJS agents into distributed nodes
+- [Security Features](docs/security/SECURITY_FEATURES.md): firewall, JWT, channel signing, PII handling
+- [ADRs](docs/decisions/): architecture decision records
+- [Deployment guides](docs/deployment/): Docker, Kubernetes, Helm, Railway, AWS, Azure, GCP, Vercel
 
-## 2. Key Technologies
-- **Language:** TypeScript (Node.js/Bun)
-- **Agent Framework:** KaibanJS
-- **Messaging Drivers:** BullMQ (Redis 7), Kafka (kafkajs)
-- **Observability:** OpenTelemetry (OTLP), W3C TraceContext
-- **Frontend Board:** React 18, Vite, Zustand, Socket.io-client
-- **API Federation:** Express, JSON-RPC 2.0 (A2A Protocol)
+## Source entry points
+- [Library barrel](src/index.ts): public API exports (published lib surface)
+- [Worker bootstrap](src/main/index.ts): composition root + graceful shutdown
+- [AgentActor](src/application/actor/AgentActor.ts): retry, DLQ, firewall, breaker, 64 KB cap
+- [Messaging interface](src/infrastructure/messaging/interfaces.ts): `IMessagingDriver`
+- [Channels](src/infrastructure/messaging/channels.ts): canonical channel names
+- [KaibanJS bridge](src/infrastructure/kaibanjs/kaiban-agent-bridge.ts): task handler + token/cost
+- [A2A connector](src/infrastructure/federation/a2a-connector.ts): JSON-RPC RPC surface
 
-## 3. Repository Structure
-- `/src/domain`: Pure business logic, `DistributedTask`, `DistributedAgentState`, `Result<T,E>`, security interfaces. **NO external framework imports allowed here.**
-- `/src/application`: The `AgentActor` use cases, task consumption, and retry lifecycle.
-- `/src/adapters`: `GatewayApp` (A2A HTTP REST/JSON-RPC), `SocketGateway` (WebSockets), `AgentStatePublisher`.
-- `/src/infrastructure`: Framework implementations (KaibanJS bridges, BullMQ/Kafka drivers, Heuristic Firewalls, Telemetry).
-- `/src/shared`: Common libraries functions and helpers to be used in `examples/`.
-- `/board`: Standalone React + Vite dashboard for real-time Distributed Kanban visualization.
-- `/examples`: Reference implementations (`blog-team` and the flagship `global-research` swarm).
-- `/docs`: Architecture Decision Records (ADRs), deployment manifests (Helm/K8s/Docker), and API specs.
+## Examples
+- [blog-team](examples/blog-team/): 3-agent editorial pipeline with HITL
+- [global-research](examples/global-research/): N-searcher fan-out/fan-in swarm with chaos mode
 
-## 4. Core Data Contracts
-All agent-to-agent communication strictly adheres to `MessagePayload` (`src/infrastructure/messaging/interfaces.ts`):
-```typescript
-interface MessagePayload {
-  taskId: string;
-  agentId: string;
-  data: Record<string, unknown>;
-  timestamp: number;
-  traceHeaders?: Record<string, string>; // W3C traceparent for OpenTelemetry
-}
-```
+## Security & governance
+- [SECURITY](SECURITY.md): reporting, key handling, supply-chain posture
+- [CONTRIBUTING](CONTRIBUTING.md): dev workflow + the 6 verification gates
+- [CHANGELOG](CHANGELOG.md): notable changes
 
-## 5. The Task Lifecycle (State Machine)
-Tasks move through specific states mirrored on the React Board:
-1. `TODO`: Task created (API: status='QUEUED').
-2. `DOING`: Worker claims task.
-3. `DONE`: Inference success (Published to `kaiban-events-completed`).
-4. `BLOCKED`: Max retries exceeded, firewall triggered, or breaker open (Published to `kaiban-events-failed` DLQ).
-5. `AWAITING_VALIDATION`: Human-in-the-Loop (HITL) required.
-
-## 6. Security Boundaries (OWASP AI Aligned)
-When modifying execution logic, ensure tasks pass through these opt-in infrastructure guards:
-- **Semantic Firewall (`HeuristicFirewall`):** Regex-based prompt injection detection.
-- **Circuit Breaker (`SlidingWindowBreaker`):** Prevents cascading LLM provider failures (default: opens after 10 fails/60s).
-- **JIT Tokens (`EnvTokenProvider`):** API keys are fetched *per-task* execution, not loaded globally.
-
-## 7. Federation & Interoperability
-- **A2A Protocol:** External systems interact with the swarm via JSON-RPC 2.0 at `POST /a2a/rpc` on port 3000.
-- **MCP (Model Context Protocol):** Handled via `MCPFederationClient` utilizing stdio transports.
-
-## 8. Instructions for AI Coding Assistants
-When contributing to this codebase, you MUST follow these rules:
-1. **Strict Type Safety:** Never use `any`. Use `unknown` with runtime validation if necessary. Use the internal `Result<T, E>` type for domain error handling instead of throwing raw exceptions where possible.
-2. **Infrastructure Agnosticism:** Never hardcode BullMQ or Kafka logic directly into an Agent or Actor. Always use the `IMessagingDriver` interface.
-3. **Stateless Workers:** Worker nodes (`examples/.../*-node.ts`) must never hold workflow state in memory. All state belongs on the message bus or in the payload.
-4. **Environment Variables:** For new features, always provide configuration via `process.env` with sensible defaults, and update `.env.example`.
-5. **No Visual Formatting in Payloads:** When generating state payloads for the React Board, do not embed CSS or UI styling. Pass raw JSON strings/objects; let the UI handle the formatting.
+## Optional
+- [Board UI](board/): React + Vite real-time Kanban dashboard
+- [LICENSE notes](LICENSE-EXCEPTIONS.md): GPL-3.0 SaaS-vs-distribution + commercial licensing

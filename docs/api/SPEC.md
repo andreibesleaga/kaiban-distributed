@@ -157,7 +157,8 @@ interface JsonRpcResponse {
 // src/infrastructure/kaibanjs/kaiban-agent-bridge.ts
 function createKaibanTaskHandler(
   agentConfig: KaibanAgentConfig,    // IAgentParams from kaibanjs
-  driver: IMessagingDriver,
+  _driver: IMessagingDriver,
+  tokenProvider?: ITokenProvider,   // optional JIT token provider
 ): (payload: MessagePayload) => Promise<unknown>
 // Returns the LLM finalAnswer, included in kaiban-events-completed data.result
 ```
@@ -166,8 +167,9 @@ function createKaibanTaskHandler(
 
 ```typescript
 // src/infrastructure/kaibanjs/kaiban-team-bridge.ts
+// @deprecated — for single-task execution prefer createKaibanTaskHandler
 class KaibanTeamBridge {
-  constructor(config: KaibanTeamConfig, driver: IMessagingDriver, stateChannel?: string)
+  constructor(config: KaibanTeamConfig, middleware?: IStateMiddleware)
   getTeam(): Team
   start(inputs?: Record<string, unknown>): Promise<WorkflowResult>
   subscribeToChanges(listener, properties?): () => void
@@ -182,7 +184,7 @@ class KaibanTeamBridge {
 |--------|------|------|-------------|
 | `GET` | `/health` | None | Returns `{ data: { status: 'ok', timestamp } }` |
 | `GET` | `/.well-known/agent-card.json` | None | Agent capabilities |
-| `POST` | `/a2a/rpc` | None | JSON-RPC 2.0 (requires `Content-Type: application/json`) |
+| `POST` | `/a2a/rpc` | None (JWT verified when A2A_JWT_SECRET is set) | JSON-RPC 2.0 (requires `Content-Type: application/json`) |
 
 All responses use the envelope: `{ data, meta, errors }`.
 Error responses: `{ data: null, errors: [{ message }] }`.
@@ -216,11 +218,11 @@ interface StateDelta {
     title: string;
     status: TaskStatus;          // 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'
     assignedToAgentId: string;
-    result?: string;             // capped at 800 chars
+    result?: string;             // capped at 20,000 chars (20 KB)
   }>;
 
   // Workflow lifecycle (set exclusively by the orchestrator — never by workers)
-  teamWorkflowStatus?: 'RUNNING' | 'FINISHED' | 'STOPPED';
+  teamWorkflowStatus?: 'RUNNING' | 'FINISHED' | 'STOPPED' | 'ERRORED';
 }
 ```
 

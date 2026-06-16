@@ -1,5 +1,9 @@
 /**
- * Thin tagged logger for kaiban-distributed examples and shared utilities.
+ * Human-readable tagged CLI logger for the examples/demos (separators, headers,
+ * terminal banners). This is **intentionally** `console`-based for watchable demo
+ * output — it is NOT the operational logger. Production/library code (actor, gateway,
+ * drivers, state, telemetry, bootstrap) uses the structured JSON logger in
+ * `./structured-logger`. Interactive HITL prompts (`./hitl`) are likewise console UI.
  *
  * Usage:
  *   const log = createLogger('Orchestrator');

@@ -2,7 +2,7 @@
 
 #### Implementation of Distributed Actor Model for AI swarms using TypeScript, Redis/Kafka, OpenTelemetry.
 
-- The very first project in the world to combine Enterprise Messaging (Kafka/Redis), Distributed Actor-Model Isolation, AI Multi-Agent Orchestration, and Kanban Visualization, into a JavaScript ecosystem, for agents and humans.
+- One of the first open-source projects to combine Enterprise Messaging (Kafka/Redis), Distributed Actor-Model Isolation, AI Multi-Agent Orchestration, and Kanban Visualization into a single JavaScript-ecosystem runtime, for agents and humans.
   
 > Distributed horizontally-scalable Actor-Model Multi-Agent System Runtime, using Kanban style visualization for workflows.
 >
@@ -22,9 +22,10 @@
 - Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
 
-[![Tests](https://img.shields.io/badge/tests-482%20passing-brightgreen)](#testing)
-[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#testing)
-[![Security](https://img.shields.io/badge/security-audit%20complete-brightgreen)](#security--compliance)
+[![CI](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/ci.yml/badge.svg)](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-100%25%20of%20src-brightgreen)](#testing)
+[![OpenSSF Scorecard](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/scorecard.yml/badge.svg)](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/scorecard.yml)
+[![Security Policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-green)](package.json)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
@@ -48,7 +49,7 @@ cp .env.example .env
 # or the Global Research Distributed Team
 ./scripts/global-research.sh start
 # use flags for chaos (20% searcher crash rate) and number of parallel instances
-# ./scripts/blog-team.sh start --chaos --searchers 6
+# ./scripts/global-research.sh start --chaos --searchers 6
 
 # → Script prints board URLs when the gateway is ready. Open one in a separate terminal/tab.
 
@@ -99,6 +100,35 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 ---
 
 ## Architecture
+
+### C4 container view
+
+```mermaid
+flowchart TB
+  subgraph Clients
+    Board["Board UI<br/>(React/Vite or static HTML)"]
+    Ext["External orchestrator / agent<br/>(A2A JSON-RPC)"]
+  end
+  subgraph Gateway["Edge Gateway :3000"]
+    GW["GatewayApp<br/>HTTP: /health · /agent-card · /a2a/rpc"]
+    SG["SocketGateway<br/>(Socket.io)"]
+  end
+  Redis[("Redis 7<br/>BullMQ queues + state pub/sub")]
+  Kafka[("Kafka<br/>(optional transport)")]
+  subgraph Workers["Agent worker nodes (1..N)"]
+    A1["AgentActor<br/>+ KaibanJS bridge<br/>+ AgentStatePublisher"]
+  end
+  Ext -- "tasks.create" --> GW
+  GW -- "publish task" --> Redis
+  Redis -- "consume (kaiban-agents-*)" --> A1
+  Kafka -. "alt transport" .- A1
+  A1 -- "state delta (kaiban-state-events)" --> Redis
+  A1 -- "events-completed / failed" --> Redis
+  Redis -- "state events" --> SG
+  SG -- "ws state + hitl:decision" --> Board
+```
+
+### Detailed ASCII view
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -590,7 +620,7 @@ const result = await bridge.start({ topic: 'AI agents 2025' });
 
 ## A2A Protocol (Agent-to-Agent)
 
-The Edge Gateway implements the [A2A protocol](https://google-deepmind.github.io/a2a/) for interoperability with other AI systems.
+The Edge Gateway exposes an **A2A** JSON-RPC surface for interoperability with other AI systems. It serves an agent card at the spec-recommended path (`/.well-known/agent-card.json`), but the RPC method names (`tasks.create`, `tasks.get`, `agent.status`) and the card schema are a pragmatic subset and are **not wire-compatible** with the current [A2A Protocol](https://a2a-protocol.org/) spec (Linux Foundation, v1.0 — which uses `message/send`, `tasks/get`, etc. and a richer `AgentCard`). Full A2A conformance is tracked for a future version.
 
 ### Agent Card
 
@@ -707,8 +737,8 @@ KAFKA_GROUP_ID=kaiban-group
 ### Driver factory (for custom node code)
 
 ```typescript
-// examples/blog-team/driver-factory.ts
-import { createDriver, getDriverType } from './driver-factory';
+// src/shared/driver-factory.ts (shared helpers; also re-exported from src/shared)
+import { createDriver, getDriverType } from './src/shared';
 const driver = createDriver('researcher');   // BullMQ or Kafka based on MESSAGING_DRIVER env
 ```
 
@@ -815,18 +845,23 @@ For a complete reference of every security feature, configuration option, and de
 
 Authentication and signing features are **env-var gated**: when the relevant secret is not set, the system behaves exactly as before (backwards-compatible). When set, full enforcement is active.
 
-### Compliance Controls
+### Compliance-supporting controls
 
-| Control | Implementation |
-|---------|----------------|
-| **GDPR — PII in logs** | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` |
-| **GDPR — State deltas** | `sanitizeDelta()` strips: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` |
-| **GDPR — Data minimisation** | `result` capped at 800 chars in state events; outbound data capped at 64 KB in `AgentActor` |
-| **SOC2 — Non-root container** | Dockerfile: `USER kaiban` |
-| **SOC2 — Secrets** | All secrets via env vars; `.env` gitignored; `.env.example` has no real values |
-| **ISO 27001 — Encryption** | mTLS for Redis/Kafka; HTTPS for LLM APIs; `scripts/generate-dev-certs.sh` for staging |
-| **Observability** | OpenTelemetry; W3C `traceparent` across BullMQ/Kafka hops; `recordAnomalyEvent()` OTLP spans |
-| **Known CVE** | `kaibanjs ≥ 0.3.0` — 6 moderate CVEs via `@langchain/community` transitives; unfixable without breaking downgrade |
+> **kaiban-distributed is a library/runtime, not a certified product.** The controls
+> below can **support** a deploying organization's GDPR, SOC 2, or ISO/IEC 27001
+> program — they do not, by themselves, constitute compliance or certification, which
+> remain the operator's responsibility.
+
+| Capability | Implementation | Supports |
+|------------|----------------|----------|
+| PII minimisation in logs | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` | GDPR |
+| PII stripping in state deltas | `sanitizeDelta()` strips `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` (applied on both the middleware and worker-publisher paths) | GDPR |
+| Data minimisation | `result` capped at 20,000 chars (20 KB) in state events; outbound data capped at 64 KB in `AgentActor` | GDPR |
+| Least-privilege container | Dockerfile non-root `USER kaiban` | SOC 2 (CC6) |
+| Secret hygiene | Secrets via env vars only; `.env` gitignored; `.env.example` placeholders | SOC 2 |
+| Encryption in transit | mTLS for Redis/Kafka; HTTPS to LLM APIs; `scripts/generate-dev-certs.sh` for staging | ISO/IEC 27001 (A.8.24) |
+| Observability / audit trail | OpenTelemetry tracing; W3C `traceparent` across BullMQ/Kafka hops; run-logger decision trail | SOC 2 / ISO 27001 |
+| Supply chain | 0 high/critical advisories (CI-enforced); CycloneDX SBOM; SLSA provenance + Sigstore-signed releases; `overrides` pin patched `@langchain/*`, `axios`, `protobufjs`, etc. — see [SECURITY.md](SECURITY.md) | — |
 
 ---
 
@@ -837,7 +872,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 482 unit tests (no external deps)
+npm run test           # 769 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -851,8 +886,8 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 482 tests, 51 files | None (all mocked) |
-| BullMQ E2E | `npm run test:e2e` | 15 tests, 4 files | Docker Redis (auto-managed by globalSetup) |
+| Unit | `npm test` | 769 tests, 77 files | None (all mocked) |
+| BullMQ E2E | `npm run test:e2e` | 65 tests, 10 files | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
 
 ### Coverage
@@ -910,7 +945,7 @@ kaiban-distributed/
 │       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 482 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 769 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)

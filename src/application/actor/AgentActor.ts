@@ -9,6 +9,14 @@ import {
 } from "../../infrastructure/messaging/channels";
 import type { ISemanticFirewall } from "../../domain/security/semantic-firewall";
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
+import {
+  recordAnomalyEvent,
+  recordMessageProcessed,
+  recordMessageLatency,
+} from "../../infrastructure/telemetry/telemetry";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "AgentActor" });
 
 export type TaskHandler = (payload: MessagePayload) => Promise<unknown>;
 
@@ -72,20 +80,23 @@ export class AgentActor {
 
   public async start(): Promise<void> {
     if (!this.taskHandler) {
-      console.warn(
-        `[Actor ${sanitizeId(this.id)}] No taskHandler provided — received messages will be silently dropped`,
+      log.warn(
+        { agentId: sanitizeId(this.id) },
+        "No taskHandler provided — received messages will be silently dropped",
       );
     }
-    console.log(
-      `[Actor ${sanitizeId(this.id)}] Starting on queue ${this.queueName}`,
+    log.info(
+      { agentId: sanitizeId(this.id), queue: this.queueName },
+      "Actor starting",
     );
     await this.driver.subscribe(this.queueName, this.processTask.bind(this));
   }
 
   private async processTask(payload: MessagePayload): Promise<void> {
     if (payload.agentId !== this.id && payload.agentId !== "*") {
-      console.log(
-        `[Actor ${sanitizeId(this.id)}] Ignored task for different agent`,
+      log.debug(
+        { agentId: sanitizeId(this.id), target: payload.agentId },
+        "Ignored task for a different agent",
       );
       return;
     }
@@ -97,9 +108,14 @@ export class AgentActor {
 
   private async isBlockedByGuards(payload: MessagePayload): Promise<boolean> {
     if (this.circuitBreaker?.isOpen()) {
-      console.warn(
-        `[Actor ${sanitizeId(this.id)}] Circuit breaker OPEN — rejecting task`,
+      log.warn(
+        { agentId: sanitizeId(this.id), taskId: payload.taskId },
+        "Circuit breaker OPEN — rejecting task",
       );
+      recordAnomalyEvent("circuit_breaker.rejected", {
+        agentId: sanitizeId(this.id),
+        taskId: payload.taskId,
+      });
       await this.publishToDlq(payload, "circuit_breaker_open");
       return true;
     }
@@ -107,9 +123,14 @@ export class AgentActor {
     if (this.firewall) {
       const verdict = await this.firewall.evaluate(payload);
       if (!verdict.allowed) {
-        console.warn(
-          `[Actor ${sanitizeId(this.id)}] Blocked by firewall: ${verdict.reason}`,
+        log.warn(
+          { agentId: sanitizeId(this.id), reason: verdict.reason ?? "unknown" },
+          "Blocked by semantic firewall",
         );
+        recordAnomalyEvent("firewall.blocked", {
+          agentId: sanitizeId(this.id),
+          reason: verdict.reason ?? "unknown",
+        });
         await this.publishToDlq(
           payload,
           "blocked_by_semantic_firewall",
@@ -123,6 +144,7 @@ export class AgentActor {
   }
 
   private async executeWithRetries(payload: MessagePayload): Promise<void> {
+    const start = Date.now();
     let lastError = "Max retries exceeded";
     for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
       try {
@@ -139,11 +161,14 @@ export class AgentActor {
               `Actor ${sanitizeId(this.id)} executed successfully`,
           }),
         });
+        recordMessageProcessed("completed");
+        recordMessageLatency(Date.now() - start, "completed");
         return;
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[Actor ${sanitizeId(this.id)}] Attempt ${attempt} failed: ${lastError}`,
+        log.error(
+          { agentId: sanitizeId(this.id), attempt, err: lastError },
+          "Task attempt failed",
         );
         if (attempt < RETRY_ATTEMPTS) {
           await delay(RETRY_BASE_DELAY_MS * attempt);
@@ -152,6 +177,7 @@ export class AgentActor {
     }
 
     this.circuitBreaker?.recordFailure();
+    recordMessageLatency(Date.now() - start, "failed");
     await this.publishToDlq(payload, lastError);
   }
 
@@ -160,6 +186,7 @@ export class AgentActor {
     error: string,
     reason?: string,
   ): Promise<void> {
+    recordMessageProcessed("failed");
     await this.driver.publish(DLQ_CHANNEL, {
       taskId: payload.taskId,
       agentId: this.id,
@@ -175,21 +202,30 @@ export class AgentActor {
   private async executeTask(payload: MessagePayload): Promise<unknown> {
     if (this.taskHandler) {
       const timeoutMs = this.taskTimeoutMs;
+      // Definite-assignment: the Promise executor runs synchronously, so the
+      // handle is always set before the finally below.
+      let timeoutHandle!: ReturnType<typeof setTimeout>;
       const handlerPromise = this.taskHandler(payload);
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(
           () => reject(new Error(`Task timed out after ${timeoutMs}ms`)),
           timeoutMs,
-        ),
-      );
-      return Promise.race([handlerPromise, timeoutPromise]);
+        );
+      });
+      try {
+        return await Promise.race([handlerPromise, timeoutPromise]);
+      } finally {
+        // Clear the timer whichever side won, so a completed task never leaves an
+        // armed timeout (default 300 000 ms) accumulating / holding the event loop.
+        clearTimeout(timeoutHandle);
+      }
     }
     await delay(50);
     return null;
   }
 
   public async stop(): Promise<void> {
-    console.log(`[Actor ${sanitizeId(this.id)}] Stopping`);
+    log.info({ agentId: sanitizeId(this.id) }, "Actor stopping");
     await this.driver.unsubscribe(this.queueName);
   }
 }

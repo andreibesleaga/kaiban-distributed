@@ -79,6 +79,12 @@ export class CompletionRouter {
    */
   wait(taskId: string, timeoutMs: number, label: string): Promise<string> {
     return new Promise((resolve, reject) => {
+      // Guard against a duplicate in-flight taskId: overwriting the maps would
+      // orphan the first waiter's resolver + timer, hanging it forever.
+      if (this.pendingResolve.has(taskId)) {
+        reject(new Error(`Duplicate wait() for in-flight taskId: ${taskId}`));
+        return;
+      }
       this.pendingResolve.set(taskId, resolve);
       this.pendingReject.set(taskId, reject);
       this.timers.set(

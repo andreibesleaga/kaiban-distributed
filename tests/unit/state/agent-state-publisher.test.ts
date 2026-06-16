@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { AgentStatePublisher } from "../../../src/adapters/state/agent-state-publisher";
 import type { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
 
@@ -167,9 +180,9 @@ describe("AgentStatePublisher", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     pub3.publishIdle();
     await new Promise((r) => setTimeout(r, 20));
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to publish"),
-      expect.any(Error),
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "Failed to publish state",
     );
     errSpy.mockRestore();
     await pub3.disconnect();
