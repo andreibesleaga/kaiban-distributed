@@ -202,14 +202,23 @@ export class AgentActor {
   private async executeTask(payload: MessagePayload): Promise<unknown> {
     if (this.taskHandler) {
       const timeoutMs = this.taskTimeoutMs;
+      // Definite-assignment: the Promise executor runs synchronously, so the
+      // handle is always set before the finally below.
+      let timeoutHandle!: ReturnType<typeof setTimeout>;
       const handlerPromise = this.taskHandler(payload);
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(
           () => reject(new Error(`Task timed out after ${timeoutMs}ms`)),
           timeoutMs,
-        ),
-      );
-      return Promise.race([handlerPromise, timeoutPromise]);
+        );
+      });
+      try {
+        return await Promise.race([handlerPromise, timeoutPromise]);
+      } finally {
+        // Clear the timer whichever side won, so a completed task never leaves an
+        // armed timeout (default 300 000 ms) accumulating / holding the event loop.
+        clearTimeout(timeoutHandle);
+      }
     }
     await delay(50);
     return null;

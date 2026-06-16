@@ -29,15 +29,27 @@ vi.mock("@opentelemetry/api", () => ({
   ROOT_CONTEXT: {},
 }));
 
-// Track what headers extractTraceContext was called with
+// Track what headers extractTraceContext was called with. Keep the REAL
+// sanitizeTraceHeaders (the validation logic under test now lives there) and
+// only stub extractTraceContext so we can capture the sanitized headers.
 const mockExtractTraceContext = vi.fn().mockReturnValue({});
-vi.mock("../../../src/infrastructure/telemetry/TraceContext", () => ({
-  injectTraceContext: vi.fn(),
-  extractTraceContext: (
-    headers: Record<string, string>,
-  ): Record<string, unknown> =>
-    mockExtractTraceContext(headers) as Record<string, unknown>,
-}));
+vi.mock(
+  "../../../src/infrastructure/telemetry/TraceContext",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../../src/infrastructure/telemetry/TraceContext")
+      >();
+    return {
+      ...actual,
+      injectTraceContext: vi.fn(),
+      extractTraceContext: (
+        headers: Record<string, string>,
+      ): Record<string, unknown> =>
+        mockExtractTraceContext(headers) as Record<string, unknown>,
+    };
+  },
+);
 
 const cfg = { connection: { host: "localhost", port: 6379 } };
 

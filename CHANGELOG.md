@@ -6,6 +6,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Pre-merge hardening pass (audit follow-up)
+- **Container image CVEs**: `Dockerfile` now runs `apk upgrade --no-cache` in both
+  stages (self-heals base-image openssl/musl/zlib CVEs at build time) and pins
+  `glob >= 10.5.0` via `overrides` — clears the fixable CRITICAL/HIGH the new Trivy
+  gate flagged.
+- **Kafka poison-message resilience**: the consumer now skips an unparseable
+  (non-JSON) record (logs a warning, advances the offset) instead of throwing and
+  crash-looping on it — matching the BullMQ path's tolerance.
+- **Trace-header parity**: extracted a shared `sanitizeTraceHeaders` (drops
+  non-string entries + rejects malformed `traceparent`); both BullMQ and Kafka
+  drivers now use it (previously only BullMQ validated).
+- **Timer leaks fixed**: `AgentActor` clears its per-task timeout when the handler
+  wins the race; `SocketGateway` clears the token-expiry disconnect timer when a
+  client disconnects early.
+- **CompletionRouter**: rejects a duplicate `wait()` for an in-flight taskId
+  instead of silently overwriting (which hung the first waiter).
+- **Token budget wired**: `startAgentNode` now forwards `MAX_TOKEN_BUDGET` to the
+  `AgentStatePublisher` (was loaded into config but never reached the worker path;
+  0 = unlimited, so default behavior is unchanged).
+- **CI**: added a Trivy image scan to the `docker` job (gate on fixable
+  CRITICAL/HIGH, SARIF to the Security tab); `engines.node >= 22`; PR trigger now
+  also covers `develop`; board job renamed to reflect it typechecks+builds (it has
+  no eslint).
+- **Docs**: corrected a broken ASVS→SECURITY.md link, stale test counts in
+  BLOG_TEAM_TEST/EXAMPLES, the `--chaos/--searchers` example (global-research, not
+  blog-team), `createKaibanTaskHandler`/`KaibanTeamBridge` signatures in SPEC,
+  security impl paths + `JIT_TOKENS_ENABLED` in ACTOR_MODEL, and the documented
+  `overrides` list in SECURITY.md.
+
 ### Security
 - Cleared **all critical/high dependency advisories** (was 1 critical + 8 high):
   bumped `@opentelemetry/{sdk-node,auto-instrumentations-node,exporter-trace-otlp-http}`

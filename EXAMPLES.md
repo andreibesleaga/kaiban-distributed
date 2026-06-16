@@ -425,11 +425,11 @@ npm test
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
-# → 20+ tests: task execution, fault tolerance, state sync, A2A protocol
+# → 65 tests: task execution, fault tolerance, state sync, A2A protocol
 
 # Kafka E2E (requires Kafka — starts automatically)
 npm run test:e2e:kafka
-# → 2 tests: publish-subscribe round-trip, unsubscribe
+# → 3 tests: publish-subscribe round-trip, unsubscribe
 
 # All quality gates at once
 npm run lint && npm run typecheck && npm run test:coverage

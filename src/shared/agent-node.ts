@@ -67,11 +67,13 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   const driver = createDriver(agentId);
   const { actorDeps, tokenProvider } = buildSecurityDeps();
 
-  const statePublisher = new AgentStatePublisher(redisUrl, {
-    agentId,
-    name: displayName,
-    role,
-  });
+  const statePublisher = new AgentStatePublisher(
+    redisUrl,
+    { agentId, name: displayName, role },
+    // Per-agent token budget (0 = unlimited). Enforced by the publisher's
+    // wrapHandler; previously loaded into config but never reached this path.
+    { maxTokenBudget: parseInt(process.env["MAX_TOKEN_BUDGET"] ?? "0", 10) },
+  );
   const handler = statePublisher.wrapHandler(
     createKaibanTaskHandler(agentConfig, driver, tokenProvider),
   );

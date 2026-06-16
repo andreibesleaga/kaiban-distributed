@@ -342,4 +342,35 @@ describe("CompletionRouter", () => {
     expect(results[0]?.error).toContain("Timeout");
     expect(results[0]?.result).toBeUndefined();
   });
+
+  it("rejects a duplicate wait() for an in-flight taskId without orphaning the first waiter", async () => {
+    const handlersByQueue = new Map<string, SubscribeHandler>();
+    const completedDriver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi
+        .fn()
+        .mockImplementation((q: string, h: SubscribeHandler) => {
+          handlersByQueue.set(q, h);
+          return Promise.resolve();
+        }),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    const router = new CompletionRouter(completedDriver);
+
+    const first = router.wait("dup-task", 10_000, "x");
+    const second = router.wait("dup-task", 10_000, "x");
+
+    // The second call must reject immediately rather than silently overwrite the
+    // first waiter's resolver/timer (which would hang the first forever).
+    await expect(second).rejects.toThrow(
+      /Duplicate wait\(\) for in-flight taskId/,
+    );
+
+    // The first waiter is untouched and still resolves on completion.
+    await handlersByQueue.get("kaiban-events-completed")!(
+      makeCompletedPayload("dup-task", "ok"),
+    );
+    await expect(first).resolves.toBe("ok");
+  });
 });

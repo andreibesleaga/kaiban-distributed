@@ -428,12 +428,12 @@ npm run test:e2e:kafka
 Expected output:
 
 ```
-Test Files  37 passed (37)
-Tests       344 passed (344)
+Test Files  77 passed (77)
+Tests       769 passed (769)
 All files   | 100% | 100% | 100% | 100% |
 
-# E2E BullMQ: 22/22 passing
-# E2E Kafka:  2/2 passing
+# E2E BullMQ: 65/65 passing
+# E2E Kafka:  3/3 passing
 ```
 
 ---

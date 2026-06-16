@@ -3,7 +3,7 @@
 > Maps the relevant **OWASP Application Security Verification Standard 5.0** domains to
 > the controls implemented in kaiban-distributed. Status: ✅ implemented · 🟡 partial /
 > deploy-dependent · N/A not applicable · ⬜ future. This is a self-assessment, not a
-> certification (see [SECURITY.md](SECURITY.md)). ASVS 5.0: https://owasp.org/www-project-application-security-verification-standard/
+> certification (see [SECURITY.md](../../SECURITY.md)). ASVS 5.0: https://owasp.org/www-project-application-security-verification-standard/
 
 | ASVS domain | Applicable requirement | Control | Status |
 |-------------|------------------------|---------|--------|

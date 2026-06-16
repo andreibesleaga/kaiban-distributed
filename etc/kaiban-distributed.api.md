@@ -402,6 +402,9 @@ export type Result<T, E> = {
 };
 
 // @public
+export function sanitizeTraceHeaders(raw: unknown): Record<string, string>;
+
+// @public
 export class SlidingWindowBreaker implements ICircuitBreaker {
     constructor(threshold: number, windowMs: number);
     // (undocumented)

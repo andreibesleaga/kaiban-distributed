@@ -182,7 +182,13 @@ export class SocketGateway {
           socket.disconnect(true);
           return;
         }
-        setTimeout(() => socket.disconnect(true), msUntilExpiry);
+        const expiryTimer = setTimeout(
+          () => socket.disconnect(true),
+          msUntilExpiry,
+        );
+        // Clear the expiry timer if the client disconnects first, so it doesn't
+        // linger (holding a closure over the dead socket) until token expiry.
+        socket.on("disconnect", () => clearTimeout(expiryTimer));
       }
 
       // Replay current full state to newly connected / reconnected client

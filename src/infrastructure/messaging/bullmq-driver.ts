@@ -4,6 +4,7 @@ import { IMessagingDriver, MessagePayload } from "./interfaces";
 import {
   injectTraceContext,
   extractTraceContext,
+  sanitizeTraceHeaders,
 } from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
 
@@ -55,25 +56,14 @@ export class BullMQDriver implements IMessagingDriver {
     handler: (payload: MessagePayload) => Promise<void>,
   ): Promise<void> {
     if (!this.workers.has(queueName)) {
-      // Validate W3C traceparent format before passing to extractTraceContext.
-      // Prevents crafted job payloads from injecting malformed trace headers.
-      const TRACEPARENT_RE = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
       const worker = new Worker(
         queueName,
         async (job) => {
-          const rawHeaders =
-            typeof job.data.traceHeaders === "object" &&
-            job.data.traceHeaders !== null
-              ? (job.data.traceHeaders as Record<string, unknown>)
-              : {};
-          const safeHeaders: Record<string, string> = {};
-          for (const [k, v] of Object.entries(rawHeaders)) {
-            if (typeof k === "string" && typeof v === "string") {
-              if (k === "traceparent" && !TRACEPARENT_RE.test(v)) continue;
-              safeHeaders[k] = v;
-            }
-          }
-          const ctx = extractTraceContext(safeHeaders);
+          // Sanitize possibly-crafted trace headers (incl. malformed traceparent)
+          // before extraction — shared with the Kafka driver.
+          const ctx = extractTraceContext(
+            sanitizeTraceHeaders(job.data.traceHeaders),
+          );
           await otelContext.with(ctx, () =>
             handler(job.data as MessagePayload),
           );

@@ -87,7 +87,7 @@ MESSAGING_DRIVER=bullmq   # (default) BullMQ on Redis
 MESSAGING_DRIVER=kafka    # Apache Kafka
 ```
 
-Worker code is identical regardless of which driver is active. The driver factory (`examples/blog-team/driver-factory.ts`) constructs the right implementation at startup.
+Worker code is identical regardless of which driver is active. The driver factory (`src/shared/driver-factory.ts`) constructs the right implementation at startup.
 
 ### BullMQ Driver
 - One `Worker` per queue subscription
@@ -260,9 +260,9 @@ Security is applied at the actor boundary — before `taskHandler` is invoked:
 
 | Guard | File | When Active |
 |-------|------|-------------|
-| `HeuristicFirewall` | `src/domain/security/` | `SEMANTIC_FIREWALL_ENABLED=true` |
-| `SlidingWindowBreaker` | `src/domain/security/` | `CIRCUIT_BREAKER_ENABLED=true` |
-| `EnvTokenProvider` | `src/infrastructure/security/` | `SECURE_TOKEN_PROVIDER=true` |
+| `HeuristicFirewall` | `src/infrastructure/security/` | `SEMANTIC_FIREWALL_ENABLED=true` |
+| `SlidingWindowBreaker` | `src/infrastructure/security/` | `CIRCUIT_BREAKER_ENABLED=true` |
+| `EnvTokenProvider` | `src/infrastructure/security/` | `JIT_TOKENS_ENABLED=true` |
 
 `sanitizeDelta()` in `DistributedStateMiddleware` scrubs PII (email, name, phone, IP, password, token, secret, SSN, DOB) from state deltas before they reach the board.
 

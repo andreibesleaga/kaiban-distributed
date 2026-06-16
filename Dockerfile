@@ -5,6 +5,10 @@ FROM node:22.14-alpine AS builder
 
 WORKDIR /app
 
+# Apply the latest Alpine security patches on top of the pinned base (openssl,
+# musl, zlib, etc.) so the image self-heals against base-image CVEs at build time.
+RUN apk upgrade --no-cache
+
 COPY package*.json ./
 RUN npm install --include=dev
 
@@ -20,6 +24,10 @@ RUN npm run build
 FROM node:22.14-alpine AS runner
 
 WORKDIR /app
+
+# Apply the latest Alpine security patches (the scanned runtime image must carry
+# patched openssl/musl/zlib — Trivy gates CI on fixable CRITICAL/HIGH OS CVEs).
+RUN apk upgrade --no-cache
 
 # Non-root user for security (SOC2/ISO 27001)
 RUN addgroup -S kaiban && adduser -S kaiban -G kaiban

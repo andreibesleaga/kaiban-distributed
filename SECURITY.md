@@ -39,8 +39,8 @@ Several transitive advisories reach the tree via `@langchain/*` (used by
 `kaibanjs`) and the OpenTelemetry/gRPC stack. `package.json` `overrides` pin
 patched versions: `@langchain/core`, `@langchain/community`, `langchain`,
 `langsmith`, `axios`, `protobufjs`, `@grpc/grpc-js`, `ws`, `hono`, `fast-uri`,
-`fast-xml-parser`, `qs`, `uuid`, `ip-address`, `@opentelemetry/exporter-prometheus`,
-`form-data` (>=4.0.6), `vite` (>=8.0.16).
+`fast-xml-parser`, `qs`, `uuid`, `ip-address`, `expr-eval`, `file-type`, `glob`,
+`@opentelemetry/exporter-prometheus`, `form-data` (>=4.0.6), `vite` (>=8.0.16).
 
 ### Residual advisories (moderate only)
 

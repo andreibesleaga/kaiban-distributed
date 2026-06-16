@@ -49,7 +49,7 @@ cp .env.example .env
 # or the Global Research Distributed Team
 ./scripts/global-research.sh start
 # use flags for chaos (20% searcher crash rate) and number of parallel instances
-# ./scripts/blog-team.sh start --chaos --searchers 6
+# ./scripts/global-research.sh start --chaos --searchers 6
 
 # → Script prints board URLs when the gateway is ready. Open one in a separate terminal/tab.
 
