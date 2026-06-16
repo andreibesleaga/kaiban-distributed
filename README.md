@@ -101,6 +101,35 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 
 ## Architecture
 
+### C4 container view
+
+```mermaid
+flowchart TB
+  subgraph Clients
+    Board["Board UI<br/>(React/Vite or static HTML)"]
+    Ext["External orchestrator / agent<br/>(A2A JSON-RPC)"]
+  end
+  subgraph Gateway["Edge Gateway :3000"]
+    GW["GatewayApp<br/>HTTP: /health · /agent-card · /a2a/rpc"]
+    SG["SocketGateway<br/>(Socket.io)"]
+  end
+  Redis[("Redis 7<br/>BullMQ queues + state pub/sub")]
+  Kafka[("Kafka<br/>(optional transport)")]
+  subgraph Workers["Agent worker nodes (1..N)"]
+    A1["AgentActor<br/>+ KaibanJS bridge<br/>+ AgentStatePublisher"]
+  end
+  Ext -- "tasks.create" --> GW
+  GW -- "publish task" --> Redis
+  Redis -- "consume (kaiban-agents-*)" --> A1
+  Kafka -. "alt transport" .- A1
+  A1 -- "state delta (kaiban-state-events)" --> Redis
+  A1 -- "events-completed / failed" --> Redis
+  Redis -- "state events" --> SG
+  SG -- "ws state + hitl:decision" --> Board
+```
+
+### Detailed ASCII view
+
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Board Viewers (browser)                                             │

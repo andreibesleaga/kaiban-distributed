@@ -293,13 +293,18 @@ const writeTask = new Task({
   agent: writer,
 });
 
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+// NOTE: KaibanTeamBridge is @deprecated — prefer createKaibanTaskHandler (below) for
+// per-task token/cost tracking. Use it only for long-running multi-task teams that
+// need full Zustand state streaming to the board. The bridge takes a *state
+// middleware* (not a messaging driver).
+import { DistributedStateMiddleware } from './src/adapters/state/distributedMiddleware';
+const middleware = new DistributedStateMiddleware('redis://localhost:6379');
 
 const bridge = new KaibanTeamBridge({
   name: 'Blog Team',
   agents: [researcher, writer],
   tasks: [researchTask, writeTask],
-}, driver);
+}, middleware);
 
 // Every Zustand setState() → Redis Pub/Sub → Socket.io → board
 const result = await bridge.start({ topic: 'AI Agents in 2025' });
@@ -311,12 +316,18 @@ console.log(result.status, result.result);
 ```typescript
 // From src/infrastructure/kaibanjs/kaiban-team-bridge.ts
 export class KaibanTeamBridge {
-  constructor(config: KaibanTeamConfig, driver: IMessagingDriver, stateChannel = 'kaiban-state-events') {
-    this.team = new Team({ name, agents, tasks, env: config.env ?? {} });
-    this.middleware = new DistributedStateMiddleware(driver, stateChannel);
+  // The state middleware is INJECTED (keeps the infrastructure layer free of
+  // adapter imports). Pass a DistributedStateMiddleware, not a messaging driver.
+  constructor(config: KaibanTeamConfig, middleware?: IStateMiddleware) {
+    this.team = new Team({
+      name: config.name, agents: config.agents, tasks: config.tasks, env: config.env ?? {},
+    });
+    this.middleware = middleware ?? null;
 
-    const store = this.team.getStore() as unknown as { setState: ... };
-    this.middleware.attach(store);  // intercepts ALL setState() calls
+    if (this.middleware) {
+      const store = this.team.getStore() as unknown as { setState: (p: Record<string, unknown>) => void };
+      this.middleware.attach(store);  // intercepts ALL setState() calls
+    }
   }
 }
 ```
