@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [1.5.0] - 2026-06-16
+## [1.5.0-beta] - 2026-06-16
 
 ### Pre-merge hardening pass (audit follow-up)
 - **Container image CVEs** (cleared the new Trivy gate to 0 fixable CRITICAL/HIGH):
