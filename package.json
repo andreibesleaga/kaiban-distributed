@@ -33,7 +33,8 @@
     "test:e2e:security": "vitest run --config vitest.e2e.security.config.mts",
     "test:e2e:live": "vitest run --config vitest.e2e.live.config.ts",
     "typecheck": "tsc --noEmit",
-    "lint:arch": "madge --circular --extensions ts src/"
+    "lint:arch": "madge --circular --extensions ts src/",
+    "bench": "vitest bench --run --config vitest.bench.config.mts"
   },
   "repository": {
     "type": "git",
