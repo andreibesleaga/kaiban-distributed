@@ -296,7 +296,7 @@ SEMANTIC_FIREWALL_LLM_URL=http://...        # optional: deep LLM-based analysis
 
 **File:** `src/infrastructure/security/sliding-window-breaker.ts`
 
-**How it works:** Tracks failure timestamps in a sliding window. When `failures >= threshold` within `windowMs`, the breaker opens and rejects new calls. Closes automatically when the window expires. Emits OTLP `recordAnomalyEvent()` on state transitions.
+**How it works:** Tracks failure timestamps in a sliding window. When `failures >= threshold` within `windowMs`, the breaker opens and rejects new calls. Closes automatically when the window expires. Logs on state transitions; `recordAnomalyEvent()` (in `telemetry.ts`) is available to emit OTLP span events when wired at the caller (`AgentActor`) level.
 
 **Configuration:**
 ```bash
@@ -458,7 +458,7 @@ All services in `docker-compose.yml` declare CPU and memory limits to prevent on
 |---------|--------|
 | **OpenTelemetry** | Auto-instrumented; OTLP export to configurable endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT`) |
 | **W3C traceparent** | Injected into BullMQ/Kafka job headers; propagated across async hops; validated on receive |
-| **Anomaly events** | `recordAnomalyEvent()` emits OTLP span events on circuit breaker state changes |
+| **Anomaly events** | `recordAnomalyEvent()` (telemetry) is available to emit OTLP span events; wire it at the actor level on breaker/retry transitions |
 | **Request logging** | UUID per HTTP request; method, path, status logged on response finish |
 | **HITL decision logging** | Decision + truncated task ID logged on receipt and Redis publish |
 | **Channel signing warnings** | `console.warn` when an unsigned/invalid Redis message is rejected |
