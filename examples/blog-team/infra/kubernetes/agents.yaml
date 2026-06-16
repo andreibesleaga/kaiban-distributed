@@ -36,20 +36,10 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 20
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          failureThreshold: 3
+        # NOTE: worker nodes consume from the queue and expose NO HTTP server, so
+        # HTTP /health probes would fail and CrashLoopBackOff the pod. The
+        # container's main process IS the worker — Kubernetes restarts the pod if
+        # that process exits, which is the correct liveness signal for a worker.
 ---
 # ── Writer ───────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
@@ -85,20 +75,10 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 20
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          failureThreshold: 3
+        # NOTE: worker nodes consume from the queue and expose NO HTTP server, so
+        # HTTP /health probes would fail and CrashLoopBackOff the pod. The
+        # container's main process IS the worker — Kubernetes restarts the pod if
+        # that process exits, which is the correct liveness signal for a worker.
 ---
 # ── Editor ───────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
@@ -134,17 +114,7 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 15
-          periodSeconds: 20
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          failureThreshold: 3
+        # NOTE: worker nodes consume from the queue and expose NO HTTP server, so
+        # HTTP /health probes would fail and CrashLoopBackOff the pod. The
+        # container's main process IS the worker — Kubernetes restarts the pod if
+        # that process exits, which is the correct liveness signal for a worker.

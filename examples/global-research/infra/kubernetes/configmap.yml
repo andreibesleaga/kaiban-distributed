@@ -5,7 +5,7 @@ metadata:
 data:
   REDIS_URL: "redis://kaiban-redis:6379"
   MESSAGING_DRIVER: "bullmq"
-  GATEWAY_PORT: "3000"
+  PORT: "3000"
   SERVICE_NAME: "kaiban-gateway"
   AGENT_IDS: "searcher,writer,reviewer,editor"
   LLM_MODEL: "gpt-4o-mini"
