@@ -19,7 +19,7 @@ node_modules
 dist
 build
 coverage
-agents
+/agents/
 certs
 runs
 
