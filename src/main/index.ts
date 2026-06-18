@@ -1,158 +1,45 @@
 import "dotenv/config";
-import { createServer } from "http";
-import { Redis } from "ioredis";
-import { initTelemetry } from "../infrastructure/telemetry/telemetry";
-import { loadConfig } from "./config";
-import { BullMQDriver } from "../infrastructure/messaging/bullmq-driver";
-import { KafkaDriver } from "../infrastructure/messaging/kafka-driver";
-import { type IMessagingDriver } from "../infrastructure/messaging/interfaces";
-import { AgentActor } from "../application/actor/AgentActor";
-import { A2AConnector } from "../infrastructure/federation/a2a-connector";
-import { GatewayApp } from "../adapters/gateway/GatewayApp";
-import { SocketGateway } from "../adapters/gateway/SocketGateway";
-import type { ISemanticFirewall } from "../domain/security/semantic-firewall";
-import type { ICircuitBreaker } from "../domain/security/circuit-breaker";
-import type { ITokenProvider } from "../domain/security/token-provider";
-import { HeuristicFirewall } from "../infrastructure/security/heuristic-firewall";
-import { EnvTokenProvider } from "../infrastructure/security/env-token-provider";
-import { SlidingWindowBreaker } from "../infrastructure/security/sliding-window-breaker";
+import { runGateway } from "./gateway";
+import { runWorker } from "./worker";
 import { createStructuredLogger } from "../shared/structured-logger";
 
-const log = createStructuredLogger({ component: "worker" });
+const log = createStructuredLogger({ component: "main" });
 
-function buildMessagingDriver(
-  config: ReturnType<typeof loadConfig>,
-): IMessagingDriver {
-  if (config.messagingDriver === "kafka") {
-    log.info(
-      { driver: "kafka", brokers: config.kafka.brokers },
-      "Messaging driver selected",
-    );
-    return new KafkaDriver({
-      ...config.kafka,
-      ssl: config.kafka.ssl,
-    });
+export type Role = "gateway" | "worker";
+
+/**
+ * Resolve the process role from the `ROLE` env var (Finding #1 fix / ADR-013).
+ *
+ * Single image, role chosen at runtime:
+ *   ROLE=gateway → HTTP / WebSocket / A2A front door, no task-consuming actors
+ *   ROLE=worker  → LLM-backed task-consuming agent pool, no HTTP surface
+ *
+ * Default is `gateway` (backward-compatible: the previous single entrypoint
+ * exposed the HTTP `/health` surface; workers MUST opt in with `ROLE=worker`).
+ * An unknown ROLE is rejected loudly rather than silently mis-deployed.
+ */
+export function resolveRole(raw: string | undefined): Role {
+  const role = (raw ?? "gateway").trim().toLowerCase();
+  if (role === "gateway" || role === "worker") return role;
+  throw new Error(`Invalid ROLE "${raw}": must be "gateway" or "worker"`);
+}
+
+export async function main(roleEnv: string | undefined): Promise<void> {
+  const role = resolveRole(roleEnv);
+  log.info({ role }, "Starting kaiban-distributed");
+  if (role === "worker") {
+    await runWorker();
+  } else {
+    await runGateway();
   }
-  log.info(
-    { driver: "bullmq", redis: `${config.redis.host}:${config.redis.port}` },
-    "Messaging driver selected",
-  );
-  return new BullMQDriver({
-    connection: { host: config.redis.host, port: config.redis.port },
-    tls: config.redis.tls,
-  });
 }
 
-function buildSecurityDeps(config: ReturnType<typeof loadConfig>): {
-  firewall: ISemanticFirewall | undefined;
-  circuitBreaker: ICircuitBreaker | undefined;
-  tokenProvider: ITokenProvider | undefined;
-} {
-  const firewall = config.security.semanticFirewallEnabled
-    ? new HeuristicFirewall()
-    : undefined;
-
-  const circuitBreaker = config.security.circuitBreakerEnabled
-    ? new SlidingWindowBreaker(
-        config.security.circuitBreakerThreshold,
-        config.security.circuitBreakerWindowMs,
-      )
-    : undefined;
-
-  const tokenProvider = config.security.jitTokensEnabled
-    ? new EnvTokenProvider()
-    : undefined;
-
-  if (firewall) log.info("Security: Semantic Firewall enabled");
-  if (circuitBreaker) log.info("Security: Circuit Breaker enabled");
-  if (tokenProvider) log.info("Security: JIT Token Provider enabled");
-
-  return { firewall, circuitBreaker, tokenProvider };
+/* v8 ignore start — process-level entrypoint guard; exercised by the image,
+   not by unit tests (main() itself is covered). */
+if (require.main === module) {
+  main(process.env["ROLE"]).catch((err) => {
+    log.error({ err }, "Fatal startup error");
+    process.exit(1);
+  });
 }
-
-async function main(): Promise<void> {
-  const config = loadConfig();
-
-  initTelemetry({
-    serviceName: config.serviceName,
-    exporterEndpoint: config.otelEndpoint,
-  });
-
-  const messagingDriver = buildMessagingDriver(config);
-  const { firewall, circuitBreaker } = buildSecurityDeps(config);
-  // Note: tokenProvider is only relevant in nodes (createKaibanTaskHandler).
-
-  const redisOpts = config.redis.tls
-    ? {
-        tls: {
-          ca: config.redis.tls.ca,
-          cert: config.redis.tls.cert,
-          key: config.redis.tls.key,
-        },
-      }
-    : {};
-  const redisSocketPub = new Redis(config.redis.url, redisOpts);
-  const redisSocketSub = new Redis(config.redis.url, redisOpts);
-  const redisHitlPub = new Redis(config.redis.url, redisOpts);
-
-  const actors = config.agentIds.map(
-    (agentId) =>
-      new AgentActor(
-        agentId,
-        messagingDriver,
-        `kaiban-agents-${agentId}`,
-        undefined,
-        { firewall, circuitBreaker, taskTimeoutMs: config.agentTimeoutMs },
-      ),
-  );
-
-  const agentCard = {
-    name: config.serviceName,
-    version: "1.0.0",
-    description: "Kaiban distributed agent worker node",
-    capabilities: ["tasks.create", "tasks.get", "agent.status"],
-    endpoints: { rpc: "/a2a/rpc" },
-  };
-
-  const connector = new A2AConnector(agentCard, messagingDriver);
-  const gateway = new GatewayApp(connector, {
-    trustProxy: config.security.trustProxy,
-  });
-  const httpServer = createServer(gateway.app);
-  const socketGateway = new SocketGateway(
-    httpServer,
-    redisSocketPub,
-    redisSocketSub,
-    {
-      validHitlDecisions: config.validHitlDecisions,
-      hitlPublisher: redisHitlPub,
-    },
-  );
-
-  socketGateway.initialize();
-
-  await Promise.all(actors.map((actor) => actor.start()));
-
-  httpServer.listen(config.port, () => {
-    log.info(
-      { port: config.port, agents: config.agentIds },
-      "Worker listening",
-    );
-  });
-
-  const shutdown = async (signal: string): Promise<void> => {
-    log.info({ signal }, "Shutting down");
-    await Promise.all(actors.map((actor) => actor.stop()));
-    await socketGateway.shutdown();
-    await messagingDriver.disconnect();
-    process.exit(0);
-  };
-
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-}
-
-main().catch((err) => {
-  log.error({ err }, "Fatal startup error");
-  process.exit(1);
-});
+/* v8 ignore stop */

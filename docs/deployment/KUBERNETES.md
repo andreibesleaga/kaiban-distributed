@@ -133,12 +133,18 @@ npx ts-node examples/blog-team/orchestrator.ts
 
 | Key | Value | Notes |
 |-----|-------|-------|
+| `ROLE` | `gateway` | Role for the single image (ADR-013): `gateway` or `worker`. Default `gateway`. |
 | `REDIS_URL` | `redis://kaiban-redis:6379` | Internal cluster DNS |
 | `MESSAGING_DRIVER` | `bullmq` | BullMQ over Redis |
-| `PORT` | `3000` | Gateway/worker HTTP port |
+| `PORT` | `3000` | Gateway HTTP port (gateway role only; worker has no HTTP surface) |
 | `SERVICE_NAME` | `kaiban-gateway` | Telemetry label |
-| `AGENT_IDS` | `gateway` | Gateway-role identifier |
+| `AGENT_IDS` | `gateway` | Gateway-role identifier (worker role lists its agent pool, e.g. `researcher,writer`) |
 | `LLM_MODEL` | `gpt-4o-mini` | Override per agent if needed |
+
+> **Role selection (ADR-013).** The single image picks its role at runtime from `ROLE`.
+> Set `ROLE=gateway` on the gateway Deployment (HTTP/`/health`, no task actors) and `ROLE=worker`
+> on a worker Deployment (LLM-backed task pool, no HTTP surface — use a TCP/exec probe, not `/health`).
+> Scale the worker tier independently (`kubectl scale deploy/kaiban-worker --replicas=N`).
 
 Secrets (in the same file, `kind: Secret`):
 

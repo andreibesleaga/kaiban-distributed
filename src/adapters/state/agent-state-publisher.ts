@@ -9,6 +9,7 @@
  */
 import { Redis } from "ioredis";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
+import type { TaskHandler } from "../../application/actor/AgentActor";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import { sanitizeDelta } from "./distributedMiddleware";
@@ -147,14 +148,15 @@ export class AgentStatePublisher {
    * Wraps a task handler to publish EXECUTING → DONE/ERROR state transitions.
    * The original handler's return value (LLM result) is preserved.
    */
-  wrapHandler(
-    handler: (payload: MessagePayload) => Promise<unknown>,
-  ): (payload: MessagePayload) => Promise<unknown> {
+  wrapHandler(handler: TaskHandler): TaskHandler {
     const { agentId, name, role } = this.agentInfo;
     const pub = (d: Parameters<AgentStatePublisher["publish"]>[0]): void =>
       this.publish(d);
 
-    return async (payload: MessagePayload): Promise<unknown> => {
+    return async (
+      payload: MessagePayload,
+      signal?: AbortSignal,
+    ): Promise<unknown> => {
       const title = String(payload.data["instruction"] ?? payload.taskId).slice(
         0,
         60,
@@ -197,7 +199,7 @@ export class AgentStatePublisher {
       });
 
       try {
-        const result = await handler(payload);
+        const result = await handler(payload, signal);
 
         // → DONE
         this.currentStatus = "IDLE";

@@ -1,8 +1,9 @@
 /**
- * AgentActor — console.warn when taskHandler is missing.
+ * AgentActor — wildcard routing, result propagation, and payload handling.
  *
- * Covers: start() warning for missing taskHandler, warning message content,
- * warning appears before subscribe, and that actor still functions normally.
+ * (The former "console.warn when taskHandler is missing" cases were removed when
+ * the silent no-handler fallback was deleted — see Finding #1 / ADR-013; that
+ * behavior is now guarded by AgentActor-requires-handler.test.ts.)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -40,86 +41,6 @@ function makeCapturingDriver(): {
   };
   return { driver, getHandler: () => h };
 }
-
-describe("AgentActor — console.warn when taskHandler is missing", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    mockLog.warn.mockClear();
-    mockLog.info.mockClear();
-    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    warnSpy.mockRestore();
-  });
-
-  it("logs console.warn on start() when no taskHandler is provided", async () => {
-    const d = {
-      publish: vi.fn(),
-      subscribe: vi.fn().mockResolvedValue(undefined),
-      unsubscribe: vi.fn(),
-      disconnect: vi.fn(),
-    };
-    const actor = new AgentActor("agent-1", d, "q");
-    await actor.start();
-    expect(mockLog.warn).toHaveBeenCalledOnce();
-    expect(mockLog.warn.mock.calls[0][1]).toContain("silently dropped");
-  });
-
-  it("warn message contains sanitised (hashed) agent ID, not raw ID", async () => {
-    const d = {
-      publish: vi.fn(),
-      subscribe: vi.fn().mockResolvedValue(undefined),
-      unsubscribe: vi.fn(),
-      disconnect: vi.fn(),
-    };
-    const rawId = "super-secret-agent-id";
-    const actor = new AgentActor(rawId, d, "q");
-    await actor.start();
-    expect(JSON.stringify(mockLog.warn.mock.calls[0])).not.toContain(rawId);
-  });
-
-  it("does NOT log console.warn when a taskHandler IS provided", async () => {
-    const d = {
-      publish: vi.fn(),
-      subscribe: vi.fn().mockResolvedValue(undefined),
-      unsubscribe: vi.fn(),
-      disconnect: vi.fn(),
-    };
-    const actor = new AgentActor("agent-1", d, "q", vi.fn());
-    await actor.start();
-    expect(mockLog.warn).not.toHaveBeenCalled();
-  });
-
-  it("actor still subscribes to queue even without taskHandler", async () => {
-    const d = {
-      publish: vi.fn(),
-      subscribe: vi.fn().mockResolvedValue(undefined),
-      unsubscribe: vi.fn(),
-      disconnect: vi.fn(),
-    };
-    const actor = new AgentActor("agent-1", d, "q");
-    await actor.start();
-    expect(d.subscribe).toHaveBeenCalledWith("q", expect.any(Function));
-  });
-
-  it("actor without taskHandler still publishes to completed queue (uses null result)", async () => {
-    const { driver, getHandler } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q"); // no taskHandler
-    await actor.start();
-    await getHandler()({
-      taskId: "t",
-      agentId: "agent-1",
-      data: {},
-      timestamp: 0,
-    });
-    expect(driver.publish).toHaveBeenCalledWith(
-      "kaiban-events-completed",
-      expect.objectContaining({ taskId: "t" }),
-    );
-  });
-});
 
 describe("AgentActor — wildcard agentId (*) routing", () => {
   it("processes task when agentId is * regardless of actor id", async () => {

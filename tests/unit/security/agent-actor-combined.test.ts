@@ -50,7 +50,7 @@ describe("AgentActor — combined security golden paths", () => {
       recordFailure: vi.fn(),
     };
     const deps: AgentActorDeps = { firewall, circuitBreaker: breaker };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload());
 
@@ -75,7 +75,7 @@ describe("AgentActor — combined security golden paths", () => {
       recordFailure: vi.fn(),
     };
     const deps: AgentActorDeps = { firewall, circuitBreaker: breaker };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload());
 
@@ -102,7 +102,7 @@ describe("AgentActor — combined security golden paths", () => {
       recordFailure: vi.fn(),
     };
     const deps: AgentActorDeps = { firewall, circuitBreaker: breaker };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload());
 
@@ -146,7 +146,7 @@ describe("AgentActor — combined security golden paths", () => {
       evaluate: vi.fn().mockRejectedValue(new Error("firewall service down")),
     };
     const deps: AgentActorDeps = { firewall };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
 
     // If the firewall itself throws, the error propagates — this is correct
@@ -167,7 +167,7 @@ describe("AgentActor — combined security golden paths", () => {
       recordFailure: vi.fn(),
     };
     const deps: AgentActorDeps = { firewall, circuitBreaker: breaker };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload("different-agent"));
 
@@ -180,7 +180,7 @@ describe("AgentActor — combined security golden paths", () => {
   // ── Wildcard agent processes task ───────────────────────────────
   it('processes task when agentId is wildcard "*"', async () => {
     const deps: AgentActorDeps = {};
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload("*"));
 

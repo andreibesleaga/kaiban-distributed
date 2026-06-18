@@ -144,7 +144,7 @@ describe("AgentActor — retry recovery (partial failure)", () => {
 describe("AgentActor — lifecycle edge cases", () => {
   it("stop() before any tasks does not throw", async () => {
     const { driver } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await expect(actor.stop()).resolves.not.toThrow();
     expect(driver.unsubscribe).toHaveBeenCalledWith("q");
@@ -152,7 +152,7 @@ describe("AgentActor — lifecycle edge cases", () => {
 
   it("multiple stop() calls are safe (idempotent unsubscribe)", async () => {
     const { driver } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await actor.stop();
     await actor.stop();
@@ -161,7 +161,7 @@ describe("AgentActor — lifecycle edge cases", () => {
 
   it("start → stop → start re-subscribes to queue", async () => {
     const { driver } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await actor.stop();
     await actor.start();
@@ -296,7 +296,7 @@ describe("AgentActor — DLQ payload shape", () => {
         .fn()
         .mockResolvedValue({ allowed: false, reason: "prompt injection" }),
     };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, {
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
       firewall,
     });
     await actor.start();
@@ -318,7 +318,7 @@ describe("AgentActor — DLQ payload shape", () => {
     const firewall = {
       evaluate: vi.fn().mockResolvedValue({ allowed: false }),
     };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, {
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
       firewall,
     });
     await actor.start();
@@ -340,7 +340,7 @@ describe("AgentActor — DLQ payload shape", () => {
       recordSuccess: vi.fn(),
       recordFailure: vi.fn(),
     };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, {
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
       circuitBreaker: breaker,
     });
     await actor.start();

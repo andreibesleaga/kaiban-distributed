@@ -178,9 +178,21 @@ localhost:3000  ──►  gateway   (HTTP + Socket.io)
 
 | Variable | Value | Notes |
 |----------|-------|-------|
-| `AGENT_IDS` | `gateway` | Fixed |
-| `PORT` | `3000` | HTTP port |
+| `ROLE` | `gateway` | Role for the single image (ADR-013): `gateway` or `worker`. Default `gateway`. |
+| `AGENT_IDS` | `gateway` | Gateway-role identifier |
+| `PORT` | `3000` | HTTP port (gateway role only) |
 | `SERVICE_NAME` | `kaiban-gateway` | Telemetry label |
+
+### Worker service
+
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `ROLE` | `worker` | LLM-backed task-consuming agent pool; no HTTP `/health`. |
+| `AGENT_IDS` | `researcher,writer` | The agent pool this worker runs |
+| `SERVICE_NAME` | `kaiban-worker` | Telemetry label |
+
+> **Role selection (ADR-013).** One image, role chosen at runtime via `ROLE`. The compose stack runs
+> a `kaiban-gateway` (HTTP/`/health`) and a `kaiban-worker` (no HTTP, healthcheck disabled).
 
 ---
 

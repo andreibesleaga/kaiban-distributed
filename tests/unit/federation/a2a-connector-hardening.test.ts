@@ -156,7 +156,7 @@ describe("A2AConnector — input validation & hardening", () => {
       if (result.ok) expect(result.value.result).toBeDefined();
     });
 
-    it("accepts non-string instruction (number) — no length check", async () => {
+    it("rejects a non-string instruction (Finding #3 hardening)", async () => {
       const conn = new A2AConnector(testCard, makeMockDriver());
       const result = await conn.handleRpc({
         jsonrpc: "2.0",
@@ -165,7 +165,10 @@ describe("A2AConnector — input validation & hardening", () => {
         params: { agentId: "researcher", instruction: 42 },
       });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value.result).toBeDefined();
+      if (result.ok) {
+        expect(result.value.error?.code).toBe(-32602);
+        expect(result.value.error?.message).toMatch(/instruction must be a string/i);
+      }
     });
   });
 

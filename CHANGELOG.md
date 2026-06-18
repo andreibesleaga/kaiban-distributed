@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - in progress (`feat/v2.0`)
+
+Major release — breaking changes are documented in `MIGRATION.md`. Authoritative plan:
+`KAIBAN-v2.0-MASTER-PLAN.md`.
+
+### Changed (Phase 0)
+- **License (BREAKING):** the published npm library is now **Apache-2.0** (was GPL-3.0); the full
+  application / board / examples remain **GPL-3.0** (dual-license — see `LICENSING.md`, ADR-011).
+- **Dependencies:** KaibanJS 0.24.2, TypeScript 6.0, OpenTelemetry 0.219/0.77, bullmq 5.79, dotenv 17
+  — all latest stable, **0 vulnerabilities** (ADR-012).
+
 ## [1.5.0-beta] - 2026-06-16
 
 ### Pre-merge hardening pass (audit follow-up)

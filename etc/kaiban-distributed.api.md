@@ -30,13 +30,20 @@ export class A2AConnector {
 
 // @public (undocumented)
 export class AgentActor {
-    // Warning: (ae-forgotten-export) The symbol "TaskHandler" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
     constructor(id: string, driver: IMessagingDriver, queueName: string, taskHandler?: TaskHandler, deps?: AgentActorDeps);
     // (undocumented)
     start(): Promise<void>;
     // (undocumented)
     stop(): Promise<void>;
+}
+
+// @public (undocumented)
+export interface AgentActorDeps {
+    // (undocumented)
+    circuitBreaker?: ICircuitBreaker;
+    // (undocumented)
+    firewall?: ISemanticFirewall;
+    taskTimeoutMs?: number;
 }
 
 // @public (undocumented)
@@ -54,7 +61,7 @@ export class AgentStatePublisher {
     // (undocumented)
     disconnect(): Promise<void>;
     publishIdle(heartbeatIntervalMs?: number): void;
-    wrapHandler(handler: (payload: MessagePayload) => Promise<unknown>): (payload: MessagePayload) => Promise<unknown>;
+    wrapHandler(handler: TaskHandler): TaskHandler;
 }
 
 // @public (undocumented)
@@ -126,7 +133,7 @@ export class BullMQDriver implements IMessagingDriver {
 export const COMPLETED_CHANNEL = "kaiban-events-completed";
 
 // @public
-export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): (payload: MessagePayload) => Promise<unknown>;
+export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
 
 // @public (undocumented)
 export interface DistributedAgentState {
@@ -435,6 +442,9 @@ export const STATE_EVENT_REQUEST = "state:request";
 
 // @public (undocumented)
 export const STATE_EVENT_UPDATE = "state:update";
+
+// @public
+export type TaskHandler = (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>;
 
 // @public (undocumented)
 export interface TaskLog {

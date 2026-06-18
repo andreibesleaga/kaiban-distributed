@@ -22,6 +22,10 @@ export type {
 
 // ── Actor runtime ────────────────────────────────────────────────────────────
 export { AgentActor } from "./application/actor/AgentActor";
+export type {
+  TaskHandler,
+  AgentActorDeps,
+} from "./application/actor/AgentActor";
 
 // ── Messaging ────────────────────────────────────────────────────────────────
 export { BullMQDriver } from "./infrastructure/messaging/bullmq-driver";

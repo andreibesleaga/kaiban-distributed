@@ -90,7 +90,7 @@ describe("Firewall block does not count as circuit breaker failure", () => {
     };
 
     const deps: AgentActorDeps = { firewall, circuitBreaker: breaker };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
 
     await subscribedHandler({

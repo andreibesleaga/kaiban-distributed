@@ -58,8 +58,18 @@ USER kaiban
 ARG PORT=3000
 ENV PORT=${PORT}
 
+# Single image, role chosen at runtime (ADR-013): ROLE=gateway|worker.
+#   gateway → HTTP / WebSocket / A2A front door (exposes /health)
+#   worker  → LLM-backed task-consuming agent pool (no HTTP surface)
+# Default is gateway so the HEALTHCHECK below is valid out of the box; worker
+# deployments override with `-e ROLE=worker` (compose/k8s set it explicitly).
+ARG ROLE=gateway
+ENV ROLE=${ROLE}
+
 EXPOSE ${PORT}
 
+# The /health probe only exists in the gateway role. Worker deployments MUST
+# override or disable this HEALTHCHECK (docker-compose / k8s do).
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
   CMD wget -qO- http://localhost:${PORT}/health || exit 1
 

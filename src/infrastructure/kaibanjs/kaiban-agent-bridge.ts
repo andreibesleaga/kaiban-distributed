@@ -2,6 +2,8 @@ import { Agent, Task, Team } from "kaibanjs";
 import type { IAgentParams } from "kaibanjs";
 import type { MessagePayload, IMessagingDriver } from "../messaging/interfaces";
 import type { ITokenProvider } from "../../domain/security/token-provider";
+import type { TaskHandler } from "../../application/actor/AgentActor";
+import { buildOwnedLlm } from "./owned-llm";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "KaibanAgentBridge" });
@@ -328,10 +330,25 @@ export function createKaibanTaskHandler(
   agentConfig: KaibanAgentConfig,
   _driver: IMessagingDriver,
   tokenProvider?: ITokenProvider,
-): (payload: MessagePayload) => Promise<unknown> {
-  return async (payload: MessagePayload): Promise<unknown> => {
+): TaskHandler {
+  return async (
+    payload: MessagePayload,
+    signal?: AbortSignal,
+  ): Promise<unknown> => {
     const env = await buildEnv(tokenProvider, payload.taskId);
-    const agent = new Agent(agentConfig);
+
+    // Finding #2 (ADR-014): when the actor supplies an AbortSignal, OWN the
+    // LangChain LLM so the signal reaches `.invoke(input, { signal })` and a
+    // timed-out / cancelled task stops burning tokens. KaibanJS 0.24.2 exposes
+    // no abort on team.start(); it accepts our pre-built model verbatim. When
+    // there is no signal (or a non-openai provider), KaibanJS builds its own
+    // instance from env — unchanged behavior.
+    const ownedLlm = signal
+      ? buildOwnedLlm(agentConfig.llmConfig, signal)
+      : undefined;
+    const agent = new Agent(
+      ownedLlm ? { ...agentConfig, llmInstance: ownedLlm } : agentConfig,
+    );
     const team = new Team({
       name: `task-${payload.taskId}`,
       agents: [agent],

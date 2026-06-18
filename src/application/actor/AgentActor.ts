@@ -18,7 +18,18 @@ import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "AgentActor" });
 
-export type TaskHandler = (payload: MessagePayload) => Promise<unknown>;
+/**
+ * Task handler contract.
+ *
+ * The `signal` is aborted by the actor on timeout, shutdown, or explicit
+ * cancellation (master plan §B8 Phase 1.2 / ADR-014). Handlers MUST thread it
+ * into any long-running work (e.g. the LLM `.invoke(input, { signal })` call)
+ * so a timed-out task stops burning tokens instead of running to completion.
+ */
+export type TaskHandler = (
+  payload: MessagePayload,
+  signal?: AbortSignal,
+) => Promise<unknown>;
 
 const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 100;
@@ -61,6 +72,8 @@ export class AgentActor {
   private firewall?: ISemanticFirewall;
   private circuitBreaker?: ICircuitBreaker;
   private taskTimeoutMs: number;
+  /** In-flight task abort controllers, so stop() can cancel running work. */
+  private readonly inFlight = new Set<AbortController>();
 
   constructor(
     id: string,
@@ -80,9 +93,13 @@ export class AgentActor {
 
   public async start(): Promise<void> {
     if (!this.taskHandler) {
-      log.warn(
-        { agentId: sanitizeId(this.id) },
-        "No taskHandler provided — received messages will be silently dropped",
+      // Finding #1 fix: a handler-less actor used to subscribe and silently
+      // discard every task it won (delay(50); return null), competing with real
+      // worker nodes. Fail loudly instead of subscribing — the gateway role must
+      // never consume task channels; only the worker role wires a real handler.
+      throw new Error(
+        `AgentActor ${sanitizeId(this.id)} cannot start without a task handler ` +
+          `(handler-less actors silently discard tasks — see ADR-013)`,
       );
     }
     log.info(
@@ -200,32 +217,45 @@ export class AgentActor {
   }
 
   private async executeTask(payload: MessagePayload): Promise<unknown> {
-    if (this.taskHandler) {
-      const timeoutMs = this.taskTimeoutMs;
-      // Definite-assignment: the Promise executor runs synchronously, so the
-      // handle is always set before the finally below.
-      let timeoutHandle!: ReturnType<typeof setTimeout>;
-      const handlerPromise = this.taskHandler(payload);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(
-          () => reject(new Error(`Task timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
-      });
-      try {
-        return await Promise.race([handlerPromise, timeoutPromise]);
-      } finally {
-        // Clear the timer whichever side won, so a completed task never leaves an
-        // armed timeout (default 300 000 ms) accumulating / holding the event loop.
-        clearTimeout(timeoutHandle);
-      }
+    // start() guarantees a handler is present, so this is always defined here.
+    const handler = this.taskHandler!;
+    const timeoutMs = this.taskTimeoutMs;
+
+    // One AbortController per task: aborted on timeout (Finding #2 — stop the
+    // in-flight LLM call so it stops burning tokens) and on actor shutdown.
+    const controller = new AbortController();
+    this.inFlight.add(controller);
+
+    // Definite-assignment: the Promise executor runs synchronously, so the
+    // handle is always set before the finally below.
+    let timeoutHandle!: ReturnType<typeof setTimeout>;
+    const handlerPromise = handler(payload, controller.signal);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        // Abort first so the handler's underlying work (LLM .invoke) cancels,
+        // THEN reject the race so the actor's retry/DLQ path runs.
+        controller.abort(new Error(`Task timed out after ${timeoutMs}ms`));
+        reject(new Error(`Task timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([handlerPromise, timeoutPromise]);
+    } finally {
+      // Clear the timer whichever side won, so a completed task never leaves an
+      // armed timeout (default 300 000 ms) accumulating / holding the event loop.
+      clearTimeout(timeoutHandle);
+      this.inFlight.delete(controller);
     }
-    await delay(50);
-    return null;
   }
 
   public async stop(): Promise<void> {
     log.info({ agentId: sanitizeId(this.id) }, "Actor stopping");
+    // Cancel any in-flight task work on graceful shutdown so a draining node
+    // does not keep burning tokens on tasks it will never report on.
+    for (const controller of this.inFlight) {
+      controller.abort(new Error("Actor stopping"));
+    }
+    this.inFlight.clear();
     await this.driver.unsubscribe(this.queueName);
   }
 }
