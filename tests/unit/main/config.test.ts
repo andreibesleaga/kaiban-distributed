@@ -118,6 +118,36 @@ describe("loadConfig", () => {
     });
   });
 
+  it("economics is off by default with unlimited budgets", () => {
+    const { economics } = loadConfig();
+    expect(economics).toEqual({
+      enabled: false,
+      maxRequestsPerWindow: 0,
+      maxCostPerWindow: 0,
+      globalCostCeiling: 0,
+      windowSeconds: 60,
+      degradeThreshold: 0.75,
+    });
+  });
+
+  it("reads the economics env (enable, budgets, window, degrade threshold)", () => {
+    process.env["ECONOMICS_ENABLED"] = "true";
+    process.env["ECONOMICS_MAX_REQUESTS_PER_WINDOW"] = "120";
+    process.env["ECONOMICS_MAX_COST_PER_WINDOW"] = "5000";
+    process.env["ECONOMICS_GLOBAL_COST_CEILING"] = "100000";
+    process.env["ECONOMICS_WINDOW_SECONDS"] = "30";
+    process.env["ECONOMICS_DEGRADE_THRESHOLD"] = "0.8";
+    const { economics } = loadConfig();
+    expect(economics).toEqual({
+      enabled: true,
+      maxRequestsPerWindow: 120,
+      maxCostPerWindow: 5000,
+      globalCostCeiling: 100000,
+      windowSeconds: 30,
+      degradeThreshold: 0.8,
+    });
+  });
+
   it("reads the MCP server env (enable, path, consent, allow-lists)", () => {
     process.env["MCP_SERVER_ENABLED"] = "true";
     process.env["MCP_SERVER_PATH"] = "/federation/mcp";

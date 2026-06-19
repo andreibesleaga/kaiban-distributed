@@ -127,6 +127,17 @@ export type {
   GracefulShutdownOptions,
 } from "./resilience/graceful-shutdown";
 
+// ── Economics / FinOps (master plan §B5.1 Phase E, ADR-019) ──────────────────
+// Fleet-wide cost control layered on top of the per-task token accounting (which
+// it does NOT change — §B1.3 COST guard). All default-OFF (EconomicsConfig.enabled).
+export * from "./economics/types";
+export { RateCostLimiter, detectSpendAnomaly } from "./economics/rate-cost-limiter";
+export type { RateCostLimiterDeps } from "./economics/rate-cost-limiter";
+export { CostReservation } from "./economics/cost-reservation";
+export type { CostReservationDeps } from "./economics/cost-reservation";
+export { priceUsage, effectiveCacheHitRate } from "./economics/cache-accounting";
+export { routeModel, estimatedStepCost } from "./economics/model-router";
+
 // ── Gateway / adapters ───────────────────────────────────────────────────────
 export { GatewayApp, SlidingWindowRateLimiter } from "./adapters/gateway/GatewayApp";
 export type { GatewayAppDeps } from "./adapters/gateway/GatewayApp";

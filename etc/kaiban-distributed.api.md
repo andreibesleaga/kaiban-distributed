@@ -16,6 +16,7 @@ import jwt from 'jsonwebtoken';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { propagation } from '@opentelemetry/api';
 import { QueueOptions } from 'bullmq';
+import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import type Redis from 'ioredis';
 import type { RequestContext } from '@a2a-js/sdk/server';
 import { Server } from 'http';
@@ -75,6 +76,19 @@ export interface A2AStackOptions {
     router: CompletionRouter;
     timeoutMs: number;
     version: string;
+}
+
+// @public
+export type AdmissionDecision = "allow" | "degrade" | "reject";
+
+// @public (undocumented)
+export interface AdmissionResult {
+    // (undocumented)
+    decision: AdmissionDecision;
+    // (undocumented)
+    reason: string;
+    remaining: number;
+    utilization: number;
 }
 
 // @public
@@ -163,6 +177,8 @@ export interface AppConfig {
     // (undocumented)
     agentTimeoutMs: number;
     // (undocumented)
+    economics: EconomicsConfig;
+    // (undocumented)
     kafka: {
         brokers: string[];
         clientId: string;
@@ -204,6 +220,14 @@ export interface AppConfig {
     serviceName: string;
     // (undocumented)
     validHitlDecisions: string[];
+}
+
+// @public
+export interface BudgetScope {
+    // (undocumented)
+    agentId?: string;
+    // (undocumented)
+    tenantId?: string;
 }
 
 // @public (undocumented)
@@ -248,10 +272,46 @@ export interface CheckpointStore {
 export const COMPLETED_CHANNEL = "kaiban-events-completed";
 
 // @public
+export interface CostBreakdown {
+    cacheSavings: CostUnits;
+    costUnits: CostUnits;
+}
+
+// @public
+export interface CostLimiterPort {
+    consumeRequest(scope: BudgetScope): Promise<LimiterReservation>;
+    releaseCost(scope: BudgetScope, units: CostUnits): Promise<void>;
+    reserveCost(scope: BudgetScope, units: CostUnits): Promise<LimiterReservation>;
+}
+
+// @public (undocumented)
+export class CostReservation {
+    constructor(deps: CostReservationDeps);
+    // (undocumented)
+    admit(scope: BudgetScope, units: CostUnits): Promise<AdmissionResult>;
+    // (undocumented)
+    release(scope: BudgetScope, units: CostUnits): Promise<void>;
+}
+
+// @public
+export interface CostReservationDeps {
+    // (undocumented)
+    config: EconomicsConfig;
+    // (undocumented)
+    limiter: CostLimiterPort;
+}
+
+// @public
+export type CostUnits = number;
+
+// @public
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
 
 // @public
 export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
+
+// @public
+export function detectSpendAnomaly(samples: number[], factor?: number): boolean;
 
 // @public (undocumented)
 export interface DistributedAgentState {
@@ -333,6 +393,19 @@ export abstract class DomainError extends Error {
 }
 
 // @public
+export interface EconomicsConfig {
+    degradeThreshold: number;
+    enabled: boolean;
+    globalCostCeiling: CostUnits;
+    maxCostPerWindow: CostUnits;
+    maxRequestsPerWindow: number;
+    windowSeconds: number;
+}
+
+// @public
+export function effectiveCacheHitRate(usage: TokenUsage): number;
+
+// @public
 export class EnvTokenProvider implements ITokenProvider {
     // (undocumented)
     getToken(service: string, _taskId: string): Promise<string | undefined>;
@@ -340,6 +413,9 @@ export class EnvTokenProvider implements ITokenProvider {
 
 // @public (undocumented)
 export function err<E>(error: E): Result<never, E>;
+
+// @public
+export function estimatedStepCost(candidate: ModelCandidate, estimatedTokens: number): CostUnits;
 
 // @public
 export interface EvaluationPayload {
@@ -538,6 +614,13 @@ export class KaibanTeamBridge {
     subscribeToChanges(listener: (changes: Record<string, unknown>) => void, properties?: string[]): () => void;
 }
 
+// @public
+export interface LimiterReservation {
+    ok: boolean;
+    remaining: number;
+    utilization: number;
+}
+
 // @public (undocumented)
 export function loadConfig(): AppConfig;
 
@@ -672,8 +755,28 @@ export class MessagingError extends DomainError {
     readonly code = "MESSAGING_ERROR";
 }
 
+// @public
+export interface ModelCandidate {
+    capability: number;
+    contextWindow: number;
+    // (undocumented)
+    id: string;
+    // (undocumented)
+    pricing: ModelPricing;
+}
+
+// @public
+export interface ModelPricing {
+    cacheDiscount?: number;
+    inputPer1k: CostUnits;
+    outputPer1k: CostUnits;
+}
+
 // @public (undocumented)
 export function ok<T>(value: T): Result<T, never>;
+
+// @public
+export function priceUsage(usage: TokenUsage, pricing: ModelPricing): CostBreakdown;
 
 // @public
 export interface ProbeCheck {
@@ -692,6 +795,32 @@ export interface ProbeResult {
     // (undocumented)
     ready: boolean;
 }
+
+// @public (undocumented)
+export class RateCostLimiter implements CostLimiterPort {
+    constructor(deps: RateCostLimiterDeps);
+    // (undocumented)
+    consumeRequest(scope: BudgetScope): Promise<LimiterReservation>;
+    // (undocumented)
+    releaseCost(scope: BudgetScope, units: CostUnits): Promise<void>;
+    // (undocumented)
+    reserveCost(scope: BudgetScope, units: CostUnits): Promise<LimiterReservation>;
+}
+
+// @public (undocumented)
+export interface RateCostLimiterDeps {
+    // (undocumented)
+    config: EconomicsConfig;
+    // (undocumented)
+    factory: RateLimiterFactory;
+}
+
+// @public
+export type RateLimiterFactory = (opts: {
+    keyPrefix: string;
+    points: number;
+    durationSeconds: number;
+}) => RateLimiterAbstract;
 
 // @public
 export interface ReadinessDeps {
@@ -754,9 +883,26 @@ export type Result<T, E> = {
 };
 
 // @public
+export function routeModel(req: RoutingRequest, candidates: ModelCandidate[]): RoutingDecision;
+
+// @public
 export interface RouterLike {
     // (undocumented)
     wait(taskId: string, timeoutMs: number, label: string, signal?: AbortSignal): Promise<string>;
+}
+
+// @public (undocumented)
+export interface RoutingDecision {
+    modelId: string | null;
+    // (undocumented)
+    reason: string;
+}
+
+// @public
+export interface RoutingRequest {
+    budgetPressure: number;
+    estimatedTokens: number;
+    minCapability: number;
 }
 
 // @public
@@ -878,6 +1024,15 @@ export interface TlsConfig {
     key: Buffer;
     // (undocumented)
     rejectUnauthorized: boolean;
+}
+
+// @public
+export interface TokenUsage {
+    cachedInputTokens?: number;
+    // (undocumented)
+    inputTokens: number;
+    // (undocumented)
+    outputTokens: number;
 }
 
 // @public

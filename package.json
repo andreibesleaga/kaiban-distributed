@@ -88,7 +88,9 @@
     "glob": ">=10.5.0",
     "@opentelemetry/exporter-prometheus": ">=0.217.0",
     "postcss": ">=8.4.31",
-    "madge": { "typescript": "$typescript" }
+    "madge": {
+      "typescript": "$typescript"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -132,6 +134,7 @@
     "kafkajs": "^2.2.4",
     "kaibanjs": "0.24.2",
     "pino": "^10.3.1",
+    "rate-limiter-flexible": "^11.2.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "zod": "^4.4.3"

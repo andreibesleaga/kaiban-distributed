@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import type { EconomicsConfig } from "../economics/types";
 
 export type MessagingDriver = "bullmq" | "kafka" | "amqp";
 
@@ -45,6 +46,7 @@ export interface AppConfig {
   agentTimeoutMs: number;
   maxTokenBudget: number;
   mcp: McpConfig;
+  economics: EconomicsConfig;
   security: {
     semanticFirewallEnabled: boolean;
     semanticFirewallLlmUrl?: string;
@@ -158,6 +160,25 @@ export function loadConfig(): AppConfig {
       ...(mcpAllowedTools ? { allowedTools: mcpAllowedTools } : {}),
       ...(mcpAllowedResources ? { allowedResources: mcpAllowedResources } : {}),
       ...(mcpAllowedPrompts ? { allowedPrompts: mcpAllowedPrompts } : {}),
+    },
+    economics: {
+      enabled: getBoolEnv("ECONOMICS_ENABLED", false),
+      maxRequestsPerWindow: parseInt(
+        getEnv("ECONOMICS_MAX_REQUESTS_PER_WINDOW", "0"),
+        10,
+      ),
+      maxCostPerWindow: parseInt(
+        getEnv("ECONOMICS_MAX_COST_PER_WINDOW", "0"),
+        10,
+      ),
+      globalCostCeiling: parseInt(
+        getEnv("ECONOMICS_GLOBAL_COST_CEILING", "0"),
+        10,
+      ),
+      windowSeconds: parseInt(getEnv("ECONOMICS_WINDOW_SECONDS", "60"), 10),
+      degradeThreshold: parseFloat(
+        getEnv("ECONOMICS_DEGRADE_THRESHOLD", "0.75"),
+      ),
     },
     security: {
       semanticFirewallEnabled: getBoolEnv("SEMANTIC_FIREWALL_ENABLED", false),

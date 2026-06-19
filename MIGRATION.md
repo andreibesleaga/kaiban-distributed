@@ -75,4 +75,15 @@
       **Library API (additive):** new exports `buildMcpServer`, `createMcpHttpHandler` + the `Mcp*`
       types and `MCP_*` capability-name constants; `McpConfig` added to `AppConfig`. A2A stays the
       public front door; MCP is the internal surface. See `docs/decisions/ADR-017`.
+- [x] **Phase E (BETA.3)** — economics/FinOps: a **fleet-wide** cost-control layer in `src/economics/`
+      (`RateCostLimiter`/`CostLimiterPort` over `rate-limiter-flexible`; `CostReservation` pre-exec
+      admission with degrade-at-threshold; `priceUsage`/`effectiveCacheHitRate` prompt-cache accounting;
+      `routeModel`/`estimatedStepCost` right-sizing; `detectSpendAnomaly`). **Default-OFF**
+      (`ECONOMICS_ENABLED`; `_MAX_REQUESTS_PER_WINDOW`/`_MAX_COST_PER_WINDOW`/`_GLOBAL_COST_CEILING`/
+      `_WINDOW_SECONDS`/`_DEGRADE_THRESHOLD`; `0` = unlimited — see `.env.example` +
+      `docs/economics/ECONOMICS.md`). **Per-task accounting + the board economics panel are unchanged**
+      (§B1.3 COST guard). **New direct dependency:** `rate-limiter-flexible ^11.2.0`. **Library API
+      (additive):** new exports `RateCostLimiter`, `CostReservation`, `priceUsage`,
+      `effectiveCacheHitRate`, `routeModel`, `estimatedStepCost`, `detectSpendAnomaly` + the
+      `src/economics/types` contract; `economics` added to `AppConfig`. See `docs/decisions/ADR-019`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)
