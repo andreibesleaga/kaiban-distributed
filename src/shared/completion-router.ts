@@ -76,14 +76,37 @@ export class CompletionRouter {
    * @param taskId    Task ID to wait for.
    * @param timeoutMs Max wait time in milliseconds.
    * @param label     Human-readable label used in timeout error messages.
+   * @param signal    Optional AbortSignal — aborting rejects the wait and cleans up
+   *                  (used by the A2A executor's `tasks/cancel` path).
    */
-  wait(taskId: string, timeoutMs: number, label: string): Promise<string> {
+  wait(
+    taskId: string,
+    timeoutMs: number,
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       // Guard against a duplicate in-flight taskId: overwriting the maps would
       // orphan the first waiter's resolver + timer, hanging it forever.
       if (this.pendingResolve.has(taskId)) {
         reject(new Error(`Duplicate wait() for in-flight taskId: ${taskId}`));
         return;
+      }
+      if (signal) {
+        if (signal.aborted) {
+          reject(new Error(`Aborted wait for ${label}`));
+          return;
+        }
+        signal.addEventListener(
+          "abort",
+          () => {
+            if (this.pendingResolve.has(taskId)) {
+              this.clearPending(taskId);
+              reject(new Error(`Aborted wait for ${label}`));
+            }
+          },
+          { once: true },
+        );
       }
       this.pendingResolve.set(taskId, resolve);
       this.pendingReject.set(taskId, reject);

@@ -38,11 +38,38 @@ export * from "./infrastructure/kaibanjs/kaiban-agent-bridge";
 export { KaibanTeamBridge } from "./infrastructure/kaibanjs/kaiban-team-bridge";
 
 // ── Federation (A2A / MCP) ───────────────────────────────────────────────────
-export { A2AConnector } from "./infrastructure/federation/a2a-connector";
+// A2A is served by the official @a2a-js/sdk v0.3 server (ADR-015). The custom
+// `A2AConnector` was removed; these are the SDK-bridging building blocks.
+export { KaibanAgentExecutor } from "./infrastructure/federation/a2a-executor";
+export type { KaibanExecutorDeps } from "./infrastructure/federation/a2a-executor";
+export { RedisTaskStore } from "./infrastructure/federation/a2a-task-store";
+export type { RedisTaskStoreOptions } from "./infrastructure/federation/a2a-task-store";
+export { AgentStatusTracker } from "./infrastructure/federation/agent-status-tracker";
+export {
+  buildAgentCard,
+  A2A_PROTOCOL_VERSION,
+  AGENT_CARD_PATH,
+} from "./infrastructure/federation/a2a-agent-card";
+export type { AgentCardInput } from "./infrastructure/federation/a2a-agent-card";
+export {
+  validateTaskInput,
+  A2A_INPUT_CAPS,
+} from "./infrastructure/federation/a2a-input-validation";
+export type {
+  ValidatedTaskInput,
+  ValidationResult,
+  A2AInputError,
+} from "./infrastructure/federation/a2a-input-validation";
+export { buildA2AStack } from "./infrastructure/federation/a2a-gateway-factory";
+export type {
+  A2AStack,
+  A2AStackOptions,
+} from "./infrastructure/federation/a2a-gateway-factory";
 export { MCPFederationClient } from "./infrastructure/federation/mcp-client";
 
 // ── Gateway / adapters ───────────────────────────────────────────────────────
-export { GatewayApp } from "./adapters/gateway/GatewayApp";
+export { GatewayApp, SlidingWindowRateLimiter } from "./adapters/gateway/GatewayApp";
+export type { GatewayAppDeps } from "./adapters/gateway/GatewayApp";
 export { SocketGateway } from "./adapters/gateway/SocketGateway";
 export { AgentStatePublisher } from "./adapters/state/agent-state-publisher";
 export { DistributedStateMiddleware } from "./adapters/state/distributedMiddleware";

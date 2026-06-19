@@ -7,10 +7,13 @@ import express, {
 import { randomUUID } from "crypto";
 import helmet from "helmet";
 import {
-  A2AConnector,
-  type JsonRpcRequest,
-} from "../../infrastructure/federation/a2a-connector";
+  jsonRpcHandler,
+  agentCardHandler,
+  UserBuilder,
+} from "@a2a-js/sdk/server/express";
+import type { A2ARequestHandler } from "@a2a-js/sdk/server";
 import { verifyA2AToken } from "../../infrastructure/security/a2a-auth";
+import type { AgentStatusTracker } from "../../infrastructure/federation/agent-status-tracker";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "GatewayApp" });
@@ -66,19 +69,47 @@ export class SlidingWindowRateLimiter {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+export interface GatewayAppDeps {
+  /** The SDK A2A request handler (e.g. DefaultRequestHandler) the JSON-RPC + card routes wrap. */
+  requestHandler: A2ARequestHandler;
+  /** Tracks the real, last-known status of each agent (de-stubs `agent.status`). */
+  statusTracker: Pick<AgentStatusTracker, "getStatus" | "hasSeen">;
+  /** Enable Express trust-proxy (correct req.ip behind a reverse proxy). */
+  trustProxy?: boolean;
+}
+
+/**
+ * GatewayApp — the HTTP front door for the A2A surface.
+ *
+ * It owns the security middleware chain (helmet, per-IP rate limiting, env-gated
+ * JWT auth, request timeout) and mounts the official `@a2a-js/sdk` Express
+ * middlewares behind it:
+ *   - `agentCardHandler` at `/.well-known/agent-card.json`
+ *   - `jsonRpcHandler`   at `/a2a/rpc` (message/send, message/stream, tasks/get, tasks/cancel)
+ * plus a real `GET /a2a/agents/:agentId/status` endpoint served from the status
+ * tracker (replacing the old hardcoded `IDLE`).
+ *
+ * The custom `A2AConnector` is gone — the SDK is the single source of A2A wire
+ * conformance; this class is just the secured Express shell around it.
+ */
 export class GatewayApp {
   public readonly app: Application;
-  private connector: A2AConnector;
+  private readonly requestHandler: A2ARequestHandler;
+  private readonly statusTracker: Pick<
+    AgentStatusTracker,
+    "getStatus" | "hasSeen"
+  >;
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
   private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 5);
 
-  constructor(connector: A2AConnector, opts?: { trustProxy?: boolean }) {
-    this.connector = connector;
+  constructor(deps: GatewayAppDeps) {
+    this.requestHandler = deps.requestHandler;
+    this.statusTracker = deps.statusTracker;
     this.app = express();
 
-    // Trust proxy — enables correct req.ip behind reverse proxies (Railway, Kubernetes, Nginx).
+    // Trust proxy — enables correct req.ip behind reverse proxies (Railway, K8s, Nginx).
     // Must be set before any middleware that reads req.ip.
-    if (opts?.trustProxy) this.app.set("trust proxy", 1);
+    if (deps.trustProxy) this.app.set("trust proxy", 1);
 
     this.app.use(
       helmet({
@@ -93,21 +124,38 @@ export class GatewayApp {
 
   private registerRoutes(): void {
     this.app.use(this.requestLogger.bind(this));
+
     this.app.get(
       "/health",
       this.healthRateLimit.bind(this),
       this.handleHealth.bind(this),
     );
-    this.app.get(
+
+    // A2A AgentCard — served by the SDK from the same handler that answers RPC.
+    this.app.use(
       "/.well-known/agent-card.json",
-      this.handleAgentCard.bind(this),
+      agentCardHandler({ agentCardProvider: this.requestHandler }),
     );
-    this.app.post(
+
+    // Real `agent.status` (de-stubbed) — last-known status from the state stream.
+    this.app.get(
+      "/a2a/agents/:agentId/status",
+      this.rateLimit.bind(this),
+      this.handleAgentStatus.bind(this),
+    );
+
+    // A2A JSON-RPC — security middleware in front, then the SDK's handler.
+    this.app.use(
       "/a2a/rpc",
       this.rateLimit.bind(this),
       this.requireA2AAuth.bind(this),
-      this.handleRpc.bind(this),
+      this.enforceRequestTimeout.bind(this),
+      jsonRpcHandler({
+        requestHandler: this.requestHandler,
+        userBuilder: UserBuilder.noAuthentication,
+      }),
     );
+
     this.app.use(this.handleNotFound.bind(this));
   }
 
@@ -167,33 +215,30 @@ export class GatewayApp {
     }
   }
 
+  /** Request timeout — prevent slow-read attacks holding connections open. */
+  private enforceRequestTimeout(
+    req: Request,
+    _res: Response,
+    next: NextFunction,
+  ): void {
+    req.setTimeout(REQUEST_TIMEOUT_MS);
+    next();
+  }
+
   private handleHealth(_req: Request, res: Response): void {
     res.json(apiOk({ status: "ok", timestamp: new Date().toISOString() }));
   }
 
-  private handleAgentCard(_req: Request, res: Response): void {
-    res.json(this.connector.getAgentCard());
-  }
-
-  private async handleRpc(req: Request, res: Response): Promise<void> {
-    const contentType = req.headers["content-type"] ?? "";
-    if (!contentType.includes("application/json")) {
-      res.status(415).json(apiError("Content-Type must be application/json"));
-      return;
-    }
-
-    // Request timeout — prevent slow-read attacks holding connections
-    req.setTimeout(REQUEST_TIMEOUT_MS);
-
-    const result = await this.connector.handleRpc(req.body as JsonRpcRequest);
-    if (result.ok) {
-      res.json(result.value);
-    } else {
-      // Sanitize internal error details in production
-      const isDev = process.env["NODE_ENV"] !== "production";
-      const publicMsg = isDev ? result.error.message : "Internal server error";
-      res.status(500).json(apiError(publicMsg));
-    }
+  private handleAgentStatus(req: Request, res: Response): void {
+    // The `:agentId` route param is always present for a matched route.
+    const agentId = String(req.params["agentId"]);
+    res.json(
+      apiOk({
+        agentId,
+        status: this.statusTracker.getStatus(agentId),
+        seen: this.statusTracker.hasSeen(agentId),
+      }),
+    );
   }
 
   private handleNotFound(_req: Request, res: Response): void {

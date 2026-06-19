@@ -2,7 +2,7 @@
  * main/gateway — HTTP/WebSocket/A2A front door (Finding #1 fix / ADR-013).
  *
  * The gateway MUST NOT build any task-consuming AgentActor (that is the source of
- * the silent-discard bug). Verifies the gateway wires the driver, A2A connector,
+ * the silent-discard bug). Verifies the gateway wires the driver, A2A stack,
  * socket gateway, and HTTP server — and NEVER constructs an AgentActor.
  */
 import {
@@ -23,11 +23,15 @@ const h = vi.hoisted(() => {
   const socketInit = vi.fn();
   const socketShutdown = vi.fn(() => Promise.resolve());
   const driverDisconnect = vi.fn(() => Promise.resolve());
+  const a2aStart = vi.fn(() => Promise.resolve());
+  const a2aClose = vi.fn(() => Promise.resolve());
   const listen = vi.fn((_port: number, cb: () => void) => cb());
   return {
     socketInit,
     socketShutdown,
     driverDisconnect,
+    a2aStart,
+    a2aClose,
     listen,
     BullMQDriver: vi.fn(function () {
       return { disconnect: driverDisconnect };
@@ -44,9 +48,22 @@ const h = vi.hoisted(() => {
     GatewayApp: vi.fn(function () {
       return { app: {} };
     }),
-    A2AConnector: vi.fn(function () {
+    buildA2AStack: vi.fn(function () {
+      return {
+        requestHandler: {},
+        statusTracker: {},
+        taskStore: {},
+        start: a2aStart,
+        close: a2aClose,
+      };
+    }),
+    CompletionRouter: vi.fn(function () {
       return {};
     }),
+    createDriver: vi.fn(function () {
+      return { disconnect: driverDisconnect };
+    }),
+    getDriverType: vi.fn(() => "bullmq"),
     initTelemetry: vi.fn(),
     Redis: vi.fn(function () {
       return {};
@@ -69,8 +86,15 @@ vi.mock("../../../src/infrastructure/messaging/kafka-driver", () => ({
 vi.mock("../../../src/application/actor/AgentActor", () => ({
   AgentActor: h.AgentActor,
 }));
-vi.mock("../../../src/infrastructure/federation/a2a-connector", () => ({
-  A2AConnector: h.A2AConnector,
+vi.mock("../../../src/shared/completion-router", () => ({
+  CompletionRouter: h.CompletionRouter,
+}));
+vi.mock("../../../src/shared/driver-factory", () => ({
+  createDriver: h.createDriver,
+  getDriverType: h.getDriverType,
+}));
+vi.mock("../../../src/infrastructure/federation/a2a-gateway-factory", () => ({
+  buildA2AStack: h.buildA2AStack,
 }));
 vi.mock("../../../src/adapters/gateway/GatewayApp", () => ({
   GatewayApp: h.GatewayApp,
@@ -99,6 +123,7 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.getDriverType.mockReturnValue("bullmq");
   for (const k of Object.keys(handlers)) delete handlers[k];
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   exitSpy = vi
@@ -123,13 +148,14 @@ afterEach(() => {
 });
 
 describe("runGateway", () => {
-  it("wires BullMQ + A2A + socket + HTTP and NEVER builds an AgentActor", async () => {
+  it("wires BullMQ + A2A stack + socket + HTTP and NEVER builds an AgentActor", async () => {
     process.env["MESSAGING_DRIVER"] = "bullmq";
     await runGateway();
     await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
 
     expect(h.BullMQDriver).toHaveBeenCalledTimes(1);
-    expect(h.A2AConnector).toHaveBeenCalledTimes(1);
+    expect(h.buildA2AStack).toHaveBeenCalledTimes(1);
+    expect(h.a2aStart).toHaveBeenCalledTimes(1);
     expect(h.socketInit).toHaveBeenCalledTimes(1);
     // The critical guard: the gateway role consumes NO task channels.
     expect(h.AgentActor).not.toHaveBeenCalled();
@@ -137,18 +163,22 @@ describe("runGateway", () => {
     expect(handlers["SIGTERM"]).toBeDefined();
     await handlers["SIGTERM"]!();
     await vi.waitFor(() => expect(h.driverDisconnect).toHaveBeenCalled());
+    expect(h.a2aClose).toHaveBeenCalledTimes(1);
     expect(h.socketShutdown).toHaveBeenCalledTimes(1);
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
   it("selects the Kafka driver and drains on SIGINT", async () => {
     process.env["MESSAGING_DRIVER"] = "kafka";
+    h.getDriverType.mockReturnValue("kafka");
     await runGateway();
     await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
 
     expect(h.KafkaDriver).toHaveBeenCalledTimes(1);
     expect(h.BullMQDriver).not.toHaveBeenCalled();
     expect(h.AgentActor).not.toHaveBeenCalled();
+    // Kafka needs a separate failed-channel consumer group → two createDriver calls.
+    expect(h.createDriver).toHaveBeenCalledTimes(2);
 
     expect(handlers["SIGINT"]).toBeDefined();
     await handlers["SIGINT"]!();

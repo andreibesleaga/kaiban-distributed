@@ -1,24 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  GatewayApp,
-  SlidingWindowRateLimiter,
-} from "../../../src/adapters/gateway/GatewayApp";
-import {
-  A2AConnector,
-  type AgentCard,
-} from "../../../src/infrastructure/federation/a2a-connector";
-
-const testCard: AgentCard = {
-  name: "kaiban-worker",
-  version: "1.0.0",
-  description: "Test",
-  capabilities: ["agent.status"],
-  endpoints: { rpc: "/a2a/rpc" },
-};
-
-function makeGateway(): GatewayApp {
-  return new GatewayApp(new A2AConnector(testCard));
-}
+import { SlidingWindowRateLimiter } from "../../../src/adapters/gateway/GatewayApp";
+import { makeGateway } from "./gateway-test-helpers";
 
 describe("GatewayApp — health rate limit coverage", () => {
   it("healthRateLimit uses socket remoteAddress when req.ip is undefined", () => {

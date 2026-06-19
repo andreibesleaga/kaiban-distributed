@@ -4,29 +4,78 @@
 
 ```ts
 
+import { A2ARequestHandler } from '@a2a-js/sdk/server';
 import type { Agent } from 'kaibanjs';
+import type { AgentCard } from '@a2a-js/sdk';
+import type { AgentExecutor } from '@a2a-js/sdk/server';
 import { Application } from 'express';
+import type { ExecutionEventBus } from '@a2a-js/sdk/server';
 import type { IAgentParams } from 'kaibanjs';
 import jwt from 'jsonwebtoken';
 import { propagation } from '@opentelemetry/api';
 import { QueueOptions } from 'bullmq';
 import type Redis from 'ioredis';
+import type { RequestContext } from '@a2a-js/sdk/server';
 import { Server } from 'http';
 import type { Task } from 'kaibanjs';
+import type { Task as Task_2 } from '@a2a-js/sdk';
+import type { TaskStore } from '@a2a-js/sdk/server';
 import { Team } from 'kaibanjs';
 
-// @public (undocumented)
-export class A2AConnector {
-    // Warning: (ae-forgotten-export) The symbol "AgentCard" needs to be exported by the entry point index.d.ts
-    constructor(agentCard: AgentCard, driver?: IMessagingDriver | undefined);
+// @public
+export const A2A_INPUT_CAPS: {
+    readonly maxAgentIdLen: 64;
+    readonly maxInstructionLen: 10000;
+    readonly maxExpectedOutputLen: 10000;
+    readonly maxContextLen: 20000;
+    readonly maxInputsKeys: 64;
+    readonly maxTotalParamsBytes: 65536;
+};
+
+// @public
+export const A2A_PROTOCOL_VERSION = "0.3.0";
+
+// @public
+export interface A2AInputError {
     // (undocumented)
-    getAgentCard(): AgentCard;
-    // Warning: (ae-forgotten-export) The symbol "JsonRpcRequest" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "JsonRpcResponse" needs to be exported by the entry point index.d.ts
-    //
+    code: number;
     // (undocumented)
-    handleRpc(request: JsonRpcRequest): Promise<Result<JsonRpcResponse, DomainError>>;
+    message: string;
 }
+
+// @public (undocumented)
+export interface A2AStack {
+    close(): Promise<void>;
+    // (undocumented)
+    requestHandler: A2ARequestHandler;
+    start(): Promise<void>;
+    // (undocumented)
+    statusTracker: AgentStatusTracker;
+    // (undocumented)
+    taskStore: RedisTaskStore;
+}
+
+// @public (undocumented)
+export interface A2AStackOptions {
+    agentIds: string[];
+    baseUrl: string;
+    driver: Pick<IMessagingDriver, "publish">;
+    jwtEnabled?: boolean;
+    name: string;
+    provider?: {
+        organization: string;
+        url: string;
+    };
+    pushNotifications?: boolean;
+    redisUrl: string;
+    // Warning: (ae-forgotten-export) The symbol "CompletionRouter" needs to be exported by the entry point index.d.ts
+    router: CompletionRouter;
+    timeoutMs: number;
+    version: string;
+}
+
+// @public
+export const AGENT_CARD_PATH = ".well-known/agent-card.json";
 
 // @public (undocumented)
 export class AgentActor {
@@ -44,6 +93,21 @@ export interface AgentActorDeps {
     // (undocumented)
     firewall?: ISemanticFirewall;
     taskTimeoutMs?: number;
+}
+
+// @public (undocumented)
+export interface AgentCardInput {
+    agentIds: string[];
+    baseUrl: string;
+    description?: string;
+    jwtEnabled?: boolean;
+    name: string;
+    provider?: {
+        organization: string;
+        url: string;
+    };
+    pushNotifications?: boolean;
+    version: string;
 }
 
 // @public (undocumented)
@@ -66,6 +130,16 @@ export class AgentStatePublisher {
 
 // @public (undocumented)
 export type AgentStatus = "IDLE" | "THINKING" | "EXECUTING" | "ERROR";
+
+// @public (undocumented)
+export class AgentStatusTracker {
+    // Warning: (ae-forgotten-export) The symbol "RedisSubscriber" needs to be exported by the entry point index.d.ts
+    constructor(redis: RedisSubscriber | string);
+    getStatus(agentId: string): AgentStatus;
+    hasSeen(agentId: string): boolean;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+}
 
 // @public (undocumented)
 export interface AppConfig {
@@ -114,6 +188,12 @@ export interface AppConfig {
     // (undocumented)
     validHitlDecisions: string[];
 }
+
+// @public (undocumented)
+export function buildA2AStack(opts: A2AStackOptions): A2AStack;
+
+// @public
+export function buildAgentCard(input: AgentCardInput): AgentCard;
 
 // @public (undocumented)
 export class BullMQDriver implements IMessagingDriver {
@@ -218,13 +298,18 @@ export interface FirewallVerdict {
     reason?: string;
 }
 
-// @public (undocumented)
+// @public
 export class GatewayApp {
-    constructor(connector: A2AConnector, opts?: {
-        trustProxy?: boolean;
-    });
+    constructor(deps: GatewayAppDeps);
     // (undocumented)
     readonly app: Application;
+}
+
+// @public (undocumented)
+export interface GatewayAppDeps {
+    requestHandler: A2ARequestHandler;
+    statusTracker: Pick<AgentStatusTracker, "getStatus" | "hasSeen">;
+    trustProxy?: boolean;
 }
 
 // @public
@@ -320,6 +405,23 @@ export class KafkaDriver implements IMessagingDriver {
 // @public (undocumented)
 export type KaibanAgentConfig = IAgentParams;
 
+// @public (undocumented)
+export class KaibanAgentExecutor implements AgentExecutor {
+    constructor(deps: KaibanExecutorDeps);
+    // (undocumented)
+    cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void>;
+    // (undocumented)
+    execute(ctx: RequestContext, eventBus: ExecutionEventBus): Promise<void>;
+}
+
+// @public (undocumented)
+export interface KaibanExecutorDeps {
+    driver: Pick<IMessagingDriver, "publish">;
+    router: Pick<CompletionRouter, "wait">;
+    taskStore: TaskStore;
+    timeoutMs: number;
+}
+
 // @public
 export type KaibanHandlerResult = {
     answer: string;
@@ -400,6 +502,22 @@ export function recordMessageLatency(ms: number, status: string): void;
 export function recordMessageProcessed(status: string): void;
 
 // @public (undocumented)
+export class RedisTaskStore implements TaskStore {
+    // Warning: (ae-forgotten-export) The symbol "RedisLike" needs to be exported by the entry point index.d.ts
+    constructor(redis: RedisLike | string, options?: RedisTaskStoreOptions);
+    close(): Promise<void>;
+    // (undocumented)
+    load(taskId: string): Promise<Task_2 | undefined>;
+    // (undocumented)
+    save(task: Task_2): Promise<void>;
+}
+
+// @public (undocumented)
+export interface RedisTaskStoreOptions {
+    ttlSeconds?: number;
+}
+
+// @public (undocumented)
 export type Result<T, E> = {
     ok: true;
     value: T;
@@ -420,6 +538,13 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
     recordFailure(): void;
     // (undocumented)
     recordSuccess(): void;
+}
+
+// @public (undocumented)
+export class SlidingWindowRateLimiter {
+    constructor(windowMs?: number, maxRequests?: number);
+    // (undocumented)
+    isAllowed(key: string): boolean;
 }
 
 // @public (undocumented)
@@ -501,12 +626,36 @@ export interface TlsConfig {
 // @public
 export function unwrapVerified(raw: string): Record<string, unknown> | null;
 
+// @public
+export interface ValidatedTaskInput {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    context?: string;
+    // (undocumented)
+    expectedOutput?: string;
+    // (undocumented)
+    inputs?: Record<string, unknown>;
+    // (undocumented)
+    instruction?: string;
+}
+
+// @public
+export function validateTaskInput(params: Record<string, unknown> | undefined): ValidationResult;
+
 // @public (undocumented)
 export class ValidationError extends DomainError {
     constructor(message: string);
     // (undocumented)
     readonly code = "VALIDATION_ERROR";
 }
+
+// @public (undocumented)
+export type ValidationResult = {
+    params: ValidatedTaskInput;
+} | {
+    error: A2AInputError;
+};
 
 // @public
 export function verifyA2AToken(authHeader: string | undefined): jwt.JwtPayload;

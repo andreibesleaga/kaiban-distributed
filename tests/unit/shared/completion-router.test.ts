@@ -373,4 +373,51 @@ describe("CompletionRouter", () => {
     );
     await expect(first).resolves.toBe("ok");
   });
+
+  it("rejects the wait when the AbortSignal fires", async () => {
+    const { driver } = makeCapturingDriver();
+    const router = new CompletionRouter(driver);
+    const controller = new AbortController();
+    const pending = router.wait("abort-task", 10_000, "x", controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toThrow(/Aborted wait for x/);
+  });
+
+  it("rejects immediately when the signal is already aborted", async () => {
+    const { driver } = makeCapturingDriver();
+    const router = new CompletionRouter(driver);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      router.wait("pre-aborted", 10_000, "x", controller.signal),
+    ).rejects.toThrow(/Aborted wait for x/);
+  });
+
+  it("ignores an abort fired after the task already completed", async () => {
+    const handlersByQueue = new Map<string, SubscribeHandler>();
+    const driver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi
+        .fn()
+        .mockImplementation((q: string, h: SubscribeHandler) => {
+          handlersByQueue.set(q, h);
+          return Promise.resolve();
+        }),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    const router = new CompletionRouter(driver);
+    const controller = new AbortController();
+    const pending = router.wait(
+      "done-then-abort",
+      10_000,
+      "x",
+      controller.signal,
+    );
+    await handlersByQueue.get("kaiban-events-completed")!(
+      makeCompletedPayload("done-then-abort", "ok"),
+    );
+    controller.abort(); // no-op: pending already cleared
+    await expect(pending).resolves.toBe("ok");
+  });
 });

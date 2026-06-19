@@ -2,13 +2,11 @@
  * GatewayApp — edge cases and branch coverage.
  *
  * Covers:
- *   - clientIp 'unknown' fallback (line 88: req.ip and req.socket.remoteAddress both undefined)
+ *   - clientIp 'unknown' fallback (req.ip and req.socket.remoteAddress both undefined)
  *   - handleNotFound for various HTTP methods
- *   - handleRpc with connector returning ok=false (500)
- *   - handleRpc request timeout configuration
- *   - handleHealth timestamp format
- *   - handleAgentCard response shape
- *   - Large body rejection (>1MB)
+ *   - handleHealth timestamp format + response shape
+ *   - agent card route (SDK-served v0.3 card)
+ *   - agent.status route
  *   - Concurrent rate limiter shared state
  *   - Request logger (finish event log)
  */
@@ -27,34 +25,13 @@ vi.mock("../../../src/shared/structured-logger", () => ({
   resolveLogLevel: (): string => "silent",
 }));
 
-import {
-  GatewayApp,
-  SlidingWindowRateLimiter,
-} from "../../../src/adapters/gateway/GatewayApp";
-import {
-  A2AConnector,
-  type AgentCard,
-} from "../../../src/infrastructure/federation/a2a-connector";
-import type { DomainError } from "../../../src/domain/errors/DomainError";
-
-const testCard: AgentCard = {
-  name: "kaiban-worker",
-  version: "1.0.0",
-  description: "Test",
-  capabilities: ["tasks.create", "agent.status"],
-  endpoints: { rpc: "/a2a/rpc" },
-};
-
-function makeGateway(): GatewayApp {
-  return new GatewayApp(new A2AConnector(testCard));
-}
+import { SlidingWindowRateLimiter } from "../../../src/adapters/gateway/GatewayApp";
+import { makeGateway, RPC_SEND } from "./gateway-test-helpers";
 
 // ── clientIp fallback branch ─────────────────────────────────────────────────
 
 describe('GatewayApp — clientIp fallback (req.ip ?? req.socket.remoteAddress ?? "unknown")', () => {
   it("covers req.socket.remoteAddress fallback: uses it when req.ip is undefined", () => {
-    // Call the private rateLimit method directly with a mock request where req.ip is undefined
-    // but req.socket.remoteAddress is set — covers branch 2 of the ?? chain
     const gw = makeGateway();
     const rateLimiter = (
       gw as unknown as { rateLimiter: SlidingWindowRateLimiter }
@@ -74,7 +51,6 @@ describe('GatewayApp — clientIp fallback (req.ip ?? req.socket.remoteAddress ?
   });
 
   it('covers "unknown" fallback: uses it when both req.ip and req.socket.remoteAddress are undefined', () => {
-    // Covers branch 3 of the ?? chain: req.socket.remoteAddress ?? 'unknown'
     const gw = makeGateway();
     const rateLimiter = (
       gw as unknown as { rateLimiter: SlidingWindowRateLimiter }
@@ -147,20 +123,29 @@ describe("GatewayApp — handleHealth", () => {
   });
 });
 
-describe("GatewayApp — handleAgentCard", () => {
-  it("returns agent card name and version", async () => {
+describe("GatewayApp — agent card route", () => {
+  it("returns the v0.3 agent card name and version", async () => {
     const gw = makeGateway();
     const res = await request(gw.app).get("/.well-known/agent-card.json");
     expect(res.status).toBe(200);
     expect(res.body.name).toBe("kaiban-worker");
-    expect(res.body.version).toBe("1.0.0");
+    expect(res.body.version).toBe("2.0.0");
   });
 
-  it("agent card includes capabilities array", async () => {
+  it("agent card includes skills array", async () => {
     const gw = makeGateway();
     const res = await request(gw.app).get("/.well-known/agent-card.json");
-    expect(Array.isArray(res.body.capabilities)).toBe(true);
-    expect(res.body.capabilities).toContain("tasks.create");
+    expect(Array.isArray(res.body.skills)).toBe(true);
+    expect(res.body.skills[0].id).toBe("writer");
+  });
+});
+
+describe("GatewayApp — agent.status route", () => {
+  it("returns the tracked status for an agent", async () => {
+    const gw = makeGateway();
+    const res = await request(gw.app).get("/a2a/agents/writer/status");
+    expect(res.status).toBe(200);
+    expect(res.body.data.agentId).toBe("writer");
   });
 });
 
@@ -170,15 +155,6 @@ describe("GatewayApp — handleNotFound", () => {
     const res = await request(gw.app).get("/does-not-exist");
     expect(res.status).toBe(404);
     expect(res.body.errors[0].message).toBe("Not Found");
-  });
-
-  it("returns 404 for unknown POST path", async () => {
-    const gw = makeGateway();
-    const res = await request(gw.app)
-      .post("/nope")
-      .set("Content-Type", "application/json")
-      .send({});
-    expect(res.status).toBe(404);
   });
 
   it("returns 404 for unknown DELETE path", async () => {
@@ -194,89 +170,16 @@ describe("GatewayApp — handleNotFound", () => {
   });
 });
 
-describe("GatewayApp — handleRpc content-type validation", () => {
-  it("returns 415 for content-type application/xml", async () => {
-    const gw = makeGateway();
-    const res = await request(gw.app)
-      .post("/a2a/rpc")
-      .set("Content-Type", "application/xml")
-      .send("<xml/>");
-    expect(res.status).toBe(415);
-    expect(res.body.errors[0].message).toContain("application/json");
-  });
-
-  it("returns 415 when content-type has charset but wrong type", async () => {
-    const gw = makeGateway();
-    const res = await request(gw.app)
-      .post("/a2a/rpc")
-      .set("Content-Type", "text/plain; charset=utf-8")
-      .send("data");
-    expect(res.status).toBe(415);
-  });
-
-  it("accepts application/json with charset suffix", async () => {
-    const gw = makeGateway();
-    const res = await request(gw.app)
-      .post("/a2a/rpc")
-      .set("Content-Type", "application/json; charset=utf-8")
-      .send({ jsonrpc: "2.0", id: 1, method: "agent.status" });
-    expect(res.status).toBe(200);
-  });
-});
-
-describe("GatewayApp — handleRpc connector error path", () => {
-  it("returns 500 when connector.handleRpc returns ok=false", async () => {
-    const connector = new A2AConnector(testCard);
-    vi.spyOn(connector, "handleRpc").mockResolvedValueOnce({
-      ok: false,
-      error: {
-        code: "INTERNAL",
-        message: "boom",
-        name: "Error",
-      } as unknown as DomainError,
-    });
-    const gw = new GatewayApp(connector);
-    const res = await request(gw.app)
-      .post("/a2a/rpc")
-      .set("Content-Type", "application/json")
-      .send({ jsonrpc: "2.0", id: 1, method: "agent.status" });
-    expect(res.status).toBe(500);
-    expect(res.body.errors[0].message).toBe("boom");
-  });
-
-  it("returns 200 with jsonrpc envelope on success", async () => {
+describe("GatewayApp — JSON-RPC route", () => {
+  it("returns 200 with a jsonrpc envelope on message/send", async () => {
     const gw = makeGateway();
     const res = await request(gw.app)
       .post("/a2a/rpc")
       .set("Content-Type", "application/json")
-      .send({ jsonrpc: "2.0", id: 42, method: "agent.status" });
+      .send(RPC_SEND);
     expect(res.status).toBe(200);
     expect(res.body.jsonrpc).toBe("2.0");
-    expect(res.body.id).toBe(42);
-  });
-
-  it("handles method tasks.create with params", async () => {
-    const connector = new A2AConnector(testCard);
-    vi.spyOn(connector, "handleRpc").mockResolvedValueOnce({
-      ok: true,
-      value: { jsonrpc: "2.0", id: 1, result: { taskId: "new-task" } },
-    });
-    const gw = new GatewayApp(connector);
-    const res = await request(gw.app)
-      .post("/a2a/rpc")
-      .set("Content-Type", "application/json")
-      .send({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tasks.create",
-        params: {
-          agentId: "researcher",
-          instruction: "Research AI",
-          expectedOutput: "Summary",
-        },
-      });
-    expect(res.status).toBe(200);
-    expect(res.body.result.taskId).toBe("new-task");
+    expect(res.body.id).toBe(1);
   });
 });
 
@@ -285,7 +188,6 @@ describe("GatewayApp — request logger", () => {
     mockLog.info.mockClear();
     const gw = makeGateway();
     await request(gw.app).get("/health");
-    // The logger fires on 'finish' event — give the event loop a tick
     await new Promise<void>((r) => setImmediate(r));
     const logged = JSON.stringify(mockLog.info.mock.calls);
     expect(logged).toContain('"method":"GET"');
@@ -299,7 +201,6 @@ describe("GatewayApp — request logger", () => {
     await request(gw.app).get("/health");
     await new Promise<void>((r) => setImmediate(r));
     const logged = JSON.stringify(mockLog.info.mock.calls);
-    // UUID format: 8-4-4-4-12 hex chars
     expect(logged).toMatch(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
     );
@@ -307,14 +208,12 @@ describe("GatewayApp — request logger", () => {
 });
 
 describe("GatewayApp — concurrent rate limiting", () => {
-  it("each gateway instance has an independent rate limiter", async () => {
+  it("each gateway instance has an independent rate limiter", () => {
     const gw1 = makeGateway();
     const gw2 = makeGateway();
-    // Exhaust gw1's rate limit
     const rl1 = (gw1 as unknown as { rateLimiter: SlidingWindowRateLimiter })
       .rateLimiter;
     for (let i = 0; i < 100; i++) rl1.isAllowed("1.2.3.4");
-    // gw2 should still allow requests from same IP
     const rl2 = (gw2 as unknown as { rateLimiter: SlidingWindowRateLimiter })
       .rateLimiter;
     expect(rl2.isAllowed("1.2.3.4")).toBe(true);
