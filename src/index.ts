@@ -138,6 +138,39 @@ export type { CostReservationDeps } from "./economics/cost-reservation";
 export { priceUsage, effectiveCacheHitRate } from "./economics/cache-accounting";
 export { routeModel, estimatedStepCost } from "./economics/model-router";
 
+// ── Governance & enforcement (master plan §B5.1 Phase G, ADR-020) ────────────
+// External Action Gate (opt-in/no-op when unconfigured; when enabled, non-bypassable),
+// hash-chained tamper-evident audit, policy-as-code, agent registry + kill-switch.
+// All default-OFF (GovernanceConfig.enabled).
+export * from "./governance/types";
+export {
+  ActionGate,
+  firewallValidator,
+  breakerValidator,
+  costValidator,
+} from "./governance/action-gate";
+export type {
+  ActionGateDeps,
+  CostReservationLike,
+} from "./governance/action-gate";
+export { AuditLog } from "./governance/audit-log";
+export { PolicyEngine, loadPolicySet } from "./governance/policy-engine";
+export { AgentRegistry } from "./governance/registry";
+
+// ── Memory hardening (master plan §B5.1 Phase G) ─────────────────────────────
+// Tenant-keyspaced store with provenance/trust tags, retrieval-time RBAC, TTL
+// eviction, and revoke-poisoned-entry.
+export { SecureMemoryStore } from "./memory/secure-memory-store";
+export type {
+  TrustLevel,
+  Classification,
+  MemoryRole,
+  MemoryProvenance,
+  MemoryEntry,
+  PutOptions,
+  GetOptions,
+} from "./memory/secure-memory-store";
+
 // ── Gateway / adapters ───────────────────────────────────────────────────────
 export { GatewayApp, SlidingWindowRateLimiter } from "./adapters/gateway/GatewayApp";
 export type { GatewayAppDeps } from "./adapters/gateway/GatewayApp";

@@ -148,6 +148,19 @@ describe("loadConfig", () => {
     });
   });
 
+  it("governance is off by default with no policies path", () => {
+    expect(loadConfig().governance).toEqual({ enabled: false });
+  });
+
+  it("reads the governance env (enable + policies path)", () => {
+    process.env["GOVERNANCE_ENABLED"] = "true";
+    process.env["GOVERNANCE_POLICIES_PATH"] = "/etc/kaiban/policies.yml";
+    expect(loadConfig().governance).toEqual({
+      enabled: true,
+      policiesPath: "/etc/kaiban/policies.yml",
+    });
+  });
+
   it("reads the MCP server env (enable, path, consent, allow-lists)", () => {
     process.env["MCP_SERVER_ENABLED"] = "true";
     process.env["MCP_SERVER_PATH"] = "/federation/mcp";

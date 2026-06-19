@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import type { EconomicsConfig } from "../economics/types";
+import type { GovernanceConfig } from "../governance/types";
 
 export type MessagingDriver = "bullmq" | "kafka" | "amqp";
 
@@ -47,6 +48,7 @@ export interface AppConfig {
   maxTokenBudget: number;
   mcp: McpConfig;
   economics: EconomicsConfig;
+  governance: GovernanceConfig;
   security: {
     semanticFirewallEnabled: boolean;
     semanticFirewallLlmUrl?: string;
@@ -179,6 +181,12 @@ export function loadConfig(): AppConfig {
       degradeThreshold: parseFloat(
         getEnv("ECONOMICS_DEGRADE_THRESHOLD", "0.75"),
       ),
+    },
+    governance: {
+      enabled: getBoolEnv("GOVERNANCE_ENABLED", false),
+      ...(process.env["GOVERNANCE_POLICIES_PATH"]
+        ? { policiesPath: process.env["GOVERNANCE_POLICIES_PATH"] }
+        : {}),
     },
     security: {
       semanticFirewallEnabled: getBoolEnv("SEMANTIC_FIREWALL_ENABLED", false),

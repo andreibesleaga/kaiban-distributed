@@ -79,6 +79,23 @@ export interface A2AStackOptions {
 }
 
 // @public
+export class ActionGate {
+    constructor(deps: ActionGateDeps);
+    evaluate(ctx: GateContext): Promise<GateDecision>;
+}
+
+// @public
+export interface ActionGateDeps {
+    // (undocumented)
+    audit: AuditSink;
+    clock?: () => string;
+    // (undocumented)
+    config: GovernanceConfig;
+    // (undocumented)
+    validators: GateValidator[];
+}
+
+// @public
 export type AdmissionDecision = "allow" | "degrade" | "reject";
 
 // @public (undocumented)
@@ -134,6 +151,32 @@ export class AgentNotFoundError extends DomainError {
     readonly code = "AGENT_NOT_FOUND";
 }
 
+// @public
+export interface AgentRegistration {
+    // (undocumented)
+    agentId: string;
+    expiresAt?: string;
+    invocationLimit?: number;
+    purpose: string;
+    scope?: GateOperation[];
+    selfInstantiation: boolean;
+}
+
+// @public
+export class AgentRegistry {
+    asValidator(opts?: {
+        now?: () => string;
+    }): GateValidator;
+    mayInstantiate(agentId: string): boolean;
+    recordInvocation(agentId: string): void;
+    register(reg: AgentRegistration): void;
+    revoke(agentId: string, reason?: string): void;
+    status(agentId: string, opts?: {
+        now?: string;
+        operation?: GateOperation;
+    }): RegistryStatus;
+}
+
 // @public (undocumented)
 export class AgentStatePublisher {
     // Warning: (ae-forgotten-export) The symbol "AgentInfo" needs to be exported by the entry point index.d.ts
@@ -179,6 +222,8 @@ export interface AppConfig {
     // (undocumented)
     economics: EconomicsConfig;
     // (undocumented)
+    governance: GovernanceConfig;
+    // (undocumented)
     kafka: {
         brokers: string[];
         clientId: string;
@@ -221,6 +266,38 @@ export interface AppConfig {
     // (undocumented)
     validHitlDecisions: string[];
 }
+
+// @public
+export class AuditLog implements AuditSink {
+    append(decision: GateDecision, timestamp: string): AuditRecord;
+    records(): readonly AuditRecord[];
+    verify(): AuditVerification;
+}
+
+// @public
+export interface AuditRecord {
+    // (undocumented)
+    decision: GateDecision;
+    hash: string;
+    index: number;
+    prevHash: string;
+    timestamp: string;
+}
+
+// @public
+export interface AuditSink {
+    append(decision: GateDecision, timestamp: string): AuditRecord;
+}
+
+// @public
+export interface AuditVerification {
+    brokenAt?: number;
+    // (undocumented)
+    valid: boolean;
+}
+
+// @public
+export function breakerValidator(breaker: ICircuitBreaker): GateValidator;
 
 // @public
 export interface BudgetScope {
@@ -268,6 +345,9 @@ export interface CheckpointStore {
     save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
 }
 
+// @public
+export type Classification = "public" | "internal" | "confidential";
+
 // @public (undocumented)
 export const COMPLETED_CHANNEL = "kaiban-events-completed";
 
@@ -302,7 +382,16 @@ export interface CostReservationDeps {
 }
 
 // @public
+export interface CostReservationLike {
+    // (undocumented)
+    admit(scope: BudgetScope, units: CostUnits): Promise<AdmissionResult>;
+}
+
+// @public
 export type CostUnits = number;
+
+// @public
+export function costValidator(reservation: CostReservationLike, scopeFor?: (ctx: GateContext) => BudgetScope): GateValidator;
 
 // @public
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
@@ -430,12 +519,62 @@ export interface EvaluationPayload {
 // @public (undocumented)
 export function extractTraceContext(carrier: Record<string, string>): ReturnType<typeof propagation.extract>;
 
+// @public
+export function firewallValidator(firewall: ISemanticFirewall): GateValidator;
+
 // @public (undocumented)
 export interface FirewallVerdict {
     // (undocumented)
     allowed: boolean;
     // (undocumented)
     reason?: string;
+}
+
+// @public
+export const GATE_ACTION_SEVERITY: Record<GateAction, number>;
+
+// @public
+export type GateAction = "allow" | "degrade" | "escalate" | "block" | "terminate";
+
+// @public
+export interface GateContext {
+    // (undocumented)
+    agentId: string;
+    estimatedCostUnits?: number;
+    // (undocumented)
+    operation: GateOperation;
+    payload: Record<string, unknown>;
+    // (undocumented)
+    tenantId?: string;
+}
+
+// @public
+export interface GateDecision {
+    // (undocumented)
+    action: GateAction;
+    // (undocumented)
+    context: GateContext;
+    verdicts: GateVerdict[];
+}
+
+// @public
+export type GateOperation = "tool-call" | "outbound-message" | "memory-write";
+
+// @public
+export interface GateValidator {
+    // (undocumented)
+    check(ctx: GateContext): GateVerdict | Promise<GateVerdict>;
+    // (undocumented)
+    readonly name: string;
+}
+
+// @public
+export interface GateVerdict {
+    // (undocumented)
+    action: GateAction;
+    // (undocumented)
+    reason: string;
+    validator: string;
 }
 
 // @public
@@ -454,6 +593,23 @@ export interface GatewayAppDeps {
     startupProbe?: () => Promise<ProbeResult>;
     statusTracker: Pick<AgentStatusTracker, "getStatus" | "hasSeen">;
     trustProxy?: boolean;
+}
+
+// @public
+export interface GetOptions {
+    // (undocumented)
+    minTrust?: TrustLevel;
+    // (undocumented)
+    now: number;
+    // (undocumented)
+    role?: MemoryRole;
+}
+
+// @public
+export interface GovernanceConfig {
+    // (undocumented)
+    enabled: boolean;
+    policiesPath?: string;
 }
 
 // Warning: (ae-forgotten-export) The symbol "GracefulShutdownResult" needs to be exported by the entry point index.d.ts
@@ -624,6 +780,9 @@ export interface LimiterReservation {
 // @public (undocumented)
 export function loadConfig(): AppConfig;
 
+// @public
+export function loadPolicySet(yamlText: string): PolicySet;
+
 // @public (undocumented)
 export const MCP_PROMPT_DELEGATE = "delegate_task";
 
@@ -731,6 +890,31 @@ export interface McpServerDeps {
     version?: string;
 }
 
+// @public
+export interface MemoryEntry {
+    // (undocumented)
+    classification: Classification;
+    // (undocumented)
+    provenance: MemoryProvenance;
+    // (undocumented)
+    storedAt: number;
+    // (undocumented)
+    ttlMs?: number;
+    // (undocumented)
+    value: unknown;
+}
+
+// @public
+export interface MemoryProvenance {
+    // (undocumented)
+    source: string;
+    // (undocumented)
+    trust: TrustLevel;
+}
+
+// @public
+export type MemoryRole = "viewer" | "operator" | "admin";
+
 // @public (undocumented)
 export interface MessagePayload {
     // (undocumented)
@@ -776,6 +960,34 @@ export interface ModelPricing {
 export function ok<T>(value: T): Result<T, never>;
 
 // @public
+export class PolicyEngine implements GateValidator {
+    constructor(policies: PolicySet);
+    check(ctx: GateContext): GateVerdict;
+    load(policies: PolicySet): void;
+    // (undocumented)
+    readonly name: "policy";
+}
+
+// @public
+export interface PolicyRule {
+    agentId?: string;
+    effect: GateAction;
+    // (undocumented)
+    id: string;
+    matchAny?: string[];
+    operation?: GateOperation;
+    // (undocumented)
+    reason?: string;
+}
+
+// @public
+export interface PolicySet {
+    default: GateAction;
+    // (undocumented)
+    rules: PolicyRule[];
+}
+
+// @public
 export function priceUsage(usage: TokenUsage, pricing: ModelPricing): CostBreakdown;
 
 // @public
@@ -794,6 +1006,18 @@ export interface ProbeResult {
     checks: ProbeCheckResult[];
     // (undocumented)
     ready: boolean;
+}
+
+// @public
+export interface PutOptions {
+    // (undocumented)
+    classification?: Classification;
+    // (undocumented)
+    now: number;
+    // (undocumented)
+    provenance: MemoryProvenance;
+    // (undocumented)
+    ttlMs?: number;
 }
 
 // @public (undocumented)
@@ -871,6 +1095,14 @@ export interface RedisTaskStoreOptions {
 }
 
 // @public
+export interface RegistryStatus {
+    // (undocumented)
+    active: boolean;
+    // (undocumented)
+    reason: string;
+}
+
+// @public
 export function replayDlq(deps: DlqReplayDeps): Promise<DlqReplayResult>;
 
 // @public (undocumented)
@@ -915,6 +1147,15 @@ export interface RunStepOptions {
 
 // @public
 export function sanitizeTraceHeaders(raw: unknown): Record<string, string>;
+
+// @public
+export class SecureMemoryStore {
+    get(tenantId: string, key: string, opts: GetOptions): MemoryEntry | undefined;
+    put(tenantId: string, key: string, value: unknown, opts: PutOptions): void;
+    revoke(tenantId: string, key: string): boolean;
+    size(): number;
+    sweep(now: number): number;
+}
 
 // @public
 export interface ShutdownStep {
@@ -1034,6 +1275,9 @@ export interface TokenUsage {
     // (undocumented)
     outputTokens: number;
 }
+
+// @public
+export type TrustLevel = "untrusted" | "low" | "high";
 
 // @public
 export function unwrapVerified(raw: string): Record<string, unknown> | null;

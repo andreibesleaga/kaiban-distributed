@@ -86,4 +86,16 @@
       (additive):** new exports `RateCostLimiter`, `CostReservation`, `priceUsage`,
       `effectiveCacheHitRate`, `routeModel`, `estimatedStepCost`, `detectSpendAnomaly` + the
       `src/economics/types` contract; `economics` added to `AppConfig`. See `docs/decisions/ADR-019`.
+- [x] **Phase G (BETA.3)** — governance & enforcement: a **default-OFF** Action Gate spine in
+      `src/governance/` + memory hardening in `src/memory/`. `ActionGate` runs an ordered set of
+      `GateValidator`s and returns the most-severe of allow/degrade/escalate/block/terminate, recording
+      each decision to a **hash-chained (SHA-256) tamper-evident** `AuditLog`. Ships `PolicyEngine` +
+      `loadPolicySet` (policy-as-code, `policies.yml`), `AgentRegistry` (PDLSS **kill-switch**), the
+      `firewallValidator`/`breakerValidator`/`costValidator` adapters (compose the existing firewall +
+      breaker + **Phase-E cost reservation**), and `SecureMemoryStore` (tenant keyspaces, provenance/
+      trust tags, retrieval-time RBAC, TTL eviction, revoke-poisoned-entry). **Opt-in / no-op when
+      unconfigured; non-bypassable when enabled** (`GOVERNANCE_ENABLED` / `GOVERNANCE_POLICIES_PATH` —
+      see `.env.example` + `docs/governance/GOVERNANCE.md`). **New direct dependency:** `yaml ^2.9.0`.
+      **Library API (additive):** the governance + memory modules + the `src/governance/types` contract
+      are exported; `governance` added to `AppConfig`. See `docs/decisions/ADR-020`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)
