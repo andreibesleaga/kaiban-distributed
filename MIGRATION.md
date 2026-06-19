@@ -55,4 +55,12 @@
 - [x] **Phase 3** — `MESSAGING_DRIVER=amqp` recognized as an **unimplemented universal-AMQP seam**
       (`AmqpDriver` stub throws on use; coverage-excluded; `AmqpDriver` is exported). BullMQ/Redis +
       Kafka are unchanged and remain the two real drivers. See ADR-016 + `docs/messaging/AMQP.md`.
+- [x] **Phase 4a** — packaging: the library adds a **`./shared`** subpath export
+      (`import … from "kaiban-distributed/shared"`) alongside `.`. **Additive** — no breaking change.
+- [x] **Phase R (BETA.2)** — resilience: a reusable **single-active orchestrator** (Redis
+      checkpoint→resume, idempotent) moves into `src/shared` and is exported
+      (`kaiban-distributed/shared`); the examples now consume it instead of duplicating it. The gateway
+      serves **`/ready` + `/startup`** probes and `GatewayApp` gains optional
+      `readinessProbe`/`startupProbe` deps. Graceful-shutdown + DLQ-replay helpers added
+      (`src/resilience/*`). Additive for library consumers. See ADR-018.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)

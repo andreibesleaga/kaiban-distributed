@@ -46,5 +46,20 @@ export type { HitlDecision, HitlOptions } from "./hitl";
 
 export { OrchestratorStatePublisher } from "./orchestrator-state-publisher";
 
+export {
+  WorkflowOrchestrator,
+  InMemoryCheckpointStore,
+  RedisCheckpointStore,
+} from "./orchestrator";
+export type {
+  RouterLike,
+  StepCheckpoint,
+  WorkflowCheckpoint,
+  CheckpointStore,
+  RunStepOptions,
+  WorkflowOrchestratorOptions,
+  RedisCheckpointStoreOptions,
+} from "./orchestrator";
+
 export { startAgentNode } from "./agent-node";
 export type { AgentNodeConfig } from "./agent-node";

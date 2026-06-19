@@ -7,9 +7,21 @@ import { CompletionRouter } from "../shared/completion-router";
 import { buildA2AStack } from "../infrastructure/federation/a2a-gateway-factory";
 import { GatewayApp } from "../adapters/gateway/GatewayApp";
 import { SocketGateway } from "../adapters/gateway/SocketGateway";
+import { buildReadinessProbe, buildStartupProbe } from "../resilience/health";
+import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "gateway" });
+
+/** Bounded deadline (ms) for graceful drain — fits inside k8s terminationGracePeriodSeconds. */
+const SHUTDOWN_DEADLINE_MS = 25_000;
+
+/** Stop accepting new HTTP connections; resolves once existing ones close. */
+function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
 
 /**
  * Gateway role (Finding #1 fix / ADR-013).
@@ -65,10 +77,28 @@ export async function runGateway(): Promise<void> {
   });
   await a2a.start();
 
+  // k8s readiness/startup probes (Phase R). Readiness verifies Redis is
+  // reachable (a BullMQ broker rides Redis; Kafka producers are created eagerly
+  // and a Redis ping still gates the state/HITL plane). Startup flips once the
+  // HTTP server is listening.
+  let listening = false;
+  const readinessProbe = buildReadinessProbe({
+    checks: [
+      {
+        name: "redis",
+        check: async (): Promise<boolean> =>
+          (await redisSocketPub.ping()) === "PONG",
+      },
+    ],
+  });
+  const startupProbe = buildStartupProbe({ started: () => listening });
+
   const gateway = new GatewayApp({
     requestHandler: a2a.requestHandler,
     statusTracker: a2a.statusTracker,
     trustProxy: config.security.trustProxy,
+    readinessProbe,
+    startupProbe,
   });
   const httpServer = createServer(gateway.app);
   const socketGateway = new SocketGateway(
@@ -84,17 +114,36 @@ export async function runGateway(): Promise<void> {
   socketGateway.initialize();
 
   httpServer.listen(config.port, () => {
+    listening = true;
     log.info({ port: config.port }, "Gateway listening (HTTP/WebSocket/A2A)");
   });
 
+  // Graceful drain (Phase R): stop intake → drain sockets → close A2A → close
+  // drivers, ordered + best-effort, within a bounded deadline (after which k8s
+  // SIGKILLs anyway). Readiness flips closed first so traffic stops being routed.
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, "Shutting down gateway");
-    await socketGateway.shutdown();
-    await a2a.close();
-    if (isKafka) await failedDriver.disconnect();
-    await completedDriver.disconnect();
-    await messagingDriver.disconnect();
-    process.exit(0);
+    listening = false;
+    const result = await gracefulShutdown({
+      deadlineMs: SHUTDOWN_DEADLINE_MS,
+      steps: [
+        { name: "stop-http-intake", run: (): Promise<void> => closeServer(httpServer) },
+        { name: "drain-sockets", run: (): Promise<void> => socketGateway.shutdown() },
+        { name: "close-a2a", run: (): Promise<void> => a2a.close() },
+        {
+          name: "close-failed-driver",
+          run: (): Promise<void> | void =>
+            isKafka ? failedDriver.disconnect() : undefined,
+        },
+        { name: "close-completed-driver", run: (): Promise<void> => completedDriver.disconnect() },
+        { name: "close-messaging-driver", run: (): Promise<void> => messagingDriver.disconnect() },
+      ],
+    });
+    log.info(
+      { signal, completed: result.completed, timedOut: result.timedOut, errors: result.errors },
+      "Gateway shutdown complete",
+    );
+    process.exit(result.timedOut || result.errors.length > 0 ? 1 : 0);
   };
 
   process.on("SIGTERM", () => void shutdown("SIGTERM"));

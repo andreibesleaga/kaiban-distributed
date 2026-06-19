@@ -207,6 +207,14 @@ export function buildA2AStack(opts: A2AStackOptions): A2AStack;
 // @public
 export function buildAgentCard(input: AgentCardInput): AgentCard;
 
+// @public
+export function buildReadinessProbe(deps: ReadinessDeps): () => Promise<ProbeResult>;
+
+// Warning: (ae-forgotten-export) The symbol "StartupDeps" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function buildStartupProbe(deps: StartupDeps): () => Promise<ProbeResult>;
+
 // @public (undocumented)
 export class BullMQDriver implements IMessagingDriver {
     // Warning: (ae-forgotten-export) The symbol "BullMQDriverOptions" needs to be exported by the entry point index.d.ts
@@ -219,6 +227,13 @@ export class BullMQDriver implements IMessagingDriver {
     subscribe(queueName: string, handler: (payload: MessagePayload) => Promise<void>): Promise<void>;
     // (undocumented)
     unsubscribe(queueName: string): Promise<void>;
+}
+
+// @public
+export interface CheckpointStore {
+    clear(workflowId: string): Promise<void>;
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
 }
 
 // @public (undocumented)
@@ -273,6 +288,32 @@ export interface DistributedTask {
 // @public (undocumented)
 export const DLQ_CHANNEL = "kaiban-events-failed";
 
+// @public
+export const DLQ_POISON_REASONS: ReadonlySet<string>;
+
+// @public
+export interface DlqRecord {
+    payload: MessagePayload;
+}
+
+// @public (undocumented)
+export interface DlqReplayDeps {
+    driver: IMessagingDriver;
+    poisonReasons?: ReadonlySet<string>;
+    queueFor?: (agentId: string) => string;
+    records: DlqRecord[];
+}
+
+// @public (undocumented)
+export interface DlqReplayResult {
+    replayed: number;
+    skipped: number;
+    skippedReasons: Array<{
+        taskId: string;
+        reason: string;
+    }>;
+}
+
 // @public (undocumented)
 export abstract class DomainError extends Error {
     constructor(message: string);
@@ -319,9 +360,22 @@ export class GatewayApp {
 
 // @public (undocumented)
 export interface GatewayAppDeps {
+    readinessProbe?: () => Promise<ProbeResult>;
     requestHandler: A2ARequestHandler;
+    startupProbe?: () => Promise<ProbeResult>;
     statusTracker: Pick<AgentStatusTracker, "getStatus" | "hasSeen">;
     trustProxy?: boolean;
+}
+
+// Warning: (ae-forgotten-export) The symbol "GracefulShutdownResult" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function gracefulShutdown(opts: GracefulShutdownOptions): Promise<GracefulShutdownResult>;
+
+// @public (undocumented)
+export interface GracefulShutdownOptions {
+    deadlineMs: number;
+    steps: ShutdownStep[];
 }
 
 // @public
@@ -363,6 +417,16 @@ export function initTelemetry(config: TelemetryConfig): void;
 
 // @public (undocumented)
 export function injectTraceContext(carrier: Record<string, string>): void;
+
+// @public
+export class InMemoryCheckpointStore implements CheckpointStore {
+    // (undocumented)
+    clear(workflowId: string): Promise<void>;
+    // (undocumented)
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    // (undocumented)
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
 
 // @public (undocumented)
 export function isDistributedAgentState(value: unknown): value is DistributedAgentState;
@@ -505,6 +569,30 @@ export class MessagingError extends DomainError {
 export function ok<T>(value: T): Result<T, never>;
 
 // @public
+export interface ProbeCheck {
+    // (undocumented)
+    check: () => Promise<boolean>;
+    // (undocumented)
+    name: string;
+}
+
+// @public
+export interface ProbeResult {
+    // Warning: (ae-forgotten-export) The symbol "ProbeCheckResult" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    checks: ProbeCheckResult[];
+    // (undocumented)
+    ready: boolean;
+}
+
+// @public
+export interface ReadinessDeps {
+    // (undocumented)
+    checks: ProbeCheck[];
+}
+
+// @public
 export function recordAnomalyEvent(eventName: string, attributes: Record<string, string | number | boolean>): void;
 
 // @public
@@ -512,6 +600,23 @@ export function recordMessageLatency(ms: number, status: string): void;
 
 // @public
 export function recordMessageProcessed(status: string): void;
+
+// @public
+export class RedisCheckpointStore implements CheckpointStore {
+    constructor(redisUrl: string, opts?: RedisCheckpointStoreOptions);
+    // (undocumented)
+    clear(workflowId: string): Promise<void>;
+    disconnect(): Promise<void>;
+    // (undocumented)
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    // (undocumented)
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
+
+// @public (undocumented)
+export interface RedisCheckpointStoreOptions {
+    ttlSeconds?: number;
+}
 
 // @public (undocumented)
 export class RedisTaskStore implements TaskStore {
@@ -529,6 +634,9 @@ export interface RedisTaskStoreOptions {
     ttlSeconds?: number;
 }
 
+// @public
+export function replayDlq(deps: DlqReplayDeps): Promise<DlqReplayResult>;
+
 // @public (undocumented)
 export type Result<T, E> = {
     ok: true;
@@ -539,7 +647,29 @@ export type Result<T, E> = {
 };
 
 // @public
+export interface RouterLike {
+    // (undocumented)
+    wait(taskId: string, timeoutMs: number, label: string, signal?: AbortSignal): Promise<string>;
+}
+
+// @public
+export interface RunStepOptions {
+    dispatch: () => Promise<string>;
+    label?: string;
+    signal?: AbortSignal;
+    timeoutMs: number;
+}
+
+// @public
 export function sanitizeTraceHeaders(raw: unknown): Record<string, string>;
+
+// @public
+export interface ShutdownStep {
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    run: () => void | Promise<void>;
+}
 
 // @public
 export class SlidingWindowBreaker implements ICircuitBreaker {
@@ -579,6 +709,14 @@ export const STATE_EVENT_REQUEST = "state:request";
 
 // @public (undocumented)
 export const STATE_EVENT_UPDATE = "state:update";
+
+// @public
+export interface StepCheckpoint {
+    // (undocumented)
+    result: string;
+    // (undocumented)
+    taskId: string;
+}
 
 // @public
 export type TaskHandler = (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>;
@@ -674,6 +812,25 @@ export function verifyA2AToken(authHeader: string | undefined): jwt.JwtPayload;
 
 // @public
 export function verifyBoardToken(token: string): jwt.JwtPayload;
+
+// @public
+export type WorkflowCheckpoint = Record<string, StepCheckpoint>;
+
+// @public (undocumented)
+export class WorkflowOrchestrator {
+    constructor(opts: WorkflowOrchestratorOptions);
+    clear(): Promise<void>;
+    isResuming(): Promise<boolean>;
+    memoize<T>(name: string, produce: () => Promise<T>): Promise<T>;
+    runStep(name: string, opts: RunStepOptions): Promise<string>;
+}
+
+// @public (undocumented)
+export interface WorkflowOrchestratorOptions {
+    router: RouterLike;
+    store: CheckpointStore;
+    workflowId: string;
+}
 
 // @public
 export function wrapSigned(payload: Record<string, unknown>): string;

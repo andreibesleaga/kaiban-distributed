@@ -31,6 +31,13 @@ export function buildSecurityDeps(): {
     tokenProvider?: ITokenProvider;
 };
 
+// @public
+export interface CheckpointStore {
+    clear(workflowId: string): Promise<void>;
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
+
 // @public (undocumented)
 export class CompletionRouter {
     // Warning: (ae-forgotten-export) The symbol "IMessagingDriver" needs to be exported by the entry point index.d.ts
@@ -85,6 +92,16 @@ export interface HitlOptions {
 }
 
 // @public
+export class InMemoryCheckpointStore implements CheckpointStore {
+    // (undocumented)
+    clear(workflowId: string): Promise<void>;
+    // (undocumented)
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    // (undocumented)
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
+
+// @public
 export interface Logger {
     // (undocumented)
     error(msg: string, cause?: unknown): void;
@@ -125,16 +142,74 @@ export function parseRecommendation(review: string): string;
 export function parseScore(review: string, label?: string): string;
 
 // @public
+export class RedisCheckpointStore implements CheckpointStore {
+    constructor(redisUrl: string, opts?: RedisCheckpointStoreOptions);
+    // (undocumented)
+    clear(workflowId: string): Promise<void>;
+    disconnect(): Promise<void>;
+    // (undocumented)
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    // (undocumented)
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
+
+// @public (undocumented)
+export interface RedisCheckpointStoreOptions {
+    ttlSeconds?: number;
+}
+
+// @public
+export interface RouterLike {
+    // (undocumented)
+    wait(taskId: string, timeoutMs: number, label: string, signal?: AbortSignal): Promise<string>;
+}
+
+// @public
 export interface RpcClient {
     call(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
     setToken(token: string): void;
 }
 
 // @public
+export interface RunStepOptions {
+    dispatch: () => Promise<string>;
+    label?: string;
+    signal?: AbortSignal;
+    timeoutMs: number;
+}
+
+// @public
 export function startAgentNode(config: AgentNodeConfig): Promise<void>;
 
 // @public
+export interface StepCheckpoint {
+    // (undocumented)
+    result: string;
+    // (undocumented)
+    taskId: string;
+}
+
+// @public
 export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision>;
+
+// @public
+export type WorkflowCheckpoint = Record<string, StepCheckpoint>;
+
+// @public (undocumented)
+export class WorkflowOrchestrator {
+    constructor(opts: WorkflowOrchestratorOptions);
+    clear(): Promise<void>;
+    isResuming(): Promise<boolean>;
+    memoize<T>(name: string, produce: () => Promise<T>): Promise<T>;
+    runStep(name: string, opts: RunStepOptions): Promise<string>;
+}
+
+// @public (undocumented)
+export interface WorkflowOrchestratorOptions {
+    router: RouterLike;
+    store: CheckpointStore;
+    workflowId: string;
+}
 
 // Warnings were encountered during analysis:
 //

@@ -27,6 +27,8 @@ import {
   getDriverType,
   CompletionRouter,
   createRpcClient,
+  WorkflowOrchestrator,
+  RedisCheckpointStore,
 } from '../../src/shared';
 import type { ResearchContext } from './types';
 import { issueA2AToken } from '../../src/infrastructure/security/a2a-auth';
@@ -62,6 +64,7 @@ const AUTO_PUBLISH = process.env['AUTO_PUBLISH'] === '1'
 
 interface PipelineDeps {
   ctx: ResearchContext;
+  orch: WorkflowOrchestrator;
   router: CompletionRouter;
   pub: ResearchStatePublisher;
   rpc: ReturnType<typeof createRpcClient>;
@@ -69,48 +72,91 @@ interface PipelineDeps {
   runLog: RunLogger;
 }
 
+/**
+ * The ctx fields the fan-out/fan-in phases mutate in place. Snapshotting these
+ * after each phase lets the shared orchestrator checkpoint→resume the pipeline
+ * (a restart re-hydrates ctx and skips completed phases) without changing the
+ * phase signatures. Redis-channel/workflow-status invariants are untouched.
+ */
+type CtxSnapshot = Pick<
+  ResearchContext,
+  'status' | 'rawSearchData' | 'consolidatedDraft' | 'feedback' | 'metadata'
+>;
+
+function snapshot(ctx: ResearchContext): CtxSnapshot {
+  return {
+    status: ctx.status,
+    rawSearchData: ctx.rawSearchData,
+    ...(ctx.consolidatedDraft !== undefined ? { consolidatedDraft: ctx.consolidatedDraft } : {}),
+    ...(ctx.feedback !== undefined ? { feedback: ctx.feedback } : {}),
+    metadata: ctx.metadata,
+  };
+}
+
+function restore(ctx: ResearchContext, snap: CtxSnapshot): void {
+  Object.assign(ctx, snap);
+}
+
 async function runPipeline(deps: PipelineDeps): Promise<void> {
-  const { ctx, router, pub, rpc, rl, runLog } = deps;
+  const { ctx, orch, router, pub, rpc, rl, runLog } = deps;
 
   pub.workflowStarted(NUM_SEARCHERS);
+  if (await orch.isResuming()) log.info('Resuming from a prior checkpoint (completed phases will be skipped)\n');
 
-  // STEP 1 — Fan-Out
+  // STEP 1 — Fan-Out (checkpoint→resume via the shared orchestrator)
   const subTopics = buildSubTopics(QUERY, NUM_SEARCHERS);
-  
+
   log.separator('='); log.info(`STEP 1 — Fan-Out: ${NUM_SEARCHERS} Searcher nodes gathering data...`); log.separator('=');
   log.info(`Sub-topics: ${subTopics.map((t, i) => `\n  ${i + 1}. ${t}`).join('')}\n`);
 
-  await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, rpc, runLog);
-  
+  restore(ctx, await orch.memoize<CtxSnapshot>('search', async () => {
+    await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, rpc, runLog);
+    return snapshot(ctx);
+  }));
+
   log.info(`\nSEARCH PHASE COMPLETE — ${ctx.rawSearchData.length}/${NUM_SEARCHERS} results`);
 
   // STEP 2 — Fan-In
   log.separator('='); log.info('STEP 2 — Fan-In: Atlas (Writer) synthesising research...'); log.separator('=');
-  
-  await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, rpc, runLog);
+
+  restore(ctx, await orch.memoize<CtxSnapshot>('write', async () => {
+    await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, rpc, runLog);
+    return snapshot(ctx);
+  }));
 
   log.info(`\nSYNTHESIS COMPLETE (${(ctx.consolidatedDraft ?? '').length} chars)`);
 
-  // STEP 3 — Governance
+  // STEP 3 — Governance (checkpoints both its verdict AND the ctx delta)
   log.separator('='); log.info('STEP 3 — Sage (Reviewer) running governance compliance check...'); log.separator('=');
-  
-  const gov = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, rpc, runLog);
-  
+
+  const govStep = await orch.memoize('governance', async () => {
+    const result = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, rpc, runLog);
+    return { gov: result, snap: snapshot(ctx) };
+  });
+  restore(ctx, govStep.snap);
+  const gov = govStep.gov;
+
   log.info(`\n  Compliance Score: ${gov.score}   Recommendation: ${gov.recommendation}`);
 
   if (gov.recommendation === 'REJECTED') {
     ctx.metadata.endTime = Date.now();
     pub.workflowStopped(randomUUID(), `Governance rejected: ${ctx.feedback?.complianceViolations.join('; ') ?? gov.text.slice(0, 200)}`, ctx);
     runLog.finish('REJECTED');
-    
+    await orch.clear();
+
     log.info('\nGovernance review REJECTED the report. Workflow stopped.\n');
     return;
   }
 
-  // STEP 4 — Editorial
+  // STEP 4 — Editorial (checkpoints its verdict AND the ctx delta)
   log.separator('='); log.info('STEP 4 — Morgan (Editor) preparing HITL review...'); log.separator('=');
 
-  const edit = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, rpc, runLog);
+  const editStep = await orch.memoize('editorial', async () => {
+    const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, rpc, runLog);
+    return { edit: result, snap: snapshot(ctx) };
+  });
+  restore(ctx, editStep.snap);
+  const edit = editStep.edit;
 
   log.info(`\n  Governance: ${gov.score} (${gov.recommendation})`);
   log.info(`  Editorial:  ${edit.score}  — Recommendation: ${edit.recommendation}`);
@@ -125,6 +171,9 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
     writeWaitMs: WRITE_WAIT_MS, autoPub: AUTO_PUBLISH,
     router, pub, rpc, rl, runLog,
   });
+
+  // Terminal state reached — wipe the checkpoint so a re-run starts fresh.
+  await orch.clear();
 
   log.info(`\n  Tokens used:    ${ctx.metadata.totalTokens}`);
   log.info(`  Estimated cost: $${ctx.metadata.estimatedCost.toFixed(4)}`);
@@ -151,6 +200,14 @@ async function main(): Promise<void> {
     metadata: { totalTokens: 0, estimatedCost: 0, startTime: Date.now(), activeNodes: [] },
   };
   const runLog = new RunLogger(QUERY, GATEWAY_URL, getDriverType(), NUM_SEARCHERS, ctx.id);
+
+  // Phase R — crash-safe single-active orchestrator: Redis checkpoint→resume.
+  // WORKFLOW_ID namespaces the checkpoint; default to the context id (override to
+  // resume a specific run). A restart resumes from the last completed phase.
+  const workflowId     = process.env['WORKFLOW_ID'] ?? `research-${ctx.id}`;
+  const store          = new RedisCheckpointStore(REDIS_URL);
+  const orch           = new WorkflowOrchestrator({ workflowId, router, store });
+
   let socket: Socket | null = null;
 
   const cleanup = async (): Promise<void> => {
@@ -158,6 +215,7 @@ async function main(): Promise<void> {
     await completedDriver.disconnect();
     if (isKafka) await failedDriver.disconnect();
     await pub.disconnect();
+    await store.disconnect();
     rl?.close();
   };
 
@@ -176,7 +234,7 @@ async function main(): Promise<void> {
     socket = io(GATEWAY_URL, { transports: ['websocket'] });
     socket.on('state:update', onBoardUpdate);
 
-    await runPipeline({ ctx, router, pub, rpc, rl, runLog });
+    await runPipeline({ ctx, orch, router, pub, rpc, rl, runLog });
 
   } catch (err: unknown) {
     runLog.finish('FAILED');

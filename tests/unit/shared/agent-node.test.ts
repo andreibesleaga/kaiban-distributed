@@ -224,4 +224,22 @@ describe("startAgentNode", () => {
     expect(exitSpy).toHaveBeenCalledWith(0);
     exitSpy.mockRestore();
   });
+
+  it("SIGTERM handler exits non-zero when a drain step fails", async () => {
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(
+        (_code?: number | string | null) => undefined as never,
+      );
+    mockActorStop.mockRejectedValueOnce(new Error("actor stop failed"));
+
+    await startAgentNode(baseConfig);
+    sigTermListeners[0]!();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // The drain continued best-effort, but the failed step → non-zero exit.
+    expect(mockDriverDisconnect).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
 });

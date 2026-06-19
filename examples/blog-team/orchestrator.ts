@@ -26,12 +26,15 @@
  */
 import 'dotenv/config';
 import readline from 'readline';
+import { createHash } from 'crypto';
 import { io, type Socket } from 'socket.io-client';
 import {
   createDriver,
   createRpcClient,
   CompletionRouter,
   getDriverType,
+  WorkflowOrchestrator,
+  RedisCheckpointStore,
 } from '../../src/shared';
 import { issueA2AToken } from '../../src/infrastructure/security/a2a-auth';
 import { log, RunLogger } from './run-logger';
@@ -41,11 +44,23 @@ import {
   runWritePhase,
   runEditorialPhase,
   handleBlogDecision,
+  type ResearchResult,
+  type WriteResult,
+  type EditResult,
 } from './phases';
 
 const GATEWAY_URL = process.env['GATEWAY_URL'] ?? 'http://localhost:3000';
 const REDIS_URL   = process.env['REDIS_URL']   ?? 'redis://localhost:6379';
 const TOPIC       = process.env['TOPIC']       ?? 'Latest developments in AI agents';
+
+/**
+ * Stable per-run workflow id → the Redis checkpoint namespace. Defaults to a
+ * deterministic hash of the topic so a crashed run, restarted with the same
+ * TOPIC, RESUMES from its last completed phase (research/write) instead of
+ * re-paying for it. Override with WORKFLOW_ID to force a fresh run.
+ */
+const WORKFLOW_ID = process.env['WORKFLOW_ID']
+  ?? `blog-${createHash('sha256').update(TOPIC).digest('hex').slice(0, 16)}`;
 
 // ── Main orchestration flow ───────────────────────────────────
 
@@ -61,6 +76,12 @@ async function main(): Promise<void> {
   const rpc             = createRpcClient(GATEWAY_URL);
   const runLog          = new RunLogger(TOPIC, GATEWAY_URL, getDriverType());
 
+  // Phase R — crash-safe single-active orchestrator: Redis checkpoint→resume.
+  // Each pipeline phase is memoized under WORKFLOW_ID, so a restart resumes from
+  // the last completed phase instead of re-running (and re-paying for) it.
+  const store           = new RedisCheckpointStore(REDIS_URL);
+  const orch            = new WorkflowOrchestrator({ workflowId: WORKFLOW_ID, router, store });
+
   let socket: Socket | null = null;
 
   const cleanup = async (): Promise<void> => {
@@ -68,6 +89,7 @@ async function main(): Promise<void> {
     await completedDriver.disconnect();
     if (isKafka) await failedDriver.disconnect();
     await pub.disconnect();
+    await store.disconnect();
     rl.close();
   };
 
@@ -93,12 +115,14 @@ async function main(): Promise<void> {
       if (status) process.stdout.write(`  ⬡ Board: ${String(status)}\n`);
     });
 
-    log.info(`Topic: "${TOPIC}"\n`);
+    log.info(`Topic: "${TOPIC}"  |  Workflow: ${WORKFLOW_ID}\n`);
+    if (await orch.isResuming()) log.info('Resuming from a prior checkpoint (completed phases will be skipped)\n');
     pub.workflowStarted(TOPIC);
 
-    // STEP 1 — Research
+    // STEP 1 — Research (checkpoint→resume via the shared orchestrator)
     log.separator('-'); log.info('STEP 1 — Ava (Researcher) is gathering information...'); log.separator('-');
-    const research = await runResearchPhase(TOPIC, router, pub, rpc, runLog);
+    const research = await orch.memoize<ResearchResult>('research',
+      () => runResearchPhase(TOPIC, router, pub, rpc, runLog));
 
     log.info('\nRESEARCH COMPLETE');
     log.separator('-');
@@ -108,7 +132,8 @@ async function main(): Promise<void> {
     // STEP 2 — Write
     log.info('\nSTEP 2 — Kai (Writer) is drafting the blog post...');
     log.separator('-');
-    const write = await runWritePhase(TOPIC, research.summary, router, pub, rpc, runLog);
+    const write = await orch.memoize<WriteResult>('write',
+      () => runWritePhase(TOPIC, research.summary, router, pub, rpc, runLog));
 
     log.info('\nDRAFT COMPLETE');
     log.separator('-');
@@ -118,7 +143,8 @@ async function main(): Promise<void> {
     // STEP 3 — Editorial Review
     log.info('\nSTEP 3 — Morgan (Editor) is reviewing for accuracy...');
     log.separator('-');
-    const edit = await runEditorialPhase(TOPIC, research.summary, write.draft, router, pub, rpc, runLog);
+    const edit = await orch.memoize<EditResult>('editorial',
+      () => runEditorialPhase(TOPIC, research.summary, write.draft, router, pub, rpc, runLog));
 
     log.header('EDITORIAL REVIEW BY MORGAN');
     log.info(edit.review);
@@ -130,6 +156,9 @@ async function main(): Promise<void> {
     log.header('HUMAN REVIEW REQUIRED (HITL)');
     log.info(`Editorial: ${edit.recommendation} (Accuracy: ${edit.score})`);
     await handleBlogDecision({ topic: TOPIC, redisUrl: REDIS_URL, gatewayUrl: GATEWAY_URL, research, write, edit, router, pub, rpc, rl, runLog });
+
+    // Terminal state reached — wipe the checkpoint so a re-run starts fresh.
+    await orch.clear();
 
     log.separator('-');
     log.info(`View full trace: ${GATEWAY_URL}  |  Board: examples/blog-team/viewer/board.html`);

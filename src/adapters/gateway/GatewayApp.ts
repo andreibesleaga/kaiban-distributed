@@ -14,6 +14,7 @@ import {
 import type { A2ARequestHandler } from "@a2a-js/sdk/server";
 import { verifyA2AToken } from "../../infrastructure/security/a2a-auth";
 import type { AgentStatusTracker } from "../../infrastructure/federation/agent-status-tracker";
+import type { ProbeResult } from "../../resilience/health";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "GatewayApp" });
@@ -76,7 +77,19 @@ export interface GatewayAppDeps {
   statusTracker: Pick<AgentStatusTracker, "getStatus" | "hasSeen">;
   /** Enable Express trust-proxy (correct req.ip behind a reverse proxy). */
   trustProxy?: boolean;
+  /**
+   * Readiness probe for `GET /ready` (k8s readiness — Phase R). Verifies Redis +
+   * broker reachability; 200 when ready, 503 otherwise. Unset ⇒ always ready.
+   */
+  readinessProbe?: () => Promise<ProbeResult>;
+  /**
+   * Startup probe for `GET /startup` (k8s startup — Phase R). Gates slow boot;
+   * 200 once boot completes, 503 until then. Unset ⇒ always ready.
+   */
+  startupProbe?: () => Promise<ProbeResult>;
 }
+
+const READY: ProbeResult = { ready: true, checks: [] };
 
 /**
  * GatewayApp — the HTTP front door for the A2A surface.
@@ -99,12 +112,17 @@ export class GatewayApp {
     AgentStatusTracker,
     "getStatus" | "hasSeen"
   >;
+  private readonly readinessProbe: () => Promise<ProbeResult>;
+  private readonly startupProbe: () => Promise<ProbeResult>;
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
   private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 5);
 
   constructor(deps: GatewayAppDeps) {
     this.requestHandler = deps.requestHandler;
     this.statusTracker = deps.statusTracker;
+    const alwaysReady = (): Promise<ProbeResult> => Promise.resolve(READY);
+    this.readinessProbe = deps.readinessProbe ?? alwaysReady;
+    this.startupProbe = deps.startupProbe ?? alwaysReady;
     this.app = express();
 
     // Trust proxy — enables correct req.ip behind reverse proxies (Railway, K8s, Nginx).
@@ -129,6 +147,19 @@ export class GatewayApp {
       "/health",
       this.healthRateLimit.bind(this),
       this.handleHealth.bind(this),
+    );
+
+    // k8s readiness + startup probes (Phase R) — readiness verifies Redis +
+    // broker reachability; startup gates slow boot. 200 ready / 503 not-ready.
+    this.app.get(
+      "/ready",
+      this.healthRateLimit.bind(this),
+      this.handleProbe.bind(this, this.readinessProbe),
+    );
+    this.app.get(
+      "/startup",
+      this.healthRateLimit.bind(this),
+      this.handleProbe.bind(this, this.startupProbe),
     );
 
     // A2A AgentCard — served by the SDK from the same handler that answers RPC.
@@ -227,6 +258,16 @@ export class GatewayApp {
 
   private handleHealth(_req: Request, res: Response): void {
     res.json(apiOk({ status: "ok", timestamp: new Date().toISOString() }));
+  }
+
+  /** Run a probe and map readiness to the HTTP contract (200 ready / 503 not). */
+  private async handleProbe(
+    probe: () => Promise<ProbeResult>,
+    _req: Request,
+    res: Response,
+  ): Promise<void> {
+    const result = await probe();
+    res.status(result.ready ? 200 : 503).json(apiOk(result));
   }
 
   private handleAgentStatus(req: Request, res: Response): void {

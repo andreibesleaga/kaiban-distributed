@@ -68,6 +68,45 @@ export type {
 } from "./infrastructure/federation/a2a-gateway-factory";
 export { MCPFederationClient } from "./infrastructure/federation/mcp-client";
 
+// ── Orchestration / resilience (master plan §B5.1 Phase R, ADR-018) ──────────
+// Crash-safe single-active orchestrator (Redis checkpoint→resume, taskId
+// idempotency) + resilience helpers (DLQ replay, readiness probes, graceful
+// drain). Single-active — no leader election; failover = checkpoint, not HA.
+export {
+  WorkflowOrchestrator,
+  InMemoryCheckpointStore,
+  RedisCheckpointStore,
+} from "./shared/orchestrator";
+export type {
+  RouterLike,
+  StepCheckpoint,
+  WorkflowCheckpoint,
+  CheckpointStore,
+  RunStepOptions,
+  WorkflowOrchestratorOptions,
+  RedisCheckpointStoreOptions,
+} from "./shared/orchestrator";
+export { replayDlq, DLQ_POISON_REASONS } from "./resilience/dlq-replay";
+export type {
+  DlqReplayDeps,
+  DlqReplayResult,
+  DlqRecord,
+} from "./resilience/dlq-replay";
+export {
+  buildReadinessProbe,
+  buildStartupProbe,
+} from "./resilience/health";
+export type {
+  ProbeCheck,
+  ProbeResult,
+  ReadinessDeps,
+} from "./resilience/health";
+export { gracefulShutdown } from "./resilience/graceful-shutdown";
+export type {
+  ShutdownStep,
+  GracefulShutdownOptions,
+} from "./resilience/graceful-shutdown";
+
 // ── Gateway / adapters ───────────────────────────────────────────────────────
 export { GatewayApp, SlidingWindowRateLimiter } from "./adapters/gateway/GatewayApp";
 export type { GatewayAppDeps } from "./adapters/gateway/GatewayApp";

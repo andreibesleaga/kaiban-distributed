@@ -26,6 +26,7 @@ const h = vi.hoisted(() => {
   const a2aStart = vi.fn(() => Promise.resolve());
   const a2aClose = vi.fn(() => Promise.resolve());
   const listen = vi.fn((_port: number, cb: () => void) => cb());
+  const serverClose = vi.fn((cb: (err?: Error) => void) => cb());
   return {
     socketInit,
     socketShutdown,
@@ -33,6 +34,7 @@ const h = vi.hoisted(() => {
     a2aStart,
     a2aClose,
     listen,
+    serverClose,
     BullMQDriver: vi.fn(function () {
       return { disconnect: driverDisconnect };
     }),
@@ -45,7 +47,7 @@ const h = vi.hoisted(() => {
     SocketGateway: vi.fn(function () {
       return { initialize: socketInit, shutdown: socketShutdown };
     }),
-    GatewayApp: vi.fn(function () {
+    GatewayApp: vi.fn(function (_deps?: unknown) {
       return { app: {} };
     }),
     buildA2AStack: vi.fn(function () {
@@ -66,9 +68,9 @@ const h = vi.hoisted(() => {
     getDriverType: vi.fn(() => "bullmq"),
     initTelemetry: vi.fn(),
     Redis: vi.fn(function () {
-      return {};
+      return { ping: vi.fn(() => Promise.resolve("PONG")) };
     }),
-    createServer: vi.fn(() => ({ listen })),
+    createServer: vi.fn(() => ({ listen, close: serverClose })),
   };
 });
 
@@ -124,6 +126,11 @@ afterAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   h.getDriverType.mockReturnValue("bullmq");
+  // Restore default mock implementations (clearAllMocks keeps impls, not calls).
+  h.listen.mockImplementation((_port: number, cb: () => void) => cb());
+  h.Redis.mockImplementation(function () {
+    return { ping: vi.fn(() => Promise.resolve("PONG")) };
+  });
   for (const k of Object.keys(handlers)) delete handlers[k];
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   exitSpy = vi
@@ -184,6 +191,71 @@ describe("runGateway", () => {
     await handlers["SIGINT"]!();
     await vi.waitFor(() => expect(h.driverDisconnect).toHaveBeenCalled());
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("wires readiness (Redis ping) + startup probes into the GatewayApp", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+
+    const deps = h.GatewayApp.mock.calls[0]![0] as {
+      readinessProbe: () => Promise<{ ready: boolean }>;
+      startupProbe: () => Promise<{ ready: boolean }>;
+    };
+    // Readiness pings Redis → ready; startup is ready once listen() fired.
+    expect((await deps.readinessProbe()).ready).toBe(true);
+    expect((await deps.startupProbe()).ready).toBe(true);
+  });
+
+  it("readiness is NOT ready when the Redis ping does not return PONG", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    h.Redis.mockImplementation(function () {
+      return { ping: vi.fn(() => Promise.resolve("NOPE")) };
+    });
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+
+    const deps = h.GatewayApp.mock.calls[0]![0] as {
+      readinessProbe: () => Promise<{ ready: boolean }>;
+    };
+    expect((await deps.readinessProbe()).ready).toBe(false);
+  });
+
+  it("startup is NOT ready before the server begins listening", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    // Make listen() a no-op so the `listening` latch never flips during boot.
+    h.listen.mockImplementationOnce(() => undefined);
+    await runGateway();
+
+    const deps = h.GatewayApp.mock.calls[0]![0] as {
+      startupProbe: () => Promise<{ ready: boolean }>;
+    };
+    expect((await deps.startupProbe()).ready).toBe(false);
+  });
+
+  it("exits non-zero when a shutdown step fails", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    h.socketShutdown.mockRejectedValueOnce(new Error("socket drain failed"));
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+
+    await handlers["SIGTERM"]!();
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalled());
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("exits non-zero when the HTTP server fails to close", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    // server.close invokes its callback with an error → closeServer rejects.
+    h.serverClose.mockImplementationOnce((cb: (err?: Error) => void) =>
+      cb(new Error("close failed")),
+    );
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+
+    await handlers["SIGTERM"]!();
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalled());
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it("constructs the socket Redis clients with TLS options when configured", async () => {
