@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 
-export type MessagingDriver = "bullmq" | "kafka";
+export type MessagingDriver = "bullmq" | "kafka" | "amqp";
 
 export interface TlsConfig {
   ca: Buffer;
@@ -63,9 +63,9 @@ function getBoolEnv(key: string, defaultValue: boolean): boolean {
 }
 
 function parseMessagingDriver(value: string): MessagingDriver {
-  if (value === "kafka" || value === "bullmq") return value;
+  if (value === "kafka" || value === "bullmq" || value === "amqp") return value;
   throw new Error(
-    `MESSAGING_DRIVER must be "bullmq" or "kafka", got: "${value}"`,
+    `MESSAGING_DRIVER must be "bullmq", "kafka", or "amqp", got: "${value}"`,
   );
 }
 

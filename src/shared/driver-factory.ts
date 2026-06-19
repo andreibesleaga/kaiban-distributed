@@ -11,19 +11,23 @@
  */
 import { BullMQDriver } from "../infrastructure/messaging/bullmq-driver";
 import { KafkaDriver } from "../infrastructure/messaging/kafka-driver";
+import { AmqpDriver } from "../infrastructure/messaging/amqp-driver";
 import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import { createLogger } from "./logger";
 
-export type DriverType = "bullmq" | "kafka";
+export type DriverType = "bullmq" | "kafka" | "amqp";
 
 // Suppress KafkaJS v2 partitioner migration warning
 process.env["KAFKAJS_NO_PARTITIONER_WARNING"] = "1";
 
 const log = createLogger("Driver");
 
-/** Returns 'kafka' when MESSAGING_DRIVER=kafka, otherwise 'bullmq'. */
+/** Returns the configured driver: 'kafka' / 'amqp' (seam) / 'bullmq' (default). */
 export function getDriverType(): DriverType {
-  return process.env["MESSAGING_DRIVER"] === "kafka" ? "kafka" : "bullmq";
+  const v = process.env["MESSAGING_DRIVER"];
+  if (v === "kafka") return "kafka";
+  if (v === "amqp") return "amqp";
+  return "bullmq";
 }
 
 /**
@@ -34,20 +38,29 @@ export function getDriverType(): DriverType {
  *   Leading '-' is stripped automatically.
  */
 export function createDriver(groupIdSuffix = ""): IMessagingDriver {
-  if (getDriverType() === "kafka") {
-    const brokers = (process.env["KAFKA_BROKERS"] ?? "localhost:9092").split(
-      ",",
-    );
-    const clientId = process.env["KAFKA_CLIENT_ID"] ?? "kaiban-worker";
-    const base = process.env["KAFKA_GROUP_ID"] ?? "kaiban-group";
-    const suffix = groupIdSuffix.startsWith("-")
-      ? groupIdSuffix.slice(1)
-      : groupIdSuffix;
-    const groupId = suffix ? `${base}-${suffix}` : base;
-    log.info(`Kafka  brokers=${brokers.join(",")}  group=${groupId}`);
-    return new KafkaDriver({ brokers, clientId, groupId });
+  const type = getDriverType();
+  if (type === "kafka") return createKafkaDriver(groupIdSuffix);
+  if (type === "amqp") {
+    // Unimplemented universal-AMQP seam — methods throw on use (roadmap).
+    log.info("AMQP driver selected — unimplemented seam (use bullmq or kafka)");
+    return new AmqpDriver();
   }
+  return createBullMQDriver();
+}
 
+function createKafkaDriver(groupIdSuffix: string): IMessagingDriver {
+  const brokers = (process.env["KAFKA_BROKERS"] ?? "localhost:9092").split(",");
+  const clientId = process.env["KAFKA_CLIENT_ID"] ?? "kaiban-worker";
+  const base = process.env["KAFKA_GROUP_ID"] ?? "kaiban-group";
+  const suffix = groupIdSuffix.startsWith("-")
+    ? groupIdSuffix.slice(1)
+    : groupIdSuffix;
+  const groupId = suffix ? `${base}-${suffix}` : base;
+  log.info(`Kafka  brokers=${brokers.join(",")}  group=${groupId}`);
+  return new KafkaDriver({ brokers, clientId, groupId });
+}
+
+function createBullMQDriver(): IMessagingDriver {
   const url = new URL(process.env["REDIS_URL"] ?? "redis://localhost:6379");
   const host = url.hostname;
   const port = parseInt(url.port || "6379", 10);

@@ -142,6 +142,18 @@ export class AgentStatusTracker {
 }
 
 // @public (undocumented)
+export class AmqpDriver implements IMessagingDriver {
+    // (undocumented)
+    disconnect(): Promise<void>;
+    // (undocumented)
+    publish(_queueName: string, _payload: MessagePayload): Promise<void>;
+    // (undocumented)
+    subscribe(_queueName: string, _handler: (payload: MessagePayload) => Promise<void>): Promise<void>;
+    // (undocumented)
+    unsubscribe(_queueName: string): Promise<void>;
+}
+
+// @public (undocumented)
 export interface AppConfig {
     // (undocumented)
     agentIds: string[];
@@ -480,7 +492,7 @@ export interface MessagePayload {
 }
 
 // @public (undocumented)
-export type MessagingDriver = "bullmq" | "kafka";
+export type MessagingDriver = "bullmq" | "kafka" | "amqp";
 
 // @public (undocumented)
 export class MessagingError extends DomainError {

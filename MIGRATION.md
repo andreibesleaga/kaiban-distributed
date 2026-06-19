@@ -52,5 +52,7 @@
       - **New dependency:** `@a2a-js/sdk ^0.3` (Express peer already present).
       - **Deferred to a later beta (Phase A):** signed-AgentCard JWS verify, push-notification webhook
         delivery (only the capability flag ships), and the gRPC transport binding.
-- [ ] **Phase 3** — `MESSAGING_DRIVER=amqp` recognized (unimplemented seam; BullMQ/Kafka unchanged).
+- [x] **Phase 3** — `MESSAGING_DRIVER=amqp` recognized as an **unimplemented universal-AMQP seam**
+      (`AmqpDriver` stub throws on use; coverage-excluded; `AmqpDriver` is exported). BullMQ/Redis +
+      Kafka are unchanged and remain the two real drivers. See ADR-016 + `docs/messaging/AMQP.md`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)

@@ -9,7 +9,7 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       all: true,
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.d.ts'],
+      exclude: ['src/**/*.d.ts', 'src/infrastructure/messaging/amqp-driver.ts'],
       thresholds: {
         lines: 100,
         functions: 100,

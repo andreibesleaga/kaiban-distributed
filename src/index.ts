@@ -30,6 +30,7 @@ export type {
 // ── Messaging ────────────────────────────────────────────────────────────────
 export { BullMQDriver } from "./infrastructure/messaging/bullmq-driver";
 export { KafkaDriver } from "./infrastructure/messaging/kafka-driver";
+export { AmqpDriver } from "./infrastructure/messaging/amqp-driver";
 export * from "./infrastructure/messaging/interfaces";
 export * from "./infrastructure/messaging/channels";
 

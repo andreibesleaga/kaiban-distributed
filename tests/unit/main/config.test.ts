@@ -36,8 +36,13 @@ describe("loadConfig", () => {
   it("throws on invalid MESSAGING_DRIVER value", () => {
     process.env["MESSAGING_DRIVER"] = "rabbitmq";
     expect(() => loadConfig()).toThrow(
-      'MESSAGING_DRIVER must be "bullmq" or "kafka"',
+      'MESSAGING_DRIVER must be "bullmq", "kafka", or "amqp"',
     );
+  });
+
+  it("accepts the amqp seam value", () => {
+    process.env["MESSAGING_DRIVER"] = "amqp";
+    expect(loadConfig().messagingDriver).toBe("amqp");
   });
 
   it("throws when AGENT_IDS is not set", () => {
