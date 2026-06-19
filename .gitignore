@@ -41,3 +41,7 @@ BOOTSTRAP_MISSION.md
 temp/
 reports/
 .stryker-tmp/
+
+# Phase 4b staging-publish artifacts
+dist-staging/
+*.tgz
