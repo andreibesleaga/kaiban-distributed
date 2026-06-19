@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./shared": {
+      "types": "./dist/src/shared/index.d.ts",
+      "default": "./dist/src/shared/index.js"
     }
   },
   "files": [
@@ -39,8 +43,8 @@
     "typecheck": "tsc --noEmit",
     "lint:arch": "madge --circular --extensions ts src/",
     "bench": "vitest bench --run --config vitest.bench.config.mts",
-    "api:check": "npm run build && api-extractor run --verbose",
-    "api:update": "npm run build && api-extractor run --local --verbose",
+    "api:check": "npm run build && api-extractor run --verbose && api-extractor run -c api-extractor.shared.json --verbose",
+    "api:update": "npm run build && api-extractor run --local --verbose && api-extractor run -c api-extractor.shared.json --local --verbose",
     "test:mutation": "stryker run"
   },
   "repository": {
@@ -58,6 +62,10 @@
     "url": "https://github.com/andreibesleaga/kaiban-distributed/issues"
   },
   "homepage": "https://github.com/andreibesleaga/kaiban-distributed#readme",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "overrides": {
     "langsmith": ">=0.7.4",
     "expr-eval": ">=2.0.2",
