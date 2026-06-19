@@ -27,19 +27,29 @@ const h = vi.hoisted(() => {
   const a2aClose = vi.fn(() => Promise.resolve());
   const listen = vi.fn((_port: number, cb: () => void) => cb());
   const serverClose = vi.fn((cb: (err?: Error) => void) => cb());
+  const driverPublish = vi.fn(() => Promise.resolve());
+  const getStatus = vi.fn(() => "IDLE");
+  const hasSeen = vi.fn(() => true);
+  const mcpClose = vi.fn(() => Promise.resolve());
+  const mcpHandlePost = vi.fn(() => Promise.resolve());
+  const mcpHandleSession = vi.fn(() => Promise.resolve());
   return {
     socketInit,
     socketShutdown,
     driverDisconnect,
+    driverPublish,
+    getStatus,
+    hasSeen,
+    mcpClose,
     a2aStart,
     a2aClose,
     listen,
     serverClose,
     BullMQDriver: vi.fn(function () {
-      return { disconnect: driverDisconnect };
+      return { disconnect: driverDisconnect, publish: driverPublish };
     }),
     KafkaDriver: vi.fn(function () {
-      return { disconnect: driverDisconnect };
+      return { disconnect: driverDisconnect, publish: driverPublish };
     }),
     AgentActor: vi.fn(function () {
       return { start: vi.fn(), stop: vi.fn() };
@@ -53,10 +63,18 @@ const h = vi.hoisted(() => {
     buildA2AStack: vi.fn(function () {
       return {
         requestHandler: {},
-        statusTracker: {},
+        statusTracker: { getStatus, hasSeen },
         taskStore: {},
         start: a2aStart,
         close: a2aClose,
+      };
+    }),
+    createMcpHttpHandler: vi.fn(function (_deps?: unknown) {
+      return {
+        handlePost: mcpHandlePost,
+        handleSession: mcpHandleSession,
+        sessionCount: vi.fn(() => 0),
+        close: mcpClose,
       };
     }),
     CompletionRouter: vi.fn(function () {
@@ -97,6 +115,9 @@ vi.mock("../../../src/shared/driver-factory", () => ({
 }));
 vi.mock("../../../src/infrastructure/federation/a2a-gateway-factory", () => ({
   buildA2AStack: h.buildA2AStack,
+}));
+vi.mock("../../../src/infrastructure/federation/mcp-http", () => ({
+  createMcpHttpHandler: h.createMcpHttpHandler,
 }));
 vi.mock("../../../src/adapters/gateway/GatewayApp", () => ({
   GatewayApp: h.GatewayApp,
@@ -271,5 +292,104 @@ describe("runGateway", () => {
       [string, Record<string, unknown>]
     >;
     expect(redisCalls[0][1]).toHaveProperty("tls");
+  });
+
+  it("does NOT build an MCP handler when MCP_SERVER_ENABLED is unset", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+    expect(h.createMcpHttpHandler).not.toHaveBeenCalled();
+    const deps = h.GatewayApp.mock.calls[0]![0] as Record<string, unknown>;
+    expect(deps["mcpHandler"]).toBeUndefined();
+  });
+
+  it("wires the env-gated MCP handler and drains it on shutdown", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    process.env["MCP_SERVER_ENABLED"] = "true";
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+
+    expect(h.createMcpHttpHandler).toHaveBeenCalledTimes(1);
+    const gwDeps = h.GatewayApp.mock.calls[0]![0] as {
+      mcpHandler: unknown;
+      mcpPath: string;
+    };
+    expect(gwDeps.mcpHandler).toBeDefined();
+    expect(gwDeps.mcpPath).toBe("/mcp");
+
+    // Exercise the injected capability closures.
+    const mcpDeps = h.createMcpHttpHandler.mock.calls[0]![0] as {
+      requireDispatchConsent: boolean;
+      allow: Record<string, unknown>;
+      dispatchTask: (i: {
+        agentId: string;
+        instruction: string;
+        expectedOutput?: string;
+      }) => Promise<{ taskId: string; status: string }>;
+      listAgents: () => Array<{ id: string; status: string }>;
+      getAgentStatus: (id: string) => {
+        agentId: string;
+        status: string;
+        seen: boolean;
+      };
+    };
+    expect(mcpDeps.requireDispatchConsent).toBe(true);
+    expect(mcpDeps.allow).toEqual({});
+
+    const dispatched = await mcpDeps.dispatchTask({
+      agentId: "gateway",
+      instruction: "do it",
+      expectedOutput: "x",
+    });
+    expect(dispatched.status).toBe("submitted");
+    expect(h.driverPublish).toHaveBeenCalledWith(
+      "kaiban-agents-gateway",
+      expect.objectContaining({
+        agentId: "gateway",
+        data: { instruction: "do it", expectedOutput: "x" },
+      }),
+    );
+
+    // expectedOutput omitted when absent.
+    await mcpDeps.dispatchTask({ agentId: "gateway", instruction: "again" });
+    expect(h.driverPublish).toHaveBeenLastCalledWith(
+      "kaiban-agents-gateway",
+      expect.objectContaining({ data: { instruction: "again" } }),
+    );
+
+    // Invalid input rejects before any publish.
+    await expect(
+      mcpDeps.dispatchTask({ agentId: "", instruction: "x" }),
+    ).rejects.toThrow("agentId is required");
+
+    expect(mcpDeps.listAgents()).toEqual([{ id: "gateway", status: "IDLE" }]);
+    expect(mcpDeps.getAgentStatus("gateway")).toEqual({
+      agentId: "gateway",
+      status: "IDLE",
+      seen: true,
+    });
+
+    // SIGTERM drains the MCP handler.
+    await handlers["SIGTERM"]!();
+    await vi.waitFor(() => expect(h.mcpClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("passes allow-list filters through to the MCP handler", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    process.env["MCP_SERVER_ENABLED"] = "true";
+    process.env["MCP_ALLOWED_TOOLS"] = "dispatch_task";
+    process.env["MCP_ALLOWED_RESOURCES"] = "agents";
+    process.env["MCP_ALLOWED_PROMPTS"] = "delegate_task";
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+
+    const mcpDeps = h.createMcpHttpHandler.mock.calls[0]![0] as {
+      allow: Record<string, string[]>;
+    };
+    expect(mcpDeps.allow).toEqual({
+      tools: ["dispatch_task"],
+      resources: ["agents"],
+      prompts: ["delegate_task"],
+    });
   });
 });

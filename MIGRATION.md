@@ -63,4 +63,16 @@
       serves **`/ready` + `/startup`** probes and `GatewayApp` gains optional
       `readinessProbe`/`startupProbe` deps. Graceful-shutdown + DLQ-replay helpers added
       (`src/resilience/*`). Additive for library consumers. See ADR-018.
+- [x] **Phase M (BETA.2)** — MCP **server**: a first-party Model Context Protocol surface exposing
+      allow-listed **Tools** (`dispatch_task`) + **Resources** (`kaiban://agents`,
+      `kaiban://agents/{agentId}/status`) + **Prompts** (`delegate_task`) + **Elicitation** (HITL
+      consent) over **Streamable HTTP**, mounted on the gateway at `MCP_SERVER_PATH` (default `/mcp`)
+      behind the existing helmet + rate-limit + JWT chain. **Env-gated OFF by default**
+      (`MCP_SERVER_ENABLED`; `MCP_DISPATCH_CONSENT` fail-closed; optional
+      `MCP_ALLOWED_{TOOLS,RESOURCES,PROMPTS}` least-privilege filters — see `.env.example` +
+      `docs/federation/MCP.md`). Dispatch reuses the A2A `validateTaskInput` caps + `taskId` dedup.
+      **New direct dependency:** `zod ^4.4.3` (already present transitively via the MCP SDK).
+      **Library API (additive):** new exports `buildMcpServer`, `createMcpHttpHandler` + the `Mcp*`
+      types and `MCP_*` capability-name constants; `McpConfig` added to `AppConfig`. A2A stays the
+      public front door; MCP is the internal surface. See `docs/decisions/ADR-017`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)

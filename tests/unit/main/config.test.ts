@@ -108,4 +108,31 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.validHitlDecisions).toEqual(["PUBLISH", "REJECT"]);
   });
+
+  it("MCP server is off by default with no allow-list filters", () => {
+    const { mcp } = loadConfig();
+    expect(mcp).toEqual({
+      enabled: false,
+      path: "/mcp",
+      requireDispatchConsent: true,
+    });
+  });
+
+  it("reads the MCP server env (enable, path, consent, allow-lists)", () => {
+    process.env["MCP_SERVER_ENABLED"] = "true";
+    process.env["MCP_SERVER_PATH"] = "/federation/mcp";
+    process.env["MCP_DISPATCH_CONSENT"] = "false";
+    process.env["MCP_ALLOWED_TOOLS"] = "dispatch_task";
+    process.env["MCP_ALLOWED_RESOURCES"] = " agents , agent-status ";
+    process.env["MCP_ALLOWED_PROMPTS"] = "";
+    const { mcp } = loadConfig();
+    expect(mcp).toEqual({
+      enabled: true,
+      path: "/federation/mcp",
+      requireDispatchConsent: false,
+      allowedTools: ["dispatch_task"],
+      allowedResources: ["agents", "agent-status"],
+      allowedPrompts: [],
+    });
+  });
 });

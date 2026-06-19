@@ -16,6 +16,7 @@
 export { loadConfig } from "./main/config";
 export type {
   AppConfig,
+  McpConfig,
   MessagingDriver,
   TlsConfig,
 } from "./main/config";
@@ -67,6 +68,25 @@ export type {
   A2AStackOptions,
 } from "./infrastructure/federation/a2a-gateway-factory";
 export { MCPFederationClient } from "./infrastructure/federation/mcp-client";
+// MCP server (Phase M, ADR-017): internal Tools/Resources/Prompts/Elicitation
+// surface over Streamable HTTP. A2A stays the public front door; MCP is internal.
+export {
+  buildMcpServer,
+  MCP_TOOL_DISPATCH,
+  MCP_RESOURCE_AGENTS,
+  MCP_RESOURCE_AGENT_STATUS,
+  MCP_PROMPT_DELEGATE,
+} from "./infrastructure/federation/mcp-server";
+export type {
+  McpServerDeps,
+  McpAllowList,
+  McpDispatchInput,
+  McpDispatchResult,
+  McpAgentSummary,
+  McpAgentStatusDetail,
+} from "./infrastructure/federation/mcp-server";
+export { createMcpHttpHandler } from "./infrastructure/federation/mcp-http";
+export type { McpHttpHandler } from "./infrastructure/federation/mcp-http";
 
 // ── Orchestration / resilience (master plan §B5.1 Phase R, ADR-018) ──────────
 // Crash-safe single-active orchestrator (Redis checkpoint→resume, taskId

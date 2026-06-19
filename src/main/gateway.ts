@@ -1,10 +1,19 @@
 import { createServer } from "http";
+import { randomUUID } from "crypto";
 import { Redis } from "ioredis";
 import { loadConfig } from "./config";
 import { buildMessagingDriver, initRuntimeTelemetry } from "./runtime";
 import { createDriver, getDriverType } from "../shared/driver-factory";
 import { CompletionRouter } from "../shared/completion-router";
 import { buildA2AStack } from "../infrastructure/federation/a2a-gateway-factory";
+import {
+  createMcpHttpHandler,
+  type McpHttpHandler,
+} from "../infrastructure/federation/mcp-http";
+import { validateTaskInput } from "../infrastructure/federation/a2a-input-validation";
+import type { AppConfig } from "./config";
+import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
+import type { AgentStatusTracker } from "../infrastructure/federation/agent-status-tracker";
 import { GatewayApp } from "../adapters/gateway/GatewayApp";
 import { SocketGateway } from "../adapters/gateway/SocketGateway";
 import { buildReadinessProbe, buildStartupProbe } from "../resilience/health";
@@ -20,6 +29,64 @@ const SHUTDOWN_DEADLINE_MS = 25_000;
 function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+/**
+ * Build the env-gated MCP Streamable-HTTP handler (Phase M, ADR-017). Returns
+ * `undefined` when disabled (default). `dispatch_task` publishes to the agent
+ * mailbox through the SAME validated path as A2A (`validateTaskInput` caps +
+ * `taskId` dedup); the agent lookups read the live status tracker.
+ */
+function buildGatewayMcpHandler(
+  config: AppConfig,
+  driver: Pick<IMessagingDriver, "publish">,
+  statusTracker: Pick<AgentStatusTracker, "getStatus" | "hasSeen">,
+): McpHttpHandler | undefined {
+  if (!config.mcp.enabled) return undefined;
+  return createMcpHttpHandler({
+    requireDispatchConsent: config.mcp.requireDispatchConsent,
+    allow: {
+      ...(config.mcp.allowedTools ? { tools: config.mcp.allowedTools } : {}),
+      ...(config.mcp.allowedResources
+        ? { resources: config.mcp.allowedResources }
+        : {}),
+      ...(config.mcp.allowedPrompts
+        ? { prompts: config.mcp.allowedPrompts }
+        : {}),
+    },
+    dispatchTask: async ({ agentId, instruction, expectedOutput }) => {
+      const validation = validateTaskInput({
+        agentId,
+        instruction,
+        ...(expectedOutput !== undefined ? { expectedOutput } : {}),
+      });
+      if ("error" in validation) throw new Error(validation.error.message);
+      const taskId = randomUUID();
+      const p = validation.params;
+      await driver.publish(`kaiban-agents-${p.agentId}`, {
+        taskId,
+        agentId: p.agentId,
+        data: {
+          instruction: p.instruction,
+          ...(p.expectedOutput !== undefined
+            ? { expectedOutput: p.expectedOutput }
+            : {}),
+        },
+        timestamp: Date.now(),
+      });
+      return { taskId, status: "submitted" };
+    },
+    listAgents: () =>
+      config.agentIds.map((id) => ({
+        id,
+        status: statusTracker.getStatus(id),
+      })),
+    getAgentStatus: (id) => ({
+      agentId: id,
+      status: statusTracker.getStatus(id),
+      seen: statusTracker.hasSeen(id),
+    }),
   });
 }
 
@@ -93,12 +160,21 @@ export async function runGateway(): Promise<void> {
   });
   const startupProbe = buildStartupProbe({ started: () => listening });
 
+  // MCP server (Phase M) — internal Tools/Resources/Prompts/Elicitation surface,
+  // OFF unless MCP_SERVER_ENABLED. Mounted behind the gateway's security chain.
+  const mcpHandler = buildGatewayMcpHandler(
+    config,
+    messagingDriver,
+    a2a.statusTracker,
+  );
+
   const gateway = new GatewayApp({
     requestHandler: a2a.requestHandler,
     statusTracker: a2a.statusTracker,
     trustProxy: config.security.trustProxy,
     readinessProbe,
     startupProbe,
+    ...(mcpHandler ? { mcpHandler, mcpPath: config.mcp.path } : {}),
   });
   const httpServer = createServer(gateway.app);
   const socketGateway = new SocketGateway(
@@ -129,6 +205,9 @@ export async function runGateway(): Promise<void> {
       steps: [
         { name: "stop-http-intake", run: (): Promise<void> => closeServer(httpServer) },
         { name: "drain-sockets", run: (): Promise<void> => socketGateway.shutdown() },
+        ...(mcpHandler
+          ? [{ name: "close-mcp", run: (): Promise<void> => mcpHandler.close() }]
+          : []),
         { name: "close-a2a", run: (): Promise<void> => a2a.close() },
         {
           name: "close-failed-driver",

@@ -11,12 +11,15 @@ import type { AgentExecutor } from '@a2a-js/sdk/server';
 import { Application } from 'express';
 import type { ExecutionEventBus } from '@a2a-js/sdk/server';
 import type { IAgentParams } from 'kaibanjs';
+import type { IncomingMessage } from 'http';
 import jwt from 'jsonwebtoken';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { propagation } from '@opentelemetry/api';
 import { QueueOptions } from 'bullmq';
 import type Redis from 'ioredis';
 import type { RequestContext } from '@a2a-js/sdk/server';
 import { Server } from 'http';
+import type { ServerResponse } from 'http';
 import type { Task } from 'kaibanjs';
 import type { Task as Task_2 } from '@a2a-js/sdk';
 import type { TaskStore } from '@a2a-js/sdk/server';
@@ -169,6 +172,8 @@ export interface AppConfig {
     // (undocumented)
     maxTokenBudget: number;
     // (undocumented)
+    mcp: McpConfig;
+    // (undocumented)
     messagingDriver: MessagingDriver;
     // (undocumented)
     otelEndpoint?: string;
@@ -208,6 +213,9 @@ export function buildA2AStack(opts: A2AStackOptions): A2AStack;
 export function buildAgentCard(input: AgentCardInput): AgentCard;
 
 // @public
+export function buildMcpServer(deps: McpServerDeps): McpServer;
+
+// @public
 export function buildReadinessProbe(deps: ReadinessDeps): () => Promise<ProbeResult>;
 
 // Warning: (ae-forgotten-export) The symbol "StartupDeps" needs to be exported by the entry point index.d.ts
@@ -241,6 +249,9 @@ export const COMPLETED_CHANNEL = "kaiban-events-completed";
 
 // @public
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
+
+// @public
+export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
 
 // @public (undocumented)
 export interface DistributedAgentState {
@@ -360,6 +371,8 @@ export class GatewayApp {
 
 // @public (undocumented)
 export interface GatewayAppDeps {
+    mcpHandler?: McpHttpHandler;
+    mcpPath?: string;
     readinessProbe?: () => Promise<ProbeResult>;
     requestHandler: A2ARequestHandler;
     startupProbe?: () => Promise<ProbeResult>;
@@ -529,6 +542,80 @@ export class KaibanTeamBridge {
 export function loadConfig(): AppConfig;
 
 // @public (undocumented)
+export const MCP_PROMPT_DELEGATE = "delegate_task";
+
+// @public (undocumented)
+export const MCP_RESOURCE_AGENT_STATUS = "agent-status";
+
+// @public (undocumented)
+export const MCP_RESOURCE_AGENTS = "agents";
+
+// @public
+export const MCP_TOOL_DISPATCH = "dispatch_task";
+
+// @public
+export interface McpAgentStatusDetail {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    seen: boolean;
+    // (undocumented)
+    status: string;
+}
+
+// @public
+export interface McpAgentSummary {
+    // (undocumented)
+    id: string;
+    // (undocumented)
+    status: string;
+}
+
+// @public
+export interface McpAllowList {
+    // (undocumented)
+    prompts?: string[];
+    // (undocumented)
+    resources?: string[];
+    // (undocumented)
+    tools?: string[];
+}
+
+// @public
+export interface McpConfig {
+    // (undocumented)
+    allowedPrompts?: string[];
+    // (undocumented)
+    allowedResources?: string[];
+    // (undocumented)
+    allowedTools?: string[];
+    // (undocumented)
+    enabled: boolean;
+    // (undocumented)
+    path: string;
+    // (undocumented)
+    requireDispatchConsent: boolean;
+}
+
+// @public
+export interface McpDispatchInput {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    expectedOutput?: string;
+    // (undocumented)
+    instruction: string;
+}
+
+// @public
+export interface McpDispatchResult {
+    // (undocumented)
+    status: string;
+    // (undocumented)
+    taskId: string;
+}
+
+// @public (undocumented)
 export class MCPFederationClient {
     constructor(serverCommand: string, serverArgs?: string[]);
     // (undocumented)
@@ -539,6 +626,26 @@ export class MCPFederationClient {
     disconnect(): Promise<void>;
     // (undocumented)
     listTools(): Promise<unknown>;
+}
+
+// @public (undocumented)
+export interface McpHttpHandler {
+    close(): Promise<void>;
+    handlePost(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown): Promise<void>;
+    handleSession(req: IncomingMessage, res: ServerResponse): Promise<void>;
+    sessionCount(): number;
+}
+
+// @public (undocumented)
+export interface McpServerDeps {
+    allow?: McpAllowList;
+    dispatchTask(input: McpDispatchInput): Promise<McpDispatchResult>;
+    getAgentStatus(agentId: string): McpAgentStatusDetail | Promise<McpAgentStatusDetail>;
+    listAgents(): McpAgentSummary[] | Promise<McpAgentSummary[]>;
+    name?: string;
+    requireDispatchConsent?: boolean;
+    // (undocumented)
+    version?: string;
 }
 
 // @public (undocumented)

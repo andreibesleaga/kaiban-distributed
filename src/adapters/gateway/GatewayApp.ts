@@ -14,6 +14,7 @@ import {
 import type { A2ARequestHandler } from "@a2a-js/sdk/server";
 import { verifyA2AToken } from "../../infrastructure/security/a2a-auth";
 import type { AgentStatusTracker } from "../../infrastructure/federation/agent-status-tracker";
+import type { McpHttpHandler } from "../../infrastructure/federation/mcp-http";
 import type { ProbeResult } from "../../resilience/health";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
@@ -87,6 +88,14 @@ export interface GatewayAppDeps {
    * 200 once boot completes, 503 until then. Unset ⇒ always ready.
    */
   startupProbe?: () => Promise<ProbeResult>;
+  /**
+   * MCP Streamable-HTTP handler (Phase M). When set, the gateway mounts
+   * POST/GET/DELETE at `mcpPath` behind the same helmet + rate-limit + JWT chain.
+   * Unset ⇒ the MCP surface is not exposed (default-off).
+   */
+  mcpHandler?: McpHttpHandler;
+  /** Path the MCP surface is mounted at (defaults to `/mcp`). */
+  mcpPath?: string;
 }
 
 const READY: ProbeResult = { ready: true, checks: [] };
@@ -114,6 +123,8 @@ export class GatewayApp {
   >;
   private readonly readinessProbe: () => Promise<ProbeResult>;
   private readonly startupProbe: () => Promise<ProbeResult>;
+  private readonly mcpHandler?: McpHttpHandler;
+  private readonly mcpPath: string;
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
   private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 5);
 
@@ -123,6 +134,8 @@ export class GatewayApp {
     const alwaysReady = (): Promise<ProbeResult> => Promise.resolve(READY);
     this.readinessProbe = deps.readinessProbe ?? alwaysReady;
     this.startupProbe = deps.startupProbe ?? alwaysReady;
+    this.mcpHandler = deps.mcpHandler;
+    this.mcpPath = deps.mcpPath ?? "/mcp";
     this.app = express();
 
     // Trust proxy — enables correct req.ip behind reverse proxies (Railway, K8s, Nginx).
@@ -187,7 +200,32 @@ export class GatewayApp {
       }),
     );
 
+    // MCP Streamable-HTTP surface (Phase M) — only when a handler is provided.
+    if (this.mcpHandler) this.registerMcpRoutes(this.mcpHandler);
+
     this.app.use(this.handleNotFound.bind(this));
+  }
+
+  /**
+   * Mount the MCP surface behind the same security chain as A2A: per-IP rate
+   * limiting then env-gated JWT auth. POST opens/uses a session; GET streams
+   * notifications; DELETE terminates a session.
+   */
+  private registerMcpRoutes(handler: McpHttpHandler): void {
+    const chain = [
+      this.rateLimit.bind(this),
+      this.requireA2AAuth.bind(this),
+      this.enforceRequestTimeout.bind(this),
+    ];
+    this.app.post(this.mcpPath, ...chain, (req: Request, res: Response) => {
+      void handler.handlePost(req, res, req.body);
+    });
+    this.app.get(this.mcpPath, ...chain, (req: Request, res: Response) => {
+      void handler.handleSession(req, res);
+    });
+    this.app.delete(this.mcpPath, ...chain, (req: Request, res: Response) => {
+      void handler.handleSession(req, res);
+    });
   }
 
   private requestLogger(req: Request, res: Response, next: NextFunction): void {

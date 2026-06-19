@@ -9,6 +9,20 @@ export interface TlsConfig {
   rejectUnauthorized: boolean;
 }
 
+/**
+ * MCP server surface (master plan §B5.1 Phase M). OFF by default — `enabled`
+ * must be explicitly turned on. `allow*` lists are optional least-privilege
+ * filters; when unset, the full curated capability set ships.
+ */
+export interface McpConfig {
+  enabled: boolean;
+  path: string;
+  requireDispatchConsent: boolean;
+  allowedTools?: string[];
+  allowedResources?: string[];
+  allowedPrompts?: string[];
+}
+
 export interface AppConfig {
   port: number;
   serviceName: string;
@@ -30,6 +44,7 @@ export interface AppConfig {
   validHitlDecisions: string[];
   agentTimeoutMs: number;
   maxTokenBudget: number;
+  mcp: McpConfig;
   security: {
     semanticFirewallEnabled: boolean;
     semanticFirewallLlmUrl?: string;
@@ -62,6 +77,16 @@ function getBoolEnv(key: string, defaultValue: boolean): boolean {
   return val === "true" || val === "1";
 }
 
+/** Parse an optional comma-separated env var; unset ⇒ undefined (no filter). */
+function parseCsvEnv(key: string): string[] | undefined {
+  const raw = process.env[key];
+  if (raw === undefined) return undefined;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function parseMessagingDriver(value: string): MessagingDriver {
   if (value === "kafka" || value === "bullmq" || value === "amqp") return value;
   throw new Error(
@@ -87,6 +112,9 @@ export function loadConfig(): AppConfig {
   const agentIdsRaw = requireEnv("AGENT_IDS");
   const redisUrl = getEnv("REDIS_URL", "redis://localhost:6379");
   const parsed = new URL(redisUrl);
+  const mcpAllowedTools = parseCsvEnv("MCP_ALLOWED_TOOLS");
+  const mcpAllowedResources = parseCsvEnv("MCP_ALLOWED_RESOURCES");
+  const mcpAllowedPrompts = parseCsvEnv("MCP_ALLOWED_PROMPTS");
 
   return {
     port: parseInt(getEnv("PORT", "3000"), 10),
@@ -123,6 +151,14 @@ export function loadConfig(): AppConfig {
       .filter(Boolean),
     agentTimeoutMs: parseInt(getEnv("AGENT_TIMEOUT_MS", "300000"), 10),
     maxTokenBudget: parseInt(getEnv("MAX_TOKEN_BUDGET", "0"), 10),
+    mcp: {
+      enabled: getBoolEnv("MCP_SERVER_ENABLED", false),
+      path: getEnv("MCP_SERVER_PATH", "/mcp"),
+      requireDispatchConsent: getBoolEnv("MCP_DISPATCH_CONSENT", true),
+      ...(mcpAllowedTools ? { allowedTools: mcpAllowedTools } : {}),
+      ...(mcpAllowedResources ? { allowedResources: mcpAllowedResources } : {}),
+      ...(mcpAllowedPrompts ? { allowedPrompts: mcpAllowedPrompts } : {}),
+    },
     security: {
       semanticFirewallEnabled: getBoolEnv("SEMANTIC_FIREWALL_ENABLED", false),
       semanticFirewallLlmUrl: process.env["SEMANTIC_FIREWALL_LLM_URL"],
