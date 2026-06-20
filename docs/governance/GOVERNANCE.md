@@ -92,6 +92,26 @@ mem.put("tenant-a", "k", value, { provenance: { source: "tool:web", trust: "low"
 mem.get("tenant-a", "k", { now, role: "operator", minTrust: "low" });  // RBAC + TTL + trust enforced
 ```
 
+## Hot-path enforcement (ADR-021)
+
+When `GOVERNANCE_ENABLED` is set, the gate is **enforced in the deployed `AgentActor` execution loop**,
+not just callable. The actor consults an optional
+[`IAdmissionGate`](../../src/domain/security/admission-gate.ts) as a third pre-execution guard (after
+the circuit breaker + semantic firewall); a blocked verdict routes the task to the DLQ
+(`blocked_by_admission_gate`) **without running the handler** (no tokens burned).
+`buildSecurityDeps`/`buildWorkerAdmissionGate` wire **policy-as-code** into every worker by default;
+**cost-reservation** enforcement is added when economics is enabled **and** a fleet `CostLimiterPort`
+(e.g. a Redis `RateCostLimiter`) is injected. Wrap any `ActionGate` (with cost + registry validators)
+via `buildAdmissionGate` and inject it as `AgentActorDeps.admissionGate` for full enforcement.
+
+```ts
+import { buildAdmissionGate } from "kaiban-distributed";
+const admissionGate = buildAdmissionGate(actionGate, {
+  estimatedCostUnitsOf: (p) => Number(p.data["estimatedCostUnits"] ?? 0),
+});
+new AgentActor(agentId, driver, queue, handler, { firewall, circuitBreaker, admissionGate });
+```
+
 ## Guarantees / invariants
 - **Default-OFF** (invariant #8): disabled gate = no-op `allow`; the memory store is a new opt-in component.
 - **Non-bypassable when enabled** (no per-request opt-out); all validators run so the audit is complete.

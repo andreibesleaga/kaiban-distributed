@@ -16,6 +16,9 @@ import type { ITokenProvider } from "../domain/security/token-provider";
 import { HeuristicFirewall } from "../infrastructure/security/heuristic-firewall";
 import { SlidingWindowBreaker } from "../infrastructure/security/sliding-window-breaker";
 import { EnvTokenProvider } from "../infrastructure/security/env-token-provider";
+import { buildWorkerAdmissionGate } from "./admission-gate";
+import type { GovernanceConfig } from "../governance/types";
+import type { IAdmissionGate } from "../domain/security/admission-gate";
 import { createLogger } from "./logger";
 
 const log = createLogger("Security");
@@ -25,6 +28,24 @@ export function getBoolEnv(key: string, defaultValue: boolean): boolean {
   const val = process.env[key];
   if (!val) return defaultValue;
   return val === "true" || val === "1";
+}
+
+/**
+ * Governance Action Gate (Phase G, ADR-021) — policy-as-code enforcement in the
+ * actor hot path, env-gated OFF (`GOVERNANCE_ENABLED` / `GOVERNANCE_POLICIES_PATH`).
+ * Cost-reservation enforcement needs a fleet limiter (a deployment choice) and is
+ * wired by callers that inject one via `buildWorkerAdmissionGate`.
+ */
+function buildAdmissionGateFromEnv(): IAdmissionGate | undefined {
+  const governance: GovernanceConfig = {
+    enabled: getBoolEnv("GOVERNANCE_ENABLED", false),
+    ...(process.env["GOVERNANCE_POLICIES_PATH"]
+      ? { policiesPath: process.env["GOVERNANCE_POLICIES_PATH"] }
+      : {}),
+  };
+  const gate = buildWorkerAdmissionGate(governance);
+  if (gate) log.info("Governance Action Gate ENABLED");
+  return gate;
 }
 
 /**
@@ -51,11 +72,14 @@ export function buildSecurityDeps(): {
     10,
   );
 
+  const admissionGate = buildAdmissionGateFromEnv();
+
   const actorDeps: AgentActorDeps = {
     firewall: firewallEnabled ? new HeuristicFirewall() : undefined,
     circuitBreaker: circuitBreakerEnabled
       ? new SlidingWindowBreaker(threshold, windowMs)
       : undefined,
+    ...(admissionGate ? { admissionGate } : {}),
   };
 
   const tokenProvider = jitTokensEnabled ? new EnvTokenProvider() : undefined;

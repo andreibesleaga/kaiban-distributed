@@ -9,6 +9,7 @@ import {
 } from "../../infrastructure/messaging/channels";
 import type { ISemanticFirewall } from "../../domain/security/semantic-firewall";
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
+import type { IAdmissionGate } from "../../domain/security/admission-gate";
 import {
   recordAnomalyEvent,
   recordMessageProcessed,
@@ -60,6 +61,12 @@ const DEFAULT_TASK_TIMEOUT_MS = 300_000;
 export interface AgentActorDeps {
   firewall?: ISemanticFirewall;
   circuitBreaker?: ICircuitBreaker;
+  /**
+   * Optional pre-execution admission gate (Phase G, ADR-021). Consulted after the
+   * circuit breaker + firewall; a blocked verdict routes the task to the DLQ
+   * without executing. Unset ⇒ no governance/economics gating (default behavior).
+   */
+  admissionGate?: IAdmissionGate;
   /** Max ms a single task handler may run before being timed out (default: 300_000) */
   taskTimeoutMs?: number;
 }
@@ -71,6 +78,7 @@ export class AgentActor {
   private taskHandler?: TaskHandler;
   private firewall?: ISemanticFirewall;
   private circuitBreaker?: ICircuitBreaker;
+  private admissionGate?: IAdmissionGate;
   private taskTimeoutMs: number;
   /** In-flight task abort controllers, so stop() can cancel running work. */
   private readonly inFlight = new Set<AbortController>();
@@ -88,6 +96,7 @@ export class AgentActor {
     this.taskHandler = taskHandler;
     this.firewall = deps?.firewall;
     this.circuitBreaker = deps?.circuitBreaker;
+    this.admissionGate = deps?.admissionGate;
     this.taskTimeoutMs = deps?.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
   }
 
@@ -123,41 +132,83 @@ export class AgentActor {
     await this.executeWithRetries(payload);
   }
 
+  /**
+   * Ordered pre-execution guards (each routes a blocked task to the DLQ and
+   * returns true): circuit breaker → semantic firewall → admission gate
+   * (governance/economics, Phase G). Short-circuits on the first block. Absent
+   * guards add no `await` (so a guard-less actor keeps its original timing).
+   */
   private async isBlockedByGuards(payload: MessagePayload): Promise<boolean> {
     if (this.circuitBreaker?.isOpen()) {
-      log.warn(
-        { agentId: sanitizeId(this.id), taskId: payload.taskId },
-        "Circuit breaker OPEN — rejecting task",
-      );
-      recordAnomalyEvent("circuit_breaker.rejected", {
-        agentId: sanitizeId(this.id),
-        taskId: payload.taskId,
-      });
-      await this.publishToDlq(payload, "circuit_breaker_open");
+      await this.blockByBreaker(payload);
       return true;
     }
-
-    if (this.firewall) {
-      const verdict = await this.firewall.evaluate(payload);
-      if (!verdict.allowed) {
-        log.warn(
-          { agentId: sanitizeId(this.id), reason: verdict.reason ?? "unknown" },
-          "Blocked by semantic firewall",
-        );
-        recordAnomalyEvent("firewall.blocked", {
-          agentId: sanitizeId(this.id),
-          reason: verdict.reason ?? "unknown",
-        });
-        await this.publishToDlq(
-          payload,
-          "blocked_by_semantic_firewall",
-          verdict.reason,
-        );
-        return true;
-      }
+    if (this.firewall && (await this.evaluateFirewall(this.firewall, payload))) {
+      return true;
     }
-
+    if (
+      this.admissionGate &&
+      (await this.evaluateAdmissionGate(this.admissionGate, payload))
+    ) {
+      return true;
+    }
     return false;
+  }
+
+  private async blockByBreaker(payload: MessagePayload): Promise<void> {
+    log.warn(
+      { agentId: sanitizeId(this.id), taskId: payload.taskId },
+      "Circuit breaker OPEN — rejecting task",
+    );
+    recordAnomalyEvent("circuit_breaker.rejected", {
+      agentId: sanitizeId(this.id),
+      taskId: payload.taskId,
+    });
+    await this.publishToDlq(payload, "circuit_breaker_open");
+  }
+
+  private async evaluateFirewall(
+    firewall: ISemanticFirewall,
+    payload: MessagePayload,
+  ): Promise<boolean> {
+    const verdict = await firewall.evaluate(payload);
+    if (verdict.allowed) return false;
+    log.warn(
+      { agentId: sanitizeId(this.id), reason: verdict.reason ?? "unknown" },
+      "Blocked by semantic firewall",
+    );
+    recordAnomalyEvent("firewall.blocked", {
+      agentId: sanitizeId(this.id),
+      reason: verdict.reason ?? "unknown",
+    });
+    await this.publishToDlq(
+      payload,
+      "blocked_by_semantic_firewall",
+      verdict.reason,
+    );
+    return true;
+  }
+
+  private async evaluateAdmissionGate(
+    gate: IAdmissionGate,
+    payload: MessagePayload,
+  ): Promise<boolean> {
+    const verdict = await gate.evaluate(payload);
+    if (verdict.allowed) return false;
+    log.warn(
+      { agentId: sanitizeId(this.id), reason: verdict.reason ?? "unknown" },
+      "Blocked by admission gate",
+    );
+    recordAnomalyEvent("admission_gate.blocked", {
+      agentId: sanitizeId(this.id),
+      reason: verdict.reason ?? "unknown",
+    });
+    await this.publishToDlq(
+      payload,
+      "blocked_by_admission_gate",
+      verdict.reason,
+    );
+    return true;
   }
 
   private async executeWithRetries(payload: MessagePayload): Promise<void> {

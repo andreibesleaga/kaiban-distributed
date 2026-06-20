@@ -99,6 +99,13 @@ export interface ActionGateDeps {
 export type AdmissionDecision = "allow" | "degrade" | "reject";
 
 // @public (undocumented)
+export interface AdmissionGateOptions {
+    estimatedCostUnitsOf?: (payload: EvaluationPayload) => number | undefined;
+    operation?: GateOperation;
+    tenantIdOf?: (payload: EvaluationPayload) => string | undefined;
+}
+
+// @public (undocumented)
 export interface AdmissionResult {
     // (undocumented)
     decision: AdmissionDecision;
@@ -106,6 +113,12 @@ export interface AdmissionResult {
     reason: string;
     remaining: number;
     utilization: number;
+}
+
+// @public (undocumented)
+export interface AdmissionVerdict {
+    allowed: boolean;
+    reason?: string;
 }
 
 // @public
@@ -122,6 +135,7 @@ export class AgentActor {
 
 // @public (undocumented)
 export interface AgentActorDeps {
+    admissionGate?: IAdmissionGate;
     // (undocumented)
     circuitBreaker?: ICircuitBreaker;
     // (undocumented)
@@ -311,6 +325,9 @@ export interface BudgetScope {
 export function buildA2AStack(opts: A2AStackOptions): A2AStack;
 
 // @public
+export function buildAdmissionGate(gate: Pick<ActionGate, "evaluate">, opts?: AdmissionGateOptions): IAdmissionGate;
+
+// @public
 export function buildAgentCard(input: AgentCardInput): AgentCard;
 
 // @public
@@ -323,6 +340,9 @@ export function buildReadinessProbe(deps: ReadinessDeps): () => Promise<ProbeRes
 //
 // @public
 export function buildStartupProbe(deps: StartupDeps): () => Promise<ProbeResult>;
+
+// @public
+export function buildWorkerAdmissionGate(governance: GovernanceConfig, deps?: WorkerAdmissionGateDeps): IAdmissionGate | undefined;
 
 // @public (undocumented)
 export class BullMQDriver implements IMessagingDriver {
@@ -634,6 +654,11 @@ export const HITL_CHANNEL = "kaiban-hitl-decisions";
 
 // @public (undocumented)
 export const HITL_SOCKET_EVENT = "hitl:decision";
+
+// @public (undocumented)
+export interface IAdmissionGate {
+    evaluate(payload: EvaluationPayload): Promise<AdmissionVerdict>;
+}
 
 // @public (undocumented)
 export interface ICircuitBreaker {
@@ -1318,6 +1343,13 @@ export function verifyA2AToken(authHeader: string | undefined): jwt.JwtPayload;
 
 // @public
 export function verifyBoardToken(token: string): jwt.JwtPayload;
+
+// @public (undocumented)
+export interface WorkerAdmissionGateDeps {
+    costLimiter?: CostLimiterPort;
+    economics?: EconomicsConfig;
+    options?: AdmissionGateOptions;
+}
 
 // @public
 export type WorkflowCheckpoint = Record<string, StepCheckpoint>;

@@ -171,6 +171,18 @@ export type {
   GetOptions,
 } from "./memory/secure-memory-store";
 
+// Hot-path enforcement adapters (Phase G, ADR-021): wrap the Action Gate into the
+// actor's IAdmissionGate guard. `buildWorkerAdmissionGate` assembles the default
+// worker gate (policy-as-code + optional cost reservation) from config.
+export {
+  buildAdmissionGate,
+  buildWorkerAdmissionGate,
+} from "./shared/admission-gate";
+export type {
+  AdmissionGateOptions,
+  WorkerAdmissionGateDeps,
+} from "./shared/admission-gate";
+
 // ── Gateway / adapters ───────────────────────────────────────────────────────
 export { GatewayApp, SlidingWindowRateLimiter } from "./adapters/gateway/GatewayApp";
 export type { GatewayAppDeps } from "./adapters/gateway/GatewayApp";
@@ -188,6 +200,7 @@ export * from "./infrastructure/security/board-auth";
 export * from "./domain/security/semantic-firewall";
 export * from "./domain/security/circuit-breaker";
 export * from "./domain/security/token-provider";
+export * from "./domain/security/admission-gate";
 
 // ── Telemetry ────────────────────────────────────────────────────────────────
 export * from "./infrastructure/telemetry/telemetry";

@@ -98,4 +98,13 @@
       see `.env.example` + `docs/governance/GOVERNANCE.md`). **New direct dependency:** `yaml ^2.9.0`.
       **Library API (additive):** the governance + memory modules + the `src/governance/types` contract
       are exported; `governance` added to `AppConfig`. See `docs/decisions/ADR-020`.
+- [x] **Phase G hot-path enforcement (BETA.3)** — the governance Action Gate is now wired into the
+      **AgentActor execution loop**. New domain port `IAdmissionGate` (`src/domain/security/admission-gate.ts`);
+      `AgentActorDeps` gains an optional `admissionGate` consulted as a 3rd pre-execution guard (after
+      breaker + firewall) — a block routes the task to the DLQ (`blocked_by_admission_gate`) without
+      running the handler. `buildSecurityDeps` wires policy-as-code enforcement into every worker when
+      `GOVERNANCE_ENABLED` (default-OFF; behavior-preserving when unset). **Library API (additive):**
+      new exports `IAdmissionGate`/`AdmissionVerdict` + `buildAdmissionGate`/`buildWorkerAdmissionGate`.
+      Cost-reservation enforcement is added when a fleet `CostLimiterPort` is injected. See
+      `docs/decisions/ADR-021`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)

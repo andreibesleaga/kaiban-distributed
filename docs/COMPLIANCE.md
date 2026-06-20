@@ -70,7 +70,7 @@ not fully wired, or deploy-dependent) · ⬜ gap / roadmap (not yet implemented)
 | Robustness — circuit breaker | **Art. 15** | 🟡 | [`sliding-window-breaker.ts`](../src/infrastructure/security/sliding-window-breaker.ts); [`ADR-010`](./decisions/ADR-010-circuit-breaker-policy.md) | Threshold 10 / 60 s window. **Opt-in** (`CIRCUIT_BREAKER_ENABLED`). |
 | Cybersecurity — prompt-injection firewall | **Art. 15** cybersecurity / adversarial resistance | 🟡 | [`heuristic-firewall.ts`](../src/infrastructure/security/heuristic-firewall.ts); [`ADR-007`](./decisions/ADR-007-semantic-firewall-design.md) | 10 regex patterns; firewall-block routes to DLQ (no retry). **Opt-in** (`SEMANTIC_FIREWALL_ENABLED`); heuristic-only (optional LLM deep-analysis hook). |
 | Cybersecurity — transport encryption | **Art. 15** | 🟡 | mTLS via `REDIS_TLS_*` / `KAFKA_SSL_*`; HTTPS to LLM APIs; `TLS_REJECT_UNAUTHORIZED` default true | Deploy-dependent (operator supplies certs). |
-| Cybersecurity — governance enforcement gate | **Art. 15** | 🟡 | [`action-gate.ts`](../src/governance/action-gate.ts), [`policy-engine.ts`](../src/governance/policy-engine.ts); [`ADR-020`](./decisions/ADR-020-governance-action-gate.md) | Non-bypassable *when enabled* (most-severe-wins, all validators run, every decision audited). Engine shipped + 100% tested; **hot-path interception into the actor is deferred** (see §5). |
+| Cybersecurity — governance enforcement gate | **Art. 15** | 🟡 | [`action-gate.ts`](../src/governance/action-gate.ts), [`policy-engine.ts`](../src/governance/policy-engine.ts); [`ADR-020`](./decisions/ADR-020-governance-action-gate.md) | Non-bypassable *when enabled* (most-severe-wins, all validators run, every decision audited). **Now enforced in the AgentActor hot path** via [`IAdmissionGate`](../src/domain/security/admission-gate.ts) ([`ADR-021`](./decisions/ADR-021-hot-path-enforcement.md)) — policy wired by default when `GOVERNANCE_ENABLED`; cost enforcement deployment-gated; federation egress still deferred (see §5). |
 
 ---
 
@@ -143,13 +143,15 @@ not fully wired, or deploy-dependent) · ⬜ gap / roadmap (not yet implemented)
 
 The following are **not yet fully wired** and must not be read as active guarantees:
 
-- **Action Gate / Cost Reservation enforcement is not yet in the AgentActor hot path.** The governance
-  Action Gate ([`action-gate.ts`](../src/governance/action-gate.ts)) and the economics pre-exec
-  `admit()` ([`cost-reservation.ts`](../src/economics/cost-reservation.ts)) are **shipped, exported,
-  and 100% unit-tested**, but interception into the deployed worker's execution loop / MCP+A2A egress is
-  a **separate reviewed step that is deferred** ([`ADR-020`](./decisions/ADR-020-governance-action-gate.md)
-  §Deferred, [`ADR-019`](./decisions/ADR-019-economics-finops.md) §Deferred). Library consumers can call
-  `evaluate()` / `admit()` today; the bundled actor does not call them automatically yet.
+- **Action Gate enforcement IS now in the AgentActor hot path (policy) — economics cost enforcement is
+  deployment-gated.** The `AgentActor` consults an optional [`IAdmissionGate`](../src/domain/security/admission-gate.ts)
+  as a third pre-execution guard (after breaker + firewall); a blocked verdict routes the task to the
+  DLQ (`blocked_by_admission_gate`) **without running the handler**. `buildWorkerAdmissionGate`
+  ([`admission-gate.ts`](../src/shared/admission-gate.ts)) wires **policy-as-code** into every worker
+  when `GOVERNANCE_ENABLED`; **cost-reservation** enforcement is added when economics is enabled **and a
+  fleet `CostLimiterPort` is injected** (kept optional so budgets stay fleet-wide, not per-node). All
+  **default-OFF** ([`ADR-021`](./decisions/ADR-021-hot-path-enforcement.md)). *Still deferred:*
+  federation-egress (A2A/MCP outbound) interception and the default-wired Redis cost limiter.
 - **The audit chain is in-memory, not durable or externally signed.** [`audit-log.ts`](../src/governance/audit-log.ts)
   is tamper-evident (SHA-256 hash chain, `verify()`), but persistence to durable storage and signing the
   chain head are roadmap ([`ADR-020`](./decisions/ADR-020-governance-action-gate.md)). A process restart
