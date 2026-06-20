@@ -203,6 +203,49 @@ describe("ActionGate.evaluate", () => {
     expect(typeof audit.appended[0]?.timestamp).toBe("string");
     expect(audit.appended[0]?.timestamp.length).toBeGreaterThan(0);
   });
+
+  it("FAILS CLOSED: a validator that throws yields a block verdict (not a propagated error)", async () => {
+    const audit = makeAudit();
+    const boom: GateValidator = {
+      name: "boom",
+      check: (): GateVerdict => {
+        throw new Error("redis down");
+      },
+    };
+    const gate = new ActionGate({
+      config: config(true),
+      validators: [syncValidator("ok", verdict("allow", "ok")), boom],
+      audit,
+    });
+
+    const decision = await gate.evaluate(ctx());
+
+    expect(decision.action).toBe("block");
+    const blocked = decision.verdicts.find((v) => v.validator === "boom");
+    expect(blocked).toEqual({
+      action: "block",
+      reason: "validator error: redis down",
+      validator: "boom",
+    });
+    expect(audit.appended).toHaveLength(1); // still recorded
+  });
+
+  it("stringifies a non-Error validator rejection in the fail-closed reason", async () => {
+    const audit = makeAudit();
+    const boom: GateValidator = {
+      name: "boom",
+      check: (): Promise<GateVerdict> => Promise.reject("nope"),
+    };
+    const gate = new ActionGate({
+      config: config(true),
+      validators: [boom],
+      audit,
+    });
+
+    const decision = await gate.evaluate(ctx());
+    expect(decision.action).toBe("block");
+    expect(decision.verdicts[0]?.reason).toBe("validator error: nope");
+  });
 });
 
 // ── firewallValidator ──────────────────────────────────────────────────────────

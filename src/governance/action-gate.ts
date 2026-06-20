@@ -67,7 +67,7 @@ export class ActionGate {
 
     const verdicts: GateVerdict[] = [];
     for (const validator of this.validators) {
-      verdicts.push(await Promise.resolve(validator.check(ctx)));
+      verdicts.push(await this.runValidator(validator, ctx));
     }
 
     const ordered = orderBySeverity(verdicts);
@@ -75,6 +75,28 @@ export class ActionGate {
     const decision: GateDecision = { action, verdicts: ordered, context: ctx };
     this.audit.append(decision, this.clock());
     return decision;
+  }
+
+  /**
+   * Run one validator, **failing closed**: a validator that throws (e.g. a
+   * cost-reservation validator when Redis is unreachable) yields a `block`
+   * verdict rather than propagating — a security gate must never error-out into
+   * an unhandled task path.
+   */
+  private async runValidator(
+    validator: GateValidator,
+    ctx: GateContext,
+  ): Promise<GateVerdict> {
+    try {
+      return await Promise.resolve(validator.check(ctx));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        action: "block",
+        reason: `validator error: ${reason}`,
+        validator: validator.name,
+      };
+    }
   }
 }
 

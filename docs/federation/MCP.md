@@ -24,6 +24,8 @@ MCP_ALLOWED_TOOLS=dispatch_task
 MCP_ALLOWED_RESOURCES=agents,agent-status
 MCP_ALLOWED_PROMPTS=delegate_task
 # Auth: when A2A_JWT_SECRET is set, the MCP route requires the same bearer token as /a2a/rpc.
+# ⚠ Without A2A_JWT_SECRET the MCP route is UNAUTHENTICATED (still rate-limited; dispatch_task is
+#   elicitation-consent-gated). For any non-local/production deployment, set A2A_JWT_SECRET.
 A2A_JWT_SECRET=<random 32+ bytes>
 ```
 
