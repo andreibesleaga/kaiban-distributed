@@ -71,7 +71,7 @@ jobs:
             cosign sign-blob --yes "$f" \
               --output-signature "$f.sig" --output-certificate "$f.pem"
           done
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             *.tgz
