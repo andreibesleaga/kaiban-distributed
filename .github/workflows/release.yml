@@ -28,7 +28,11 @@ jobs:
       - run: npm run build
       - run: npm run test:coverage
       - name: CycloneDX 1.6 SBOM
-        run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-format JSON --spec-version 1.6 --output-file sbom.json
+        # --ignore-npm-errors: `npm ls` exits non-zero on a harmless dev-only peer
+        # mismatch (madge→precinct wants TypeScript 5.x while the project pins 6.x);
+        # the installed tree is valid, so the SBOM is still complete and accurate.
+        # (Mirrors the same flag in ci.yml's Security job.)
+        run: npx --yes @cyclonedx/cyclonedx-npm@latest --ignore-npm-errors --output-format JSON --spec-version 1.6 --output-file sbom.json
       - name: Pack tarball (from a staging dir → Apache-2.0 LICENSE, no GPL leak)
         # The published library is Apache-2.0 but the repo root LICENSE is GPL-3.0
         # (the app/aggregate). `npm pack` force-includes the root LICENSE; pack from
