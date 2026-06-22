@@ -1,0 +1,50 @@
+name: Publish to npm (Apache-2.0 core · provenance)
+
+# Publishes the Apache-2.0 LIBRARY CORE to the npm registry WITH build provenance.
+#
+# Why this can't be done locally: npm provenance requires a CI OIDC id-token
+# (`Automatic provenance generation not supported for provider: null` when run
+# off a laptop). And the publish MUST go through scripts/pack-staging.sh so the
+# GPL-3.0 root LICENSE (the *application* license) never leaks into the
+# Apache-2.0 *library* tarball — npm force-includes a root LICENSE regardless of
+# the `files` allow-list (ADR-011). The staging script assembles a clean dir
+# whose only LICENSE is LICENSE-APACHE, then `npm publish --provenance`.
+#
+# Triggers: manual (workflow_dispatch) for the first/controlled publish, and
+# automatically when a NON-prerelease GitHub release is published.
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: npm publish (staging dir · provenance)
+    runs-on: ubuntu-latest
+    # On the release trigger, skip prereleases (e.g. v2.0.0-beta → has a '-'),
+    # which must never go to the `latest` dist-tag. Manual dispatch always runs.
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.release.tag_name, '-') }}
+    permissions:
+      contents: read
+      id-token: write # REQUIRED for npm build provenance (OIDC)
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      # pack-staging.sh --publish: build → assemble Apache-2.0-only staging dir
+      # (no GPL LICENSE leak) → strip lifecycle scripts/devDeps → publish with
+      # provenance + public access. publishConfig in package.json already pins
+      # access:public + provenance:true; provenance succeeds here because the job
+      # carries the OIDC id-token.
+      - name: Publish Apache-2.0 core to npm (with provenance)
+        run: bash scripts/pack-staging.sh --publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
