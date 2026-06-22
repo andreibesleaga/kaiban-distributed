@@ -11,11 +11,63 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Major release — breaking changes are documented in `MIGRATION.md`. Authoritative plan:
 `KAIBAN-v2.0-MASTER-PLAN.md`.
 
-### Changed (Phase 0)
+### Added
+- **A2A v0.3 federation** via `@a2a-js/sdk`: the gateway answers `message/send`,
+  `message/stream` (SSE), `tasks/get`, `tasks/cancel` on `POST /a2a/rpc`; AgentCard v0.3
+  (object `capabilities` + abilities in `skills[]`). (BETA.1, ADR-015)
+- **MCP server** — first-party Model Context Protocol surface (Tools / Resources / Prompts /
+  Elicitation) over Streamable HTTP. (BETA.2, ADR-017)
+- **Resilience** — the single-active orchestrator is promoted to `src/shared` (reusable, published):
+  Redis checkpoint/resume, liveness/readiness probes, graceful drain, DLQ replay. (BETA.2, ADR-018)
+- **Economics / FinOps** — fleet-wide rate + cost control (token bucket + cost reservation),
+  **default-off**. (BETA.3, ADR-019)
+- **Governance Action Gate** — **default-off, non-bypassable when enabled**: hash-chained audit,
+  policy-as-code, kill-switch; hot-path enforcement wired into `AgentActor`. (BETA.3, ADR-020/021)
+- **Universal AMQP driver seam** — declared `amqplib` seam, unimplemented stub (coverage-excluded).
+  (BETA.1, ADR-016)
+- **`dispatchToAgent`** actor-mailbox primitive in `src/shared` (replaces the removed `tasks.create`
+  RPC); **`parseAgentCardSkills`** for v0.3 cards.
+- **Workflow budget guard** (`MAX_WORKFLOW_COST_USD` / `MAX_WORKFLOW_TOKENS`) in both example
+  orchestrators — checked between phases and before each revision; **graceful STOPPED on breach**
+  (default `0.50` in the example compose files; `0` = unlimited; separate from per-agent
+  `MAX_TOKEN_BUDGET`).
+- **Playwright visual baselines** for the React board + the two static example viewers
+  (`cd board && npm run test:visual`).
+- **Packaging:** `./shared` subpath export + two-entry api-extractor; staging-dir `npm pack`
+  (Apache-only artifact, no GPL leak). (BETA.1, ADR-011)
+- **COMPLIANCE** cross-walk and the **v2.1 roadmap**.
+
+### Changed
 - **License (BREAKING):** the published npm library is now **Apache-2.0** (was GPL-3.0); the full
   application / board / examples remain **GPL-3.0** (dual-license — see `LICENSING.md`, ADR-011).
 - **Dependencies:** KaibanJS 0.24.2, TypeScript 6.0, OpenTelemetry 0.219/0.77, bullmq 5.79, dotenv 17
   — all latest stable, **0 vulnerabilities** (ADR-012).
+- **gateway / worker ROLE split** — a single image runs as `ROLE=gateway|worker`. (BETA.1, ADR-013)
+- **AbortSignal cancellation** — an in-flight LLM call is aborted on task timeout / `tasks/cancel`
+  (the bridge owns the LLM instance). (BETA.1, ADR-014)
+- **Examples migrated to A2A v0.3** — removed all `tasks.create` / `tasks.get` / `agent.status`
+  usage; both examples dispatch via `dispatchToAgent` and read AgentCard `skills[]`.
+- **Gateway HITL delivery** — the durable per-task BRPOP-list write now precedes the pub/sub
+  publish, and the board is ACK'd only after **both** succeed (a missed pub/sub message stays
+  recoverable via the list fallback).
+- **`CompletionRouter` subscribes lazily** (on the first `wait()`) — a router that never waits no
+  longer consumes the shared completed queue (fixes a competing-consumer hang between the gateway's
+  A2A-executor router and an orchestrator router).
+
+### Fixed
+- **HITL re-arm loop** — the terminal prompt no longer re-arms after a decision arrives (board OR
+  terminal) or after stdin EOF; fixes the **REVISE** infinite re-prompt spin (100% CPU, process
+  never exits, Ctrl-C ineffective) and restores the second HITL gate on the revised draft.
+- **Board hangs on RUNNING after a hard failure** — both orchestrators now publish a terminal
+  STOPPED state on error, so the board reflects the failure instead of hanging.
+- **Board store** — malformed state deltas with no `agentId` / `taskId` are skipped (the Zustand map
+  is never keyed by `"undefined"`).
+- **Governance Action Gate fails closed** on a throwing validator; MCP-without-auth warning.
+- A2A input validation hardened; de-stubbed `IDLE` / `TODO` placeholders. (BETA.1)
+
+### Security
+- The published library ships **0 HIGH/CRITICAL advisories**; release flow keeps SBOM + SLSA
+  provenance + cosign signing (ADR-012).
 
 ## [1.5.0-beta] - 2026-06-16
 
