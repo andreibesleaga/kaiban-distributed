@@ -29,8 +29,11 @@ jobs:
       - run: npm run test:coverage
       - name: CycloneDX 1.6 SBOM
         run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-format JSON --spec-version 1.6 --output-file sbom.json
-      - name: Pack tarball
-        run: npm pack
+      - name: Pack tarball (from a staging dir → Apache-2.0 LICENSE, no GPL leak)
+        # The published library is Apache-2.0 but the repo root LICENSE is GPL-3.0
+        # (the app/aggregate). `npm pack` force-includes the root LICENSE; pack from
+        # a clean staging dir whose only LICENSE is LICENSE-APACHE. See docs/RELEASE.md.
+        run: bash scripts/pack-staging.sh
       - name: Subject hashes (for provenance)
         id: hash
         run: echo "hashes=$(sha256sum *.tgz sbom.json | base64 -w0)" >> "$GITHUB_OUTPUT"
