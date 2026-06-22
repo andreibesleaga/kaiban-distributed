@@ -263,18 +263,20 @@ SOCKET_CORS_ORIGINS=http://localhost:5173,https://board.example.com
 
 ---
 
-### 3.4 BullMQ Trace Header Validation
+### 3.4 Trace Header Validation (shared by every driver)
 
-**File:** [`src/infrastructure/messaging/bullmq-driver.ts`](../../src/infrastructure/messaging/bullmq-driver.ts)
+**File:** [`src/infrastructure/telemetry/TraceContext.ts`](../../src/infrastructure/telemetry/TraceContext.ts) — `sanitizeTraceHeaders()`
 
-Before passing job headers to `extractTraceContext`, the worker validates all trace headers:
+Before passing message/job headers to `extractTraceContext`, every messaging driver
+(`bullmq-driver.ts` and `kafka-driver.ts`) routes them through the shared
+`sanitizeTraceHeaders()` helper, which validates all trace headers:
 
 ```typescript
 const TRACEPARENT_RE = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
-// Strips any non-string values; skips traceparent if format invalid
+// Strips any non-string keys/values; skips traceparent if format invalid
 ```
 
-This prevents crafted job payloads from injecting malformed OpenTelemetry trace headers (MED-06 from V2 audit).
+This prevents crafted payloads from injecting malformed OpenTelemetry trace headers (MED-06 from V2 audit).
 
 ---
 
@@ -376,7 +378,7 @@ TLS_REJECT_UNAUTHORIZED=true
 
 **Purpose:** Strips personally identifiable information from state events before they are broadcast to the board.
 
-**Files:** `src/adapters/state/` — `sanitizeDelta()`, `sanitizeId()`
+**Files:** `sanitizeDelta()` — `src/adapters/state/distributedMiddleware.ts` (also applied on the worker `AgentStatePublisher` path); `sanitizeId()` — a small SHA-256 helper defined where IDs are logged (e.g. `src/application/actor/AgentActor.ts`, `src/adapters/gateway/SocketGateway.ts`).
 
 | Function | Behaviour |
 |----------|-----------|

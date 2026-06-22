@@ -277,7 +277,7 @@ stateDiagram-v2
     TODO --> DOING : Worker Claims Task
 
     DOING --> DONE : Inference Success
-    DOING --> TODO : Retry (max 3×, exp. backoff)
+    DOING --> TODO : Retry (max 3×, linear backoff)
     DOING --> BLOCKED : Max Retries Exceeded (→ kaiban-events-failed)
 
     DOING --> AWAITING_VALIDATION : HITL Required
@@ -956,7 +956,7 @@ kaiban-distributed/
 │   │       └── circuit-breaker.ts    # ICircuitBreaker — success/failure tracking
 │   ├── application/
 │   │   └── actor/
-│   │       └── AgentActor.ts  # Core: retry×3 + exp backoff, DLQ, firewall, circuit breaker
+│   │       └── AgentActor.ts  # Core: retry×3 + linear backoff, DLQ, firewall, circuit breaker
 │   ├── adapters/
 │   │   ├── gateway/
 │   │   │   ├── GatewayApp.ts       # Express: /health, agent-card, /a2a/rpc, 404
@@ -989,7 +989,7 @@ kaiban-distributed/
 │       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 769 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 1155 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
@@ -1027,7 +1027,7 @@ kaiban-distributed/
 │   │   ├── store/boardStore.ts            # Zustand: applyDelta, setConnectionStatus, addLog
 │   │   ├── socket/socketClient.ts         # Socket.io singleton + sendHitlDecision()
 │   │   └── components/                    # layout/ · workflow/ · agents/ · kanban/ · economics/ · log/
-│   ├── package.json                       # React 18, Vite 6, Tailwind, socket.io-client, zustand
+│   ├── package.json                       # React 18, Vite 8, Tailwind, socket.io-client, zustand
 │   └── .env.example                       # VITE_GATEWAY_URL=http://localhost:3000
 ├── docker-compose.yml                     # Full root stack (Redis + Kafka + single worker)
 ├── Dockerfile                             # Multi-stage: builder (npm install + tsc) → runner (non-root)

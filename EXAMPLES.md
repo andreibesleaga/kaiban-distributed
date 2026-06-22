@@ -571,7 +571,7 @@ interactive Human-in-the-Loop Approve / Revise / Reject controls.
 ### Prerequisites
 
 - Any kaiban-distributed gateway running (e.g. `./scripts/blog-team.sh start`)
-- Node.js ≥ 18 (board only; gateway still needs ≥ 22)
+- Node.js ≥ 20.19 (board uses Vite 8, which needs Node 20.19+/22.12+; gateway needs ≥ 22)
 
 ### Start
 

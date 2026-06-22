@@ -185,9 +185,10 @@ State publishing is **not** actor-to-actor messaging — it is a separate observ
 ```
 AgentActor.executeWithRetries()
   └── TaskHandler (wrapped by AgentStatePublisher.wrapHandler())
-      ├── publish EXECUTING state → kaiban-state-events (Redis Pub/Sub)
+      ├── publish agent EXECUTING (task DOING) → kaiban-state-events (Redis Pub/Sub)
+      ├── publish agent THINKING (LLM call in progress) → kaiban-state-events
       ├── call LLM via KaibanJS
-      └── publish DONE / ERROR state → kaiban-state-events
+      └── publish agent IDLE (task DONE) / agent ERROR (task BLOCKED) → kaiban-state-events
 
 OrchestratorStatePublisher (orchestrator)
   ├── workflowStarted()  → RUNNING + agents + inputs

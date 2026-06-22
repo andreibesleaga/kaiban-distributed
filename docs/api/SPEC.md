@@ -21,7 +21,7 @@ interface DistributedAgentState {
 }
 ```
 
-> **Note on `THINKING`:** `AgentStatePublisher` directly emits `IDLE`, `EXECUTING`, and `ERROR`. The `THINKING` status appears when KaibanJS internally transitions between reasoning steps — it is forwarded to the board via `DistributedStateMiddleware` (Zustand state interception), not via `AgentStatePublisher.wrapHandler()`.
+> **Note on `THINKING`:** `AgentStatePublisher.wrapHandler()` emits the full per-task status sequence directly — `EXECUTING` (task starting) → `THINKING` (LLM call in progress) → `IDLE` (done) or `ERROR` (`src/adapters/state/agent-state-publisher.ts`). The deprecated `DistributedStateMiddleware` (Zustand state interception) is an alternative bridge for the in-process `KaibanTeamBridge` path; on the distributed worker path `THINKING` comes from `wrapHandler()`, not the middleware.
 
 ### Task Workflow Schema
 
@@ -189,8 +189,11 @@ function createKaibanTaskHandler(
   agentConfig: KaibanAgentConfig,    // IAgentParams from kaibanjs
   _driver: IMessagingDriver,
   tokenProvider?: ITokenProvider,   // optional JIT token provider
-): (payload: MessagePayload) => Promise<unknown>
-// Returns the LLM finalAnswer, included in kaiban-events-completed data.result
+): TaskHandler   // (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>
+// Resolves to a KaibanHandlerResult:
+//   { answer: string; inputTokens: number; outputTokens: number; estimatedCost: number }
+// `answer` is the LLM result (JSON-stringified if non-string), included in
+// kaiban-events-completed data.result; the token/cost fields drive the economics panel.
 ```
 
 ### Team State Bridge
@@ -201,7 +204,7 @@ function createKaibanTaskHandler(
 class KaibanTeamBridge {
   constructor(config: KaibanTeamConfig, middleware?: IStateMiddleware)
   getTeam(): Team
-  start(inputs?: Record<string, unknown>): Promise<WorkflowResult>
+  start(inputs?: Record<string, unknown>): Promise<{ status: string; result: unknown; stats: unknown }>
   subscribeToChanges(listener, properties?): () => void
 }
 ```
@@ -248,7 +251,7 @@ interface StateDelta {
     title: string;
     status: TaskStatus;          // 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'
     assignedToAgentId: string;
-    result?: string;             // capped at 20,000 chars (20 KB)
+    result?: string;             // capped at 20,000 UTF-8 bytes (≈20 KB), truncated on a codepoint boundary
   }>;
 
   // Workflow lifecycle (set exclusively by the orchestrator — never by workers)
@@ -256,7 +259,7 @@ interface StateDelta {
 }
 ```
 
-> **Source of deltas:** `AgentStatePublisher` emits `IDLE → EXECUTING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. `DistributedStateMiddleware` forwards KaibanJS internal state (including `THINKING`) as additional deltas.
+> **Source of deltas:** `AgentStatePublisher.wrapHandler()` emits `EXECUTING → THINKING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. The deprecated `DistributedStateMiddleware` forwards KaibanJS internal state for the in-process `KaibanTeamBridge` path.
 
 PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped before publishing (see `DistributedStateMiddleware.sanitizeDelta`).
 

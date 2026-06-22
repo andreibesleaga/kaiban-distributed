@@ -44,3 +44,10 @@ The same pattern applies to `KafkaDriver`. `TraceContext.ts` wraps `@opentelemet
 - `TraceContext.ts` is no longer dead code — imported by both `BullMQDriver` and `KafkaDriver`
 - OpenTelemetry auto-instrumentation picks up the extracted context automatically
 - The `?? {}` fallback ensures backward compatibility with payloads published before this change
+
+> **Update (v1.5/v2.0 hardening, MED-06):** the subscribe-side snippet above is now
+> hardened — both drivers route inbound `traceHeaders` through the shared
+> `sanitizeTraceHeaders()` (`src/infrastructure/telemetry/TraceContext.ts`) before
+> `extractTraceContext`. It drops non-string keys/values and rejects a malformed W3C
+> `traceparent` (validated against `TRACEPARENT_RE`), so crafted payloads cannot inject
+> bad trace headers. See `docs/security/SECURITY_FEATURES.md` §3.4.
