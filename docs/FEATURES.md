@@ -20,8 +20,7 @@ Node.js process, communicating only by asynchronous messages over a pluggable en
 layer (BullMQ/Redis by default, Apache Kafka by configuration). Workflows are made legible through a
 real-time **Kanban board** that consumes the very same state stream operators and auditors rely on,
 and the fleet federates with the outside world over **A2A** (agent-to-agent) and **MCP** (Model
-Context Protocol). It is the companion runtime for the *Agentic AI Architectures* book—chapter 8 (the
-Kanban pattern) and chapter 9 (the distributed actor model)—and is built for engineers who have
+Context Protocol). It is built for engineers who have
 outgrown single-process agent scripts and need agent workflows that survive real production load:
 long-running LLM calls, mid-flight failures, human approval gates, cost ceilings, and
 borderless interoperability.
@@ -480,5 +479,4 @@ and additive:
 
 ---
 
-*Grounded in the kaiban-distributed repository at v2.0.0 (`feat/v2.0`) and the author's
-*Agentic AI Architectures* manuscript, chapters 8 (Kanban pattern) and 9 (distributed actor model).*
+*Grounded in the kaiban-distributed repository at v2.0.0 (`feat/v2.0`) and the author's *Agentic AI Architectures* book.*
