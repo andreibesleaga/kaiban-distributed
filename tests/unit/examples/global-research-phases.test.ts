@@ -204,6 +204,46 @@ describe("runSearchPhase()", () => {
     expect(ids.size).toBe(3);
   });
 
+  it("maps each fan-out result to its dispatch index even when searchers finish out of order (C1)", async () => {
+    const { driver, publish, mockRouter, mockPub, mockRunLog } = makeMocks();
+    // waitAll returns results in COMPLETION order — simulate the reverse of the
+    // dispatch order. The fix must resolve each result's real index via its taskId,
+    // not the result-array position.
+    mockRouter.waitAll.mockImplementation((ids: string[]) =>
+      Promise.resolve(
+        [...ids]
+          .reverse()
+          .map((id, k) => ({ taskId: id, result: parsedResult(`ans-${k}`) })),
+      ),
+    );
+
+    const ctx = makeCtx();
+    await runSearchPhase(
+      ctx,
+      "AI",
+      3,
+      60000,
+      mockRouter as never,
+      mockPub as never,
+      driver,
+      mockRunLog as never,
+    );
+
+    const dispatched = dispatchesTo(publish, "searcher"); // dispatch order
+    expect(dispatched).toHaveLength(3);
+    // The result carrying dispatched[i]'s taskId must be logged as searcher-i —
+    // regardless of the reversed completion order (would fail on the old code).
+    for (let i = 0; i < dispatched.length; i++) {
+      expect(mockRunLog.logTask).toHaveBeenCalledWith(
+        "search",
+        dispatched[i]!.taskId,
+        `searcher-${i}`,
+        expect.anything(),
+      );
+    }
+    expect(ctx.rawSearchData).toHaveLength(3);
+  });
+
   it("uses '' fallback for taskIds[i] and subTopics[i] when results exceed numSearchers (lines 91,93,95 branches)", async () => {
     const { driver, mockRouter, mockPub, mockRunLog } = makeMocks();
     // 1 searcher dispatched → taskIds has 1 entry; waitAll returns 3 results

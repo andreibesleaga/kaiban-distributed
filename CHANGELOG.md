@@ -62,6 +62,10 @@ Major release — breaking changes are documented in `MIGRATION.md`. Authoritati
   STOPPED state on error, so the board reflects the failure instead of hanging.
 - **Board store** — malformed state deltas with no `agentId` / `taskId` are skipped (the Zustand map
   is never keyed by `"undefined"`).
+- **Fan-out/fan-in result↔index mismatch** (global-research, plan finding C1/HIGH) — search results
+  are now mapped to their **dispatch** index by `taskId` (was indexed by `waitAll` completion-order
+  position), so searchers that finish out of order get the correct sub-topic, node label and logged
+  taskId.
 - **Governance Action Gate fails closed** on a throwing validator; MCP-without-auth warning.
 - A2A input validation hardened; de-stubbed `IDLE` / `TODO` placeholders. (BETA.1)
 

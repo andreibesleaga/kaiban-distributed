@@ -80,19 +80,24 @@ export async function runSearchPhase(
 
   pub.searchingPhase(taskIds);
 
+  // waitAll returns results in COMPLETION order, not dispatch order — resolve each
+  // result's real dispatch index via its taskId so the sub-topic, node label and
+  // logged taskId always match the searcher that produced it (fixes a fan-out
+  // result↔index mismatch when searchers finish out of order).
+  const indexByTaskId = new Map(taskIds.map((id, i) => [id, i]));
   const results = await router.waitAll(taskIds, searchWaitMs, 'search');
 
-  for (let i = 0; i < results.length; i++) {
-    const sr = results[i];
+  for (const sr of results) {
+    const idx = indexByTaskId.get(sr.taskId) ?? 0;
     if (sr.result) {
       const parsed = parseHandlerResult(sr.result);
       ctx.metadata.totalTokens   += parsed.inputTokens + parsed.outputTokens;
       ctx.metadata.estimatedCost += parsed.estimatedCost;
-      ctx.rawSearchData.push(extractSearchResults(parsed.answer || sr.result, `searcher-${i}`, subTopics[i] ?? ''));
-      ctx.metadata.activeNodes.push(`searcher-${i}`);
-      runLog.logTask('search', taskIds[i] ?? '', `searcher-${i}`, { ...parsed, answer: parsed.answer });
+      ctx.rawSearchData.push(extractSearchResults(parsed.answer || sr.result, `searcher-${idx}`, subTopics[idx] ?? ''));
+      ctx.metadata.activeNodes.push(`searcher-${idx}`);
+      runLog.logTask('search', sr.taskId, `searcher-${idx}`, { ...parsed, answer: parsed.answer });
     } else if (sr.error) {
-      runLog.logError('search', taskIds[i] ?? '', `searcher-${i}`, sr.error);
+      runLog.logError('search', sr.taskId, `searcher-${idx}`, sr.error);
     }
   }
 
