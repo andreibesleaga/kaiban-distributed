@@ -242,6 +242,27 @@ describe("runSearchPhase()", () => {
       );
     }
     expect(ctx.rawSearchData).toHaveLength(3);
+
+    // C1-residual: the board publication must receive a dispatch-order
+    // indexByTaskId map so out-of-order results still get the right searcher card
+    // (board mis-attribution was caused by using the result-array position).
+    expect(mockPub.searchPhaseComplete).toHaveBeenCalledTimes(1);
+    const [resultsArg, indexByTaskId] = mockPub.searchPhaseComplete.mock
+      .calls[0] as [
+      Array<{ taskId: string }>,
+      Map<string, number>,
+    ];
+    expect(indexByTaskId).toBeInstanceOf(Map);
+    for (let i = 0; i < dispatched.length; i++) {
+      expect(indexByTaskId.get(dispatched[i]!.taskId)).toBe(i);
+    }
+    // Every completion-order result resolves back to its dispatch-order index.
+    for (const r of resultsArg) {
+      const dispatchIdx = dispatched.findIndex(
+        (d) => d.taskId === r.taskId,
+      );
+      expect(indexByTaskId.get(r.taskId)).toBe(dispatchIdx);
+    }
   });
 
   it("uses '' fallback for taskIds[i] and subTopics[i] when results exceed numSearchers (lines 91,93,95 branches)", async () => {

@@ -72,6 +72,46 @@ describe("AgentActor — task timeout", () => {
     expect(String(dlqData["error"])).toContain("timed out");
   });
 
+  it("handler that rejects AFTER losing the timeout race does not unhandledReject (C10)", async () => {
+    const { driver, getHandler } = makeDriver();
+    // Handler that loses the race (200ms) then rejects late. Without the no-op
+    // .catch on the losing promise this would surface as an unhandledRejection.
+    const lateRejectHandler = vi.fn().mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error("late boom")), 200);
+        }),
+    );
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const actor = new AgentActor("agent-1", driver, "q", lateRejectHandler, {
+        taskTimeoutMs: 20,
+      });
+      await actor.start();
+      await getHandler()(makePayload("t-late"));
+
+      // Wait past the late rejection so the losing promise actually settles,
+      // then flush the microtask queue where an unhandledRejection would fire.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(unhandled).toEqual([]);
+      // Task still went to DLQ via the timeout path.
+      const dlqCall = (
+        driver.publish as ReturnType<typeof vi.fn>
+      ).mock.calls.find((c) => c[0] === "kaiban-events-failed");
+      expect(dlqCall).toBeDefined();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("task completing within timeout succeeds normally", async () => {
     const { driver, getHandler } = makeDriver();
     const fastHandler = vi.fn().mockResolvedValue("fast-result");

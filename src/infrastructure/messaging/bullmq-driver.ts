@@ -1,4 +1,4 @@
-import { Queue, Worker, QueueOptions } from "bullmq";
+import { Queue, Worker, QueueOptions, JobsOptions } from "bullmq";
 import { context as otelContext } from "@opentelemetry/api";
 import { IMessagingDriver, MessagePayload } from "./interfaces";
 import {
@@ -7,6 +7,19 @@ import {
   sanitizeTraceHeaders,
 } from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "BullMQDriver" });
+
+/**
+ * Job retention (S9): without this, completed/failed jobs accumulate in Redis
+ * forever and eventually exhaust memory. Keep completed jobs for 1h (capped at
+ * 1000) and failed jobs for 24h so the DLQ stays inspectable but bounded.
+ */
+const DEFAULT_JOB_OPTIONS: JobsOptions = {
+  removeOnComplete: { age: 3600, count: 1000 },
+  removeOnFail: { age: 86400 },
+};
 
 export interface BullMQDriverOptions extends QueueOptions {
   tls?: TlsConfig;
@@ -19,11 +32,20 @@ export class BullMQDriver implements IMessagingDriver {
 
   constructor(options: BullMQDriverOptions) {
     const { tls, ...baseConfig } = options;
+    // Merge caller-supplied defaultJobOptions over our retention defaults so an
+    // explicit override still wins, but retention is never silently dropped.
+    const withRetention: QueueOptions = {
+      ...baseConfig,
+      defaultJobOptions: {
+        ...DEFAULT_JOB_OPTIONS,
+        ...baseConfig.defaultJobOptions,
+      },
+    };
     if (tls) {
       this.config = {
-        ...baseConfig,
+        ...withRetention,
         connection: {
-          ...(baseConfig.connection as Record<string, unknown>),
+          ...(withRetention.connection as Record<string, unknown>),
           tls: {
             ca: tls.ca,
             cert: tls.cert,
@@ -33,7 +55,7 @@ export class BullMQDriver implements IMessagingDriver {
         },
       };
     } else {
-      this.config = baseConfig;
+      this.config = withRetention;
     }
   }
 
@@ -70,6 +92,12 @@ export class BullMQDriver implements IMessagingDriver {
         },
         this.config,
       );
+      // Surface worker-level failures (Redis drops, processor crashes). Without
+      // this listener BullMQ emits an 'error' on an EventEmitter with no
+      // handler, which can crash the process (S9).
+      worker.on("error", (err: Error) => {
+        log.error({ err: err.message, queue: queueName }, "BullMQ worker error");
+      });
       this.workers.set(queueName, worker);
     }
   }

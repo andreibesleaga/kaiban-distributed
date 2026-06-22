@@ -122,7 +122,39 @@ describe("AgentStatePublisher — concurrent scenarios", () => {
     expect(doneCalls.length).toBeGreaterThanOrEqual(1);
 
     const resultStr = JSON.parse(doneCalls[0][1]).tasks[0].result as string;
-    expect(resultStr.length).toBeLessThanOrEqual(MAX);
+    // Invariant is BYTES — assert the UTF-8 byte budget.
+    expect(Buffer.byteLength(resultStr, "utf8")).toBeLessThanOrEqual(MAX);
+  });
+
+  it("multi-byte result is byte-capped without splitting a codepoint", async () => {
+    const MAX = 20_000;
+    // 3-byte CJK chars repeated well past 20 KB bytes (10_000 chars ⇒ 30 KB).
+    const bigResult = "字".repeat(10_000);
+    const handler = publisher.wrapHandler(async () => bigResult);
+    await handler({
+      taskId: "t-mb",
+      agentId: "worker-1",
+      timestamp: Date.now(),
+      data: {},
+    });
+
+    const doneCalls = (
+      mockPublish.mock.calls as Array<[string, string]>
+    ).filter(([, data]) => {
+      try {
+        const parsed = JSON.parse(data);
+        return (
+          parsed.tasks?.[0]?.taskId === "t-mb" &&
+          parsed.tasks?.[0]?.result !== undefined
+        );
+      } catch {
+        return false;
+      }
+    });
+    const resultStr = JSON.parse(doneCalls[0][1]).tasks[0].result as string;
+    expect(Buffer.byteLength(resultStr, "utf8")).toBeLessThanOrEqual(MAX);
+    // No partial codepoint ⇒ round-trips through UTF-8 unchanged.
+    expect(Buffer.from(resultStr, "utf8").toString("utf8")).toBe(resultStr);
   });
 
   it("result at exactly MAX_RESULT_LEN is not truncated (boundary)", async () => {

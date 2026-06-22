@@ -142,6 +142,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   const gov = govStep.gov;
 
   log.info(`\n  Compliance Score: ${gov.score}   Recommendation: ${gov.recommendation}`);
+  assertWithinBudget(ctx.metadata, budget);
 
   if (gov.recommendation === 'REJECTED') {
     ctx.metadata.endTime = Date.now();
@@ -165,6 +166,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
 
   log.info(`\n  Governance: ${gov.score} (${gov.recommendation})`);
   log.info(`  Editorial:  ${edit.score}  — Recommendation: ${edit.recommendation}`);
+  assertWithinBudget(ctx.metadata, budget);
 
   // STEP 5 — Human Decision
   log.separator('='); log.info(' HUMAN DECISION REQUIRED (HITL)'); log.separator('=');

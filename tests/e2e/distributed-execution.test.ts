@@ -36,10 +36,13 @@ describe("E2E: Distributed Task Execution", () => {
     const consumerDriver = new BullMQDriver(connConfig);
     drivers.push(publisherDriver, consumerDriver);
 
+    // v2.0 invariant (ADR-013): an actor must be given a task handler — a
+    // handler-less actor throws on start() instead of silently discarding tasks.
     const actor = new AgentActor(
       "e2e-agent-1",
       consumerDriver,
       "e2e-queue-agent1",
+      async () => "e2e-result",
     );
     await actor.start();
 

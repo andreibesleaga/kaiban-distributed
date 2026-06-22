@@ -42,6 +42,9 @@ import {
   validateTaskInput,
   type ValidatedTaskInput,
 } from "./a2a-input-validation";
+import { createStructuredLogger } from "../../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "KaibanAgentExecutor" });
 
 /** Mailbox channel prefix — one queue per agent (the actor's mailbox). */
 const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
@@ -115,7 +118,10 @@ export class KaibanAgentExecutor implements AgentExecutor {
         abort.signal,
       );
       await this.emitSuccess(eventBus, taskId, contextId, result);
-    } catch {
+    } catch (err) {
+      // Server-side observability only — the wire/terminal response stays
+      // generic (no internal detail leak).
+      log.warn({ err }, "A2A execute failed");
       // Cancellation emits its own terminal event; do not double-emit.
       if (!abort.signal.aborted) {
         await this.emitTerminal(

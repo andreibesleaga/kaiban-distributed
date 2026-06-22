@@ -103,7 +103,7 @@ export async function runSearchPhase(
 
   if (ctx.rawSearchData.length === 0) throw new Error('All searcher tasks failed — no data to synthesise');
 
-  pub.searchPhaseComplete(results);
+  pub.searchPhaseComplete(results, indexByTaskId);
 }
 
 // ── Step 2 — Fan-In synthesis ─────────────────────────────────────────────────

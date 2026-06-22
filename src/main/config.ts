@@ -75,6 +75,22 @@ function getEnv(key: string, defaultValue: string): string {
   return process.env[key] ?? defaultValue;
 }
 
+/**
+ * Parse an integer env var, falling back to `defaultValue` when the value is
+ * absent or non-numeric (NaN). Guards against e.g. `AGENT_TIMEOUT_MS=abc`
+ * yielding `NaN`, which would make `setTimeout(fn, NaN)` fire instantly.
+ */
+function parseIntEnv(key: string, defaultValue: number): number {
+  const parsed = parseInt(getEnv(key, String(defaultValue)), 10);
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
+/** Parse a float env var, falling back to `defaultValue` when absent or NaN. */
+function parseFloatEnv(key: string, defaultValue: number): number {
+  const parsed = parseFloat(getEnv(key, String(defaultValue)));
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
 function getBoolEnv(key: string, defaultValue: boolean): boolean {
   const val = process.env[key];
   if (!val) return defaultValue;
@@ -121,7 +137,7 @@ export function loadConfig(): AppConfig {
   const mcpAllowedPrompts = parseCsvEnv("MCP_ALLOWED_PROMPTS");
 
   return {
-    port: parseInt(getEnv("PORT", "3000"), 10),
+    port: parseIntEnv("PORT", 3000),
     serviceName: getEnv("SERVICE_NAME", "kaiban-worker"),
     otelEndpoint: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
     messagingDriver: parseMessagingDriver(getEnv("MESSAGING_DRIVER", "bullmq")),
@@ -153,8 +169,8 @@ export function loadConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    agentTimeoutMs: parseInt(getEnv("AGENT_TIMEOUT_MS", "300000"), 10),
-    maxTokenBudget: parseInt(getEnv("MAX_TOKEN_BUDGET", "0"), 10),
+    agentTimeoutMs: parseIntEnv("AGENT_TIMEOUT_MS", 300000),
+    maxTokenBudget: parseIntEnv("MAX_TOKEN_BUDGET", 0),
     mcp: {
       enabled: getBoolEnv("MCP_SERVER_ENABLED", false),
       path: getEnv("MCP_SERVER_PATH", "/mcp"),
@@ -165,22 +181,11 @@ export function loadConfig(): AppConfig {
     },
     economics: {
       enabled: getBoolEnv("ECONOMICS_ENABLED", false),
-      maxRequestsPerWindow: parseInt(
-        getEnv("ECONOMICS_MAX_REQUESTS_PER_WINDOW", "0"),
-        10,
-      ),
-      maxCostPerWindow: parseInt(
-        getEnv("ECONOMICS_MAX_COST_PER_WINDOW", "0"),
-        10,
-      ),
-      globalCostCeiling: parseInt(
-        getEnv("ECONOMICS_GLOBAL_COST_CEILING", "0"),
-        10,
-      ),
-      windowSeconds: parseInt(getEnv("ECONOMICS_WINDOW_SECONDS", "60"), 10),
-      degradeThreshold: parseFloat(
-        getEnv("ECONOMICS_DEGRADE_THRESHOLD", "0.75"),
-      ),
+      maxRequestsPerWindow: parseIntEnv("ECONOMICS_MAX_REQUESTS_PER_WINDOW", 0),
+      maxCostPerWindow: parseIntEnv("ECONOMICS_MAX_COST_PER_WINDOW", 0),
+      globalCostCeiling: parseIntEnv("ECONOMICS_GLOBAL_COST_CEILING", 0),
+      windowSeconds: parseIntEnv("ECONOMICS_WINDOW_SECONDS", 60),
+      degradeThreshold: parseFloatEnv("ECONOMICS_DEGRADE_THRESHOLD", 0.75),
     },
     governance: {
       enabled: getBoolEnv("GOVERNANCE_ENABLED", false),
@@ -193,14 +198,8 @@ export function loadConfig(): AppConfig {
       semanticFirewallLlmUrl: process.env["SEMANTIC_FIREWALL_LLM_URL"],
       jitTokensEnabled: getBoolEnv("JIT_TOKENS_ENABLED", false),
       circuitBreakerEnabled: getBoolEnv("CIRCUIT_BREAKER_ENABLED", false),
-      circuitBreakerThreshold: parseInt(
-        getEnv("CIRCUIT_BREAKER_THRESHOLD", "10"),
-        10,
-      ),
-      circuitBreakerWindowMs: parseInt(
-        getEnv("CIRCUIT_BREAKER_WINDOW_MS", "60000"),
-        10,
-      ),
+      circuitBreakerThreshold: parseIntEnv("CIRCUIT_BREAKER_THRESHOLD", 10),
+      circuitBreakerWindowMs: parseIntEnv("CIRCUIT_BREAKER_WINDOW_MS", 60000),
       boardJwtSecret: process.env["BOARD_JWT_SECRET"],
       a2aJwtSecret: process.env["A2A_JWT_SECRET"],
       channelSigningSecret: process.env["CHANNEL_SIGNING_SECRET"],

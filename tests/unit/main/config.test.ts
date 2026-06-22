@@ -178,4 +178,43 @@ describe("loadConfig", () => {
       allowedPrompts: [],
     });
   });
+
+  it("falls back to the default agentTimeoutMs when AGENT_TIMEOUT_MS is non-numeric", () => {
+    // Guards against NaN → setTimeout(fn, NaN) firing instantly (every task times out).
+    process.env["AGENT_TIMEOUT_MS"] = "abc";
+    expect(loadConfig().agentTimeoutMs).toBe(300000);
+  });
+
+  it("reads a valid AGENT_TIMEOUT_MS", () => {
+    process.env["AGENT_TIMEOUT_MS"] = "120000";
+    expect(loadConfig().agentTimeoutMs).toBe(120000);
+  });
+
+  it("falls back to the default port when PORT is non-numeric", () => {
+    process.env["PORT"] = "not-a-port";
+    expect(loadConfig().port).toBe(3000);
+  });
+
+  it("falls back to the default maxTokenBudget when MAX_TOKEN_BUDGET is non-numeric", () => {
+    process.env["MAX_TOKEN_BUDGET"] = "lots";
+    expect(loadConfig().maxTokenBudget).toBe(0);
+  });
+
+  it("falls back to defaults for non-numeric economics numerics", () => {
+    process.env["ECONOMICS_MAX_REQUESTS_PER_WINDOW"] = "x";
+    process.env["ECONOMICS_WINDOW_SECONDS"] = "y";
+    process.env["ECONOMICS_DEGRADE_THRESHOLD"] = "z";
+    const { economics } = loadConfig();
+    expect(economics.maxRequestsPerWindow).toBe(0);
+    expect(economics.windowSeconds).toBe(60);
+    expect(economics.degradeThreshold).toBe(0.75);
+  });
+
+  it("falls back to defaults for non-numeric circuit-breaker numerics", () => {
+    process.env["CIRCUIT_BREAKER_THRESHOLD"] = "nope";
+    process.env["CIRCUIT_BREAKER_WINDOW_MS"] = "nope";
+    const { security } = loadConfig();
+    expect(security.circuitBreakerThreshold).toBe(10);
+    expect(security.circuitBreakerWindowMs).toBe(60000);
+  });
 });

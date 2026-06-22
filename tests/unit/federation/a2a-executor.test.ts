@@ -5,6 +5,19 @@ import type {
   AgentExecutionEvent,
 } from "@a2a-js/sdk/server";
 import type { Message } from "@a2a-js/sdk";
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 import { KaibanAgentExecutor } from "../../../src/infrastructure/federation/a2a-executor";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
@@ -238,6 +251,26 @@ describe("KaibanAgentExecutor.execute", () => {
     await ex.execute(makeContext({ agentId: "writer", text: "go" }), bus);
     expect(states(events).at(-1)).toBe("failed");
     expect(finished).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs the error server-side on failure (observability) without leaking it to the wire", async () => {
+    mockLog.warn.mockClear();
+    const err = new Error("internal stacktrace path");
+    const { deps } = makeDeps(() => Promise.reject(err));
+    const ex = new KaibanAgentExecutor(deps);
+    const { bus, events } = makeEventBus();
+    await ex.execute(makeContext({ agentId: "writer", text: "go" }), bus);
+    // Server-side log carries the real error...
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      { err },
+      "A2A execute failed",
+    );
+    // ...but the wire terminal message stays generic.
+    const last = events.at(-1) as {
+      status: { message?: { parts: { text: string }[] } };
+    };
+    expect(last.status.message?.parts[0]?.text).toBe("Task execution failed");
+    expect(last.status.message?.parts[0]?.text).not.toContain("stacktrace");
   });
 
   it("does not leak internal error detail into the failed message", async () => {

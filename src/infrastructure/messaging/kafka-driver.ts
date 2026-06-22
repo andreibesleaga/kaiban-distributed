@@ -23,6 +23,12 @@ export class KafkaDriver implements IMessagingDriver {
   private consumer: Consumer;
   private producerConnected = false;
   private consumerConnected = false;
+  /**
+   * Set once subscribe() has wired this consumer to a topic. KafkaJS forbids a
+   * 2nd subscribe()+run() on the same consumer, so a 2nd subscribe() is rejected
+   * explicitly (C2) instead of relying on every call site using a fresh driver.
+   */
+  private subscribedTopic: string | null = null;
 
   constructor(config: KafkaDriverConfig) {
     const kafka = new Kafka({
@@ -99,11 +105,19 @@ export class KafkaDriver implements IMessagingDriver {
     topic: string,
     handler: (payload: MessagePayload) => Promise<void>,
   ): Promise<void> {
-    if (!this.consumerConnected) {
-      await this.consumer.connect();
-      this.consumerConnected = true;
+    if (this.subscribedTopic !== null) {
+      throw new Error(
+        "KafkaDriver supports a single topic per driver; create a separate " +
+          "driver for additional topics",
+      );
     }
+    // The single-topic guard above guarantees we only get here on a fresh /
+    // unsubscribed consumer (subscribedTopic and consumerConnected are reset
+    // together), so the consumer is always disconnected at this point.
+    await this.consumer.connect();
+    this.consumerConnected = true;
     await this.consumer.subscribe({ topic, fromBeginning: false });
+    this.subscribedTopic = topic;
     await this.consumer.run({
       eachMessage: async ({ message }) => {
         if (!message.value) return;
@@ -132,6 +146,7 @@ export class KafkaDriver implements IMessagingDriver {
       await this.consumer.disconnect();
       this.consumerConnected = false;
     }
+    this.subscribedTopic = null;
   }
 
   async disconnect(): Promise<void> {
@@ -143,5 +158,6 @@ export class KafkaDriver implements IMessagingDriver {
       await this.consumer.disconnect();
       this.consumerConnected = false;
     }
+    this.subscribedTopic = null;
   }
 }

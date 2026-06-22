@@ -20,7 +20,12 @@ vi.mock("bullmq", () => ({
     name: string,
     processor: (job: { data: unknown }) => Promise<void>,
   ) {
-    return { close: mockWorkerClose, _processor: processor, _name: name };
+    return {
+      close: mockWorkerClose,
+      on: vi.fn(),
+      _processor: processor,
+      _name: name,
+    };
   }),
 }));
 

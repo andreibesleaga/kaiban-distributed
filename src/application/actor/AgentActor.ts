@@ -34,7 +34,10 @@ export type TaskHandler = (
 
 const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 100;
-const MAX_PUBLISH_DATA_LEN = 65_536; // 64 KB — cap outbound message data
+// 64 KB — cap outbound message data. The invariant is BYTES (the message is
+// JSON-serialized and transmitted as UTF-8), so all checks/truncation use
+// Buffer.byteLength(...,"utf8"), mirroring a2a-input-validation.ts.
+const MAX_PUBLISH_DATA_LEN = 65_536;
 
 function sanitizeId(id: string): string {
   return createHash("sha256").update(id).digest("hex").slice(0, 8);
@@ -44,13 +47,34 @@ async function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Truncate data values so published messages stay under MAX_PUBLISH_DATA_LEN */
+/**
+ * Truncate a string to at most `maxBytes` UTF-8 bytes WITHOUT splitting a
+ * multi-byte character. We over-trim by UTF-16 code units (each is ≤ the byte
+ * cost) then shrink one code unit at a time until the byte budget is met — so
+ * the result never ends mid-codepoint (which would corrupt the JSON payload).
+ */
+function truncateToBytes(str: string, maxBytes: number): string {
+  const buf = Buffer.from(str, "utf8");
+  if (buf.length <= maxBytes) return str;
+  // Back up past UTF-8 continuation bytes (10xxxxxx = 0x80–0xBF) so a multi-byte
+  // codepoint is never split. O(n) (one encode + a ≤3-byte backup), not O(n²).
+  let end = maxBytes;
+  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--;
+  return buf.toString("utf8", 0, end);
+}
+
+/**
+ * Cap outbound message data to MAX_PUBLISH_DATA_LEN BYTES. When the serialized
+ * payload is over budget, the `result` string is byte-truncated (multi-byte
+ * safe) and `_truncated` is flagged.
+ */
 function capDataSize(data: Record<string, unknown>): Record<string, unknown> {
-  const json = JSON.stringify(data);
-  if (json.length <= MAX_PUBLISH_DATA_LEN) return data;
+  if (Buffer.byteLength(JSON.stringify(data), "utf8") <= MAX_PUBLISH_DATA_LEN) {
+    return data;
+  }
   return {
     ...data,
-    result: String(data["result"] ?? "").slice(0, MAX_PUBLISH_DATA_LEN),
+    result: truncateToBytes(String(data["result"] ?? ""), MAX_PUBLISH_DATA_LEN),
     _truncated: true,
   };
 }
@@ -255,14 +279,18 @@ export class AgentActor {
     reason?: string,
   ): Promise<void> {
     recordMessageProcessed("failed");
+    // Byte-cap each free-text field so a giant error/reason cannot blow the 64 KB
+    // outbound invariant (multi-byte safe). capDataSize is the outer guard.
     await this.driver.publish(DLQ_CHANNEL, {
       taskId: payload.taskId,
       agentId: this.id,
       timestamp: Date.now(),
       data: capDataSize({
         status: "failed",
-        error,
-        ...(reason ? { reason } : {}),
+        error: truncateToBytes(error, MAX_PUBLISH_DATA_LEN),
+        ...(reason
+          ? { reason: truncateToBytes(reason, MAX_PUBLISH_DATA_LEN) }
+          : {}),
       }),
     });
   }
@@ -281,6 +309,13 @@ export class AgentActor {
     // handle is always set before the finally below.
     let timeoutHandle!: ReturnType<typeof setTimeout>;
     const handlerPromise = handler(payload, controller.signal);
+    // C10: if the timeout wins the race, the handler promise can still reject
+    // afterwards (the aborted LLM call throws late) — that rejection now has no
+    // awaiter and would surface as an unhandledRejection. Attach a no-op catch
+    // so the losing side is always handled. Promise.resolve() normalizes a
+    // possibly non-thenable handler return; the race below still awaits the
+    // original handlerPromise, so a winning rejection is NOT swallowed.
+    Promise.resolve(handlerPromise).catch(() => {});
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
         // Abort first so the handler's underlying work (LLM .invoke) cancels,

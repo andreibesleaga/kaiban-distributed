@@ -28,7 +28,7 @@
 [![Security Policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-green)](package.json)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0%20lib%20%2F%20GPL--3.0%20app-blue)](LICENSING.md)
 
 ---
 
@@ -636,7 +636,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "name": "kaiban-gateway",
   "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
   "url": "http://localhost:3000/a2a/rpc",
-  "version": "1.5.0-beta",
+  "version": "2.0.0",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
     { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" },
@@ -911,7 +911,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 1131 unit tests (no external deps)
+npm run test           # 1155 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -926,7 +926,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 1131 tests, 108 files | None (all mocked) |
+| Unit | `npm test` | 1155 tests, 108 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 69 tests, 11 files | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
 | Board | `cd board && npm test` | React component + Zustand store + a11y tests | happy-dom |
@@ -1174,4 +1174,9 @@ Built with help from [**GABBE Agentic Engineering Kit**](https://github.com/andr
 
 ## License
 
-GPL-3.0 ©2026 [Andrei Besleaga](https://github.com/andreibesleaga)
+**Dual-licensed** (see [`LICENSING.md`](LICENSING.md), [ADR-011](docs/decisions/ADR-011-dual-license.md)):
+
+- The **published npm library** (`kaiban-distributed` — the `dist/src` artifact) is **Apache-2.0**, usable in commercial / closed-source projects.
+- The **full application** (board, examples, tests, Docker images) is **GPL-3.0**.
+
+Apache-2.0 (library) / GPL-3.0 (application) ©2026 [Andrei Besleaga](https://github.com/andreibesleaga)

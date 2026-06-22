@@ -396,8 +396,8 @@ TLS_REJECT_UNAUTHORIZED=true
 | Outbound task result in messages | 64 KB | `AgentActor` |
 | HTTP request body | 1 MB | `GatewayApp` — `express.json({ limit: '1mb' })` |
 | WebSocket frame | 1 MB | `SocketGateway` — `maxHttpBufferSize: 1e6` |
-| `instruction` field | 10,000 characters | `A2AConnector` input validation |
-| `agentId` field | 64 characters | `A2AConnector` input validation |
+| `instruction` field | 10,000 characters | `a2a-input-validation.ts` (`validateTaskInput`) |
+| `agentId` field | 64 characters | `a2a-input-validation.ts` (`validateTaskInput`) |
 
 ---
 

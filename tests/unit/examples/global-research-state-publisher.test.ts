@@ -133,10 +133,17 @@ describe("ResearchStatePublisher", () => {
   });
 
   it("searchPhaseComplete() maps error to BLOCKED and success to DONE", () => {
-    pub.searchPhaseComplete([
-      { taskId: "t1", result: "ok" },
-      { taskId: "t2", error: "timeout" },
+    const indexByTaskId = new Map([
+      ["t1", 0],
+      ["t2", 1],
     ]);
+    pub.searchPhaseComplete(
+      [
+        { taskId: "t1", result: "ok" },
+        { taskId: "t2", error: "timeout" },
+      ],
+      indexByTaskId,
+    );
     const msg = JSON.parse(mockPublish.mock.calls[0]![1] as string) as Record<
       string,
       unknown
@@ -144,6 +151,52 @@ describe("ResearchStatePublisher", () => {
     const tasks = msg["tasks"] as Array<{ taskId: string; status: string }>;
     expect(tasks.find((t) => t.taskId === "t1")!.status).toBe("DONE");
     expect(tasks.find((t) => t.taskId === "t2")!.status).toBe("BLOCKED");
+  });
+
+  it("searchPhaseComplete() attributes each result to its dispatch index even when results arrive out of order (C1)", () => {
+    // Dispatch order is t0,t1,t2 → searcher-0,searcher-1,searcher-2; but
+    // router.waitAll returns them in COMPLETION order (here, reversed).
+    const indexByTaskId = new Map([
+      ["t0", 0],
+      ["t1", 1],
+      ["t2", 2],
+    ]);
+    pub.searchPhaseComplete(
+      [
+        { taskId: "t2", result: "c" },
+        { taskId: "t1", result: "b" },
+        { taskId: "t0", result: "a" },
+      ],
+      indexByTaskId,
+    );
+    const msg = JSON.parse(mockPublish.mock.calls[0]![1] as string) as Record<
+      string,
+      unknown
+    >;
+    const tasks = msg["tasks"] as Array<{
+      taskId: string;
+      assignedToAgentId: string;
+    }>;
+    // Each result keeps its dispatch-order searcher card despite the reversed order.
+    expect(
+      tasks.find((t) => t.taskId === "t0")!.assignedToAgentId,
+    ).toBe("searcher-0");
+    expect(
+      tasks.find((t) => t.taskId === "t1")!.assignedToAgentId,
+    ).toBe("searcher-1");
+    expect(
+      tasks.find((t) => t.taskId === "t2")!.assignedToAgentId,
+    ).toBe("searcher-2");
+  });
+
+  it("searchPhaseComplete() falls back to searcher-0 for an unknown taskId", () => {
+    pub.searchPhaseComplete([{ taskId: "ghost", result: "ok" }], new Map());
+    const msg = JSON.parse(mockPublish.mock.calls[0]![1] as string) as Record<
+      string,
+      unknown
+    >;
+    const tasks = msg["tasks"] as Array<{ assignedToAgentId: string }>;
+    expect(tasks[0]!.assignedToAgentId).toBe("searcher-0");
   });
 
   it("aggregatingPhase() publishes DOING task for writer", () => {

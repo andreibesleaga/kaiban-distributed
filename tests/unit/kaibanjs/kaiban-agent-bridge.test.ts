@@ -5,6 +5,18 @@ import type {
   MessagePayload,
 } from "../../../src/infrastructure/messaging/interfaces";
 
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
+}));
+
 const mockTeamStart = vi.fn();
 
 vi.mock("kaibanjs", () => ({
@@ -221,6 +233,92 @@ describe("createKaibanTaskHandler", () => {
     expect(result.inputTokens).toBe(0);
     expect(result.outputTokens).toBe(0);
     expect(result.estimatedCost).toBe(0);
+  });
+
+  it("stringifies a structured (object) result instead of [object Object]", async () => {
+    const structured = { title: "Report", sections: ["a", "b"] };
+    mockTeamStart.mockResolvedValue(makeSuccess(structured as unknown as string));
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeMockDriver(),
+    );
+    const result = (await h(basePayload)) as { answer: string };
+    expect(result.answer).toBe(JSON.stringify(structured));
+    expect(result.answer).not.toContain("[object Object]");
+  });
+
+  it("returns empty-string answer when structured result is null", async () => {
+    mockTeamStart.mockResolvedValue(makeSuccess(null as unknown as string));
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeMockDriver(),
+    );
+    const result = (await h(basePayload)) as { answer: string };
+    expect(result.answer).toBe("");
+  });
+
+  it("matches OpenRouter slug pricing via provider-prefix + prefix normalization", async () => {
+    mockTeamStart.mockResolvedValue(
+      makeSuccess("answer", 1_000_000, 1_000_000),
+    );
+    const h = createKaibanTaskHandler(
+      {
+        name: "A",
+        role: "R",
+        goal: "G",
+        background: "B",
+        // not an exact key; normalizes to "claude-3-5-sonnet" then prefix-matches
+        // the dated "claude-3-5-sonnet-20241022" key (input 3.0 / output 15.0)
+        llmConfig: { provider: "openrouter", model: "anthropic/claude-3-5-sonnet" },
+      },
+      makeMockDriver(),
+    );
+    const result = (await h(basePayload)) as { estimatedCost: number };
+    // 3.0 + 15.0 = 18.0 per 1M+1M tokens (NOT the 1.0/3.0 default)
+    expect(result.estimatedCost).toBeCloseTo(18.0, 2);
+  });
+
+  it("matches a dated model suffix via normalization", async () => {
+    mockTeamStart.mockResolvedValue(
+      makeSuccess("answer", 1_000_000, 1_000_000),
+    );
+    const h = createKaibanTaskHandler(
+      {
+        name: "A",
+        role: "R",
+        goal: "G",
+        background: "B",
+        // strips "-2024-08-06" → "gpt-4o" (input 2.5 / output 10.0)
+        llmConfig: { provider: "openai", model: "gpt-4o-2024-08-06" },
+      },
+      makeMockDriver(),
+    );
+    const result = (await h(basePayload)) as { estimatedCost: number };
+    // 2.5 + 10.0 = 12.5 per 1M+1M tokens
+    expect(result.estimatedCost).toBeCloseTo(12.5, 2);
+  });
+
+  it("warns once and uses default pricing when no known key matches", async () => {
+    mockTeamStart.mockResolvedValue(
+      makeSuccess("answer", 1_000_000, 1_000_000),
+    );
+    const h = createKaibanTaskHandler(
+      {
+        name: "A",
+        role: "R",
+        goal: "G",
+        background: "B",
+        llmConfig: { provider: "openai", model: "totally-unknown-model" },
+      },
+      makeMockDriver(),
+    );
+    const result = (await h(basePayload)) as { estimatedCost: number };
+    // default 1.0 + 3.0 = 4.0
+    expect(result.estimatedCost).toBeCloseTo(4.0, 2);
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "totally-unknown-model" }),
+      expect.stringContaining("default pricing"),
+    );
   });
 
   it("includes env vars in Team env when set", async () => {

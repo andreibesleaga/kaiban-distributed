@@ -42,12 +42,54 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   default: { input: 1.0, output: 3.0 },
 };
 
+/**
+ * Normalize a model identifier for pricing lookup:
+ * - lowercase
+ * - strip a leading `provider/` segment (OpenRouter slugs, e.g. `openai/gpt-4o-mini`)
+ * - strip a trailing dated/version suffix (e.g. `-2024-08-06` or `:20241022`)
+ */
+function normalizeModel(model: string): string {
+  return model
+    .toLowerCase()
+    .replace(/^[^/]+\//, "")
+    .replace(/[-:]\d{4}-?\d{2}-?\d{2}$/, "")
+    .replace(/[-:]v\d+$/, "");
+}
+
+/** Does either of two model identifiers prefix the other (date/version aside)? */
+function isPrefixMatch(normalized: string, key: string): boolean {
+  const normalizedKey = normalizeModel(key);
+  return (
+    normalized.startsWith(normalizedKey) || normalizedKey.startsWith(normalized)
+  );
+}
+
+/** Resolve a model name to a pricing entry, falling back to `default` with a one-time warn. */
+function resolvePricing(model: string): { input: number; output: number } {
+  const exact = MODEL_PRICING[model];
+  if (exact) return exact;
+
+  const normalized = normalizeModel(model);
+  const byNormalized = MODEL_PRICING[normalized];
+  if (byNormalized) return byNormalized;
+
+  for (const [key, pricing] of Object.entries(MODEL_PRICING)) {
+    if (key !== "default" && isPrefixMatch(normalized, key)) return pricing;
+  }
+
+  log.warn(
+    { model, normalized },
+    "Model not in pricing table; using default pricing",
+  );
+  return MODEL_PRICING["default"]!;
+}
+
 function estimateCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
 ): number {
-  const p = MODEL_PRICING[model] ?? MODEL_PRICING["default"]!;
+  const p = resolvePricing(model);
   return (
     (inputTokens / 1_000_000) * p.input + (outputTokens / 1_000_000) * p.output
   );
@@ -97,6 +139,16 @@ function buildTask(payload: MessagePayload, agent: Agent): Task {
   });
 }
 
+/**
+ * Render a WorkflowResult.result into the handler `answer` string.
+ * Mirrors `formatDisplayResult`: null/undefined → "", strings verbatim, and
+ * structured (object/number/…) outputs JSON-stringified (never "[object Object]").
+ */
+function formatAnswer(result: unknown): string {
+  if (result == null) return "";
+  return typeof result === "string" ? result : JSON.stringify(result);
+}
+
 /** Convert a KaibanJS WorkflowResult into the structured KaibanHandlerResult. */
 function toHandlerResult(
   result: {
@@ -110,8 +162,12 @@ function toHandlerResult(
 ): KaibanHandlerResult {
   const inputTokens = result.stats?.llmUsageStats.inputTokens ?? 0;
   const outputTokens = result.stats?.llmUsageStats.outputTokens ?? 0;
+  // Preserve structured (non-string) LLM outputs verbatim: stringify objects as
+  // JSON rather than coercing to "[object Object]" (mirrors formatDisplayResult,
+  // which renders null/undefined as "" and JSON-stringifies everything else).
+  const answer = formatAnswer(result.result);
   return {
-    answer: String(result.result ?? ""),
+    answer,
     inputTokens,
     outputTokens,
     estimatedCost: estimateCost(model, inputTokens, outputTokens),

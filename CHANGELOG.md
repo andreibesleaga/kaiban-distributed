@@ -26,13 +26,16 @@ Major release — breaking changes are documented in `MIGRATION.md`. Authoritati
 - **Universal AMQP driver seam** — declared `amqplib` seam, unimplemented stub (coverage-excluded).
   (BETA.1, ADR-016)
 - **`dispatchToAgent`** actor-mailbox primitive in `src/shared` (replaces the removed `tasks.create`
-  RPC); **`parseAgentCardSkills`** for v0.3 cards.
+  RPC). _(The examples also gain a local `parseAgentCardSkills` helper to read v0.3 AgentCards — example
+  code, not a published library export.)_
 - **Workflow budget guard** (`MAX_WORKFLOW_COST_USD` / `MAX_WORKFLOW_TOKENS`) in both example
   orchestrators — checked between phases and before each revision; **graceful STOPPED on breach**
   (default `0.50` in the example compose files; `0` = unlimited; separate from per-agent
   `MAX_TOKEN_BUDGET`).
 - **Playwright visual baselines** for the React board + the two static example viewers
   (`cd board && npm run test:visual`).
+- **`scripts/smoke-consumer.sh`** — packs the Apache tarball and verifies a fresh consumer can import
+  the public surface from both entry points (`.` and `./shared`).
 - **Packaging:** `./shared` subpath export + two-entry api-extractor; staging-dir `npm pack`
   (Apache-only artifact, no GPL leak). (BETA.1, ADR-011)
 - **COMPLIANCE** cross-walk and the **v2.1 roadmap**.
@@ -53,6 +56,11 @@ Major release — breaking changes are documented in `MIGRATION.md`. Authoritati
 - **`CompletionRouter` subscribes lazily** (on the first `wait()`) — a router that never waits no
   longer consumes the shared completed queue (fixes a competing-consumer hang between the gateway's
   A2A-executor router and an orchestrator router).
+- **Kafka driver** now throws a clear error on a 2nd `subscribe()` (explicit one-topic-per-driver
+  contract) instead of silently breaking.
+- **BullMQ driver** sets job-retention defaults (`removeOnComplete` / `removeOnFail`, bounding Redis
+  growth) and registers a worker `error` listener.
+- **A2A executor** logs the underlying error server-side on failure (the wire response stays generic).
 
 ### Fixed
 - **HITL re-arm loop** — the terminal prompt no longer re-arms after a decision arrives (board OR
@@ -67,6 +75,20 @@ Major release — breaking changes are documented in `MIGRATION.md`. Authoritati
   position), so searchers that finish out of order get the correct sub-topic, node label and logged
   taskId.
 - **Governance Action Gate fails closed** on a throwing validator; MCP-without-auth warning.
+- **Byte-accurate data caps** — the 64 KB outbound-message and 20 KB state-event-result caps are now
+  measured in **UTF-8 bytes** (`Buffer.byteLength`), truncating on a codepoint boundary (was UTF-16
+  `.length`, which let multi-byte payloads exceed the byte cap).
+- **Structured agent output** — the KaibanJS bridge now JSON-stringifies a non-string (object) LLM
+  result instead of emitting `"[object Object]"`.
+- **Model-pricing accuracy** — `estimateCost` normalizes OpenRouter slugs / dated suffixes
+  (`openai/gpt-4o-mini`, `gpt-4o-2024-08-06`, `anthropic/claude-3-5-sonnet`) before pricing lookup,
+  and warns on a default-pricing fallback (was exact-match only → slugs silently mis-priced).
+- **Config robustness** — numeric env vars are parsed NaN-safe (`AGENT_TIMEOUT_MS=abc` no longer
+  yields `setTimeout(…, NaN)` / instant timeouts).
+- **Actor robustness** — a timed-out task handler's late rejection no longer surfaces as an
+  `unhandledRejection`.
+- **Global-research budget guard** now runs after **every** phase (search, write, governance,
+  editorial), matching blog-team.
 - A2A input validation hardened; de-stubbed `IDLE` / `TODO` placeholders. (BETA.1)
 
 ### Security
