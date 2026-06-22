@@ -124,6 +124,9 @@ export interface AdmissionVerdict {
 // @public
 export const AGENT_CARD_PATH = ".well-known/agent-card.json";
 
+// @public
+export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
+
 // @public (undocumented)
 export class AgentActor {
     constructor(id: string, driver: IMessagingDriver, queueName: string, taskHandler?: TaskHandler, deps?: AgentActorDeps);
@@ -421,6 +424,17 @@ export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
 
 // @public
 export function detectSpendAnomaly(samples: number[], factor?: number): boolean;
+
+// @public (undocumented)
+export interface DispatchParams {
+    context?: string;
+    expectedOutput?: string;
+    inputs?: Record<string, unknown>;
+    instruction: string;
+}
+
+// @public
+export function dispatchToAgent(driver: Pick<IMessagingDriver, "publish">, agentId: string, params: DispatchParams): Promise<string>;
 
 // @public (undocumented)
 export interface DistributedAgentState {

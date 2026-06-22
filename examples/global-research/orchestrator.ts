@@ -26,12 +26,14 @@ import {
   createDriver,
   getDriverType,
   CompletionRouter,
-  createRpcClient,
   WorkflowOrchestrator,
   RedisCheckpointStore,
+  workflowBudgetFromEnv,
+  assertWithinBudget,
+  BudgetExceededError,
 } from '../../src/shared';
 import type { ResearchContext } from './types';
-import { issueA2AToken } from '../../src/infrastructure/security/a2a-auth';
+import type { IMessagingDriver } from '../../src/infrastructure/messaging/interfaces';
 import { log, RunLogger } from './run-logger';
 import { ResearchStatePublisher } from './state-publisher';
 import {
@@ -67,7 +69,7 @@ interface PipelineDeps {
   orch: WorkflowOrchestrator;
   router: CompletionRouter;
   pub: ResearchStatePublisher;
-  rpc: ReturnType<typeof createRpcClient>;
+  driver: Pick<IMessagingDriver, 'publish'>;
   rl: readline.Interface | null;
   runLog: RunLogger;
 }
@@ -98,7 +100,8 @@ function restore(ctx: ResearchContext, snap: CtxSnapshot): void {
 }
 
 async function runPipeline(deps: PipelineDeps): Promise<void> {
-  const { ctx, orch, router, pub, rpc, rl, runLog } = deps;
+  const { ctx, orch, router, pub, driver, rl, runLog } = deps;
+  const budget = workflowBudgetFromEnv();
 
   pub.workflowStarted(NUM_SEARCHERS);
   if (await orch.isResuming()) log.info('Resuming from a prior checkpoint (completed phases will be skipped)\n');
@@ -110,27 +113,29 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.info(`Sub-topics: ${subTopics.map((t, i) => `\n  ${i + 1}. ${t}`).join('')}\n`);
 
   restore(ctx, await orch.memoize<CtxSnapshot>('search', async () => {
-    await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, rpc, runLog);
+    await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, driver, runLog);
     return snapshot(ctx);
   }));
 
   log.info(`\nSEARCH PHASE COMPLETE — ${ctx.rawSearchData.length}/${NUM_SEARCHERS} results`);
+  assertWithinBudget(ctx.metadata, budget);
 
   // STEP 2 — Fan-In
   log.separator('='); log.info('STEP 2 — Fan-In: Atlas (Writer) synthesising research...'); log.separator('=');
 
   restore(ctx, await orch.memoize<CtxSnapshot>('write', async () => {
-    await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, rpc, runLog);
+    await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, driver, runLog);
     return snapshot(ctx);
   }));
 
   log.info(`\nSYNTHESIS COMPLETE (${(ctx.consolidatedDraft ?? '').length} chars)`);
+  assertWithinBudget(ctx.metadata, budget);
 
   // STEP 3 — Governance (checkpoints both its verdict AND the ctx delta)
   log.separator('='); log.info('STEP 3 — Sage (Reviewer) running governance compliance check...'); log.separator('=');
 
   const govStep = await orch.memoize('governance', async () => {
-    const result = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, rpc, runLog);
+    const result = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, driver, runLog);
     return { gov: result, snap: snapshot(ctx) };
   });
   restore(ctx, govStep.snap);
@@ -152,7 +157,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.separator('='); log.info('STEP 4 — Morgan (Editor) preparing HITL review...'); log.separator('=');
 
   const editStep = await orch.memoize('editorial', async () => {
-    const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, rpc, runLog);
+    const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, driver, runLog);
     return { edit: result, snap: snapshot(ctx) };
   });
   restore(ctx, editStep.snap);
@@ -169,7 +174,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   await handleDecision({
     ctx, query: QUERY, redisUrl: REDIS_URL, gov, edit,
     writeWaitMs: WRITE_WAIT_MS, autoPub: AUTO_PUBLISH,
-    router, pub, rpc, rl, runLog,
+    router, pub, driver, rl, runLog,
   });
 
   // Terminal state reached — wipe the checkpoint so a re-run starts fresh.
@@ -193,7 +198,6 @@ async function main(): Promise<void> {
   const failedDriver   = isKafka ? createDriver('-orchestrator-failed') : completedDriver;
   const router         = new CompletionRouter(completedDriver, failedDriver);
   const pub            = new ResearchStatePublisher(REDIS_URL);
-  const rpc            = createRpcClient(GATEWAY_URL);
   const ctx: ResearchContext = {
     id: randomUUID(), originalQuery: QUERY, status: 'INITIALIZED',
     rawSearchData: [], editorApproval: false,
@@ -223,22 +227,31 @@ async function main(): Promise<void> {
     log.header('KAIBAN DISTRIBUTED — GLOBAL RESEARCH SWARM ORCHESTRATOR');
     log.info(`Query: "${QUERY}"  |  Searchers: ${NUM_SEARCHERS}  |  Context: ${ctx.id}\n`);
 
-    if (process.env['A2A_JWT_SECRET']) {
-      rpc.setToken(issueA2AToken('global-research-orchestrator'));
-      log.info('A2A auth token issued');
-    }
-
     const health = await fetch(`${GATEWAY_URL}/health`).then((r) => r.json()) as { data: { status: string } };
     log.info(`Gateway: ${health.data.status.toUpperCase()} at ${GATEWAY_URL}`);
 
     socket = io(GATEWAY_URL, { transports: ['websocket'] });
     socket.on('state:update', onBoardUpdate);
 
-    await runPipeline({ ctx, orch, router, pub, rpc, rl, runLog });
+    await runPipeline({ ctx, orch, router, pub, driver: completedDriver, rl, runLog });
 
   } catch (err: unknown) {
-    runLog.finish('FAILED');
-    throw err;
+    // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
+    if (err instanceof BudgetExceededError) {
+      ctx.metadata.endTime = Date.now();
+      pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, ctx);
+      runLog.finish('STOPPED');
+      await orch.clear();
+      log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
+    } else {
+      // Publish a terminal state so the board reflects the failure instead of
+      // hanging on RUNNING forever, then surface the error to the CLI.
+      ctx.metadata.endTime = Date.now();
+      const msg = err instanceof Error ? err.message : String(err);
+      pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, ctx);
+      runLog.finish('FAILED');
+      throw err;
+    }
   } finally {
     const logPath = await runLog.flush('examples/global-research/runs').catch(() => null);
     if (logPath) log.info(`Run log saved to ${logPath}`);

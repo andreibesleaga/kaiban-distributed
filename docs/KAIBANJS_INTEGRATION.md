@@ -637,7 +637,7 @@ process.on('SIGTERM', async () => {
 
 ### File 7: `orchestrator.ts` — Full Orchestration with HITL
 
-The orchestrator is the workflow controller. It submits tasks via A2A JSON-RPC, waits for results via `CompletionRouter`, and manages the HITL decision loop.
+The orchestrator is the workflow controller. It dispatches tasks to its worker agents over the actor mailbox via the `dispatchToAgent` primitive (the `dispatch()` helper below), waits for results via `CompletionRouter`, and manages the HITL decision loop. (External callers reach the gateway over HTTP using the A2A v0.3 `message/send` method — see §12.)
 
 ```typescript
 // examples/blog-team/orchestrator.ts (key sections)
@@ -655,16 +655,21 @@ const RESEARCH_WAIT_MS = parseInt(process.env['RESEARCH_WAIT_MS'] ?? '120000', 1
 const WRITE_WAIT_MS    = parseInt(process.env['WRITE_WAIT_MS']    ?? '240000', 10);
 const EDIT_WAIT_MS     = parseInt(process.env['EDIT_WAIT_MS']     ?? '300000', 10);
 
-// ── A2A RPC helper ──────────────────────────────────────────────────────────
-async function rpc(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const res = await fetch(`${GATEWAY_URL}/a2a/rpc`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
-  });
-  const body = await res.json() as { result: Record<string, unknown>; error?: { message: string } };
-  if (body.error) throw new Error(body.error.message);
-  return body.result;
+// ── Dispatch helper ─────────────────────────────────────────────────────────
+// In-process orchestration dispatches over the agent's actor mailbox via the
+// `dispatchToAgent` primitive (src/shared/dispatch.ts) — it publishes to
+// `kaiban-agents-{agentId}` and returns the `taskId` to await via CompletionRouter.
+// NOTE: the old custom `tasks.create` JSON-RPC method was removed in the A2A v0.3
+// migration (ADR-015). To reach the gateway over HTTP from OUTSIDE the process,
+// use the A2A v0.3 `message/send` method instead (see §12).
+import { dispatchToAgent } from '../../src/shared';
+// `driver` is the messaging driver this orchestrator already created (createDriver(...)).
+async function dispatch(
+  agentId: string,
+  params: { instruction: string; expectedOutput?: string; context?: string; inputs?: Record<string, unknown> },
+): Promise<{ taskId: string }> {
+  const taskId = await dispatchToAgent(driver, agentId, params);
+  return { taskId };
 }
 
 // ── CompletionRouter — single subscription hub dispatching by taskId ────────
@@ -731,8 +736,7 @@ async function main(): Promise<void> {
   const statePublisher = new OrchestratorStatePublisher(REDIS_URL);
 
   // STEP 1 — Research
-  const researchTask = await rpc('tasks.create', {
-    agentId: 'researcher',
+  const researchTask = await dispatch('researcher', {
     instruction: `Research the latest news on: "${TOPIC}". Include specific data points and developments.`,
     expectedOutput: 'A detailed research summary with key facts and trends.',
     inputs: { topic: TOPIC },
@@ -742,8 +746,7 @@ async function main(): Promise<void> {
   );
 
   // STEP 2 — Write
-  const writeTask = await rpc('tasks.create', {
-    agentId: 'writer',
+  const writeTask = await dispatch('writer', {
     instruction: `Write an engaging blog post about: "${TOPIC}". Use the research in context.`,
     expectedOutput: 'A complete blog post in Markdown, 500-800 words.',
     inputs: { topic: TOPIC },
@@ -754,8 +757,7 @@ async function main(): Promise<void> {
   );
 
   // STEP 3 — Editorial Review
-  const editTask = await rpc('tasks.create', {
-    agentId: 'editor',
+  const editTask = await dispatch('editor', {
     instruction: 'Review the blog post for factual accuracy. Output in your structured format.',
     expectedOutput: 'Structured editorial review: accuracy score, issues, recommendation.',
     inputs: { topic: TOPIC },
@@ -773,8 +775,7 @@ async function main(): Promise<void> {
   if (decision === '1') {
     statePublisher.workflowFinished(String(writeTask['taskId']), TOPIC, String(editTask['taskId']));
   } else if (decision === '2') {
-    const revisionTask = await rpc('tasks.create', {
-      agentId: 'writer',
+    const revisionTask = await dispatch('writer', {
       instruction: `Revise your blog post about "${TOPIC}" based on editorial feedback.`,
       expectedOutput: 'Revised blog post addressing all editorial issues.',
       context: `--- ORIGINAL ---\n${blogDraft}\n\n--- FEEDBACK ---\n${editorialReview}`,
@@ -976,8 +977,7 @@ async function planTrip(destination: string): Promise<void> {
   const router = new CompletionRouter(completedDriver);
 
   // Step 1: Research
-  const t1 = await rpc('tasks.create', {
-    agentId: 'trip-planner',
+  const t1 = await dispatch('trip-planner', {
     instruction: `Research top destinations for travel to ${destination}`,
     expectedOutput: 'Top 5 destinations with pros/cons',
     inputs: { destination },
@@ -985,8 +985,7 @@ async function planTrip(destination: string): Promise<void> {
   const research = await router.wait(String(t1['taskId']), 60000, 'research');
 
   // Step 2: Dates (receives research as context)
-  const t2 = await rpc('tasks.create', {
-    agentId: 'trip-planner',
+  const t2 = await dispatch('trip-planner', {
     instruction: `Select optimal travel dates for ${destination}`,
     expectedOutput: 'Best travel dates with reasoning',
     inputs: { destination },
@@ -995,8 +994,7 @@ async function planTrip(destination: string): Promise<void> {
   const dates = await router.wait(String(t2['taskId']), 60000, 'dates');
 
   // Step 3: Flights
-  const t3 = await rpc('tasks.create', {
-    agentId: 'trip-planner',
+  const t3 = await dispatch('trip-planner', {
     instruction: `Find flights to ${destination} for these dates`,
     expectedOutput: 'Flight options with prices',
     context: `${research}\n\nSelected dates: ${dates}`,
@@ -1045,8 +1043,7 @@ async function planEvent(eventName: string): Promise<void> {
   const router = new CompletionRouter(completedDriver);
 
   // ── Phase 1: Pick date (no deps) ──────────────────────────────────────────
-  const dateTask = await rpc('tasks.create', {
-    agentId: 'event-manager',
+  const dateTask = await dispatch('event-manager', {
     instruction: `Select optimal date for "${eventName}" considering venue availability`,
     expectedOutput: 'Specific date with rationale',
   });
@@ -1054,14 +1051,12 @@ async function planEvent(eventName: string): Promise<void> {
 
   // ── Phase 2: Parallel — book venue AND compile guest list ─────────────────
   const [venueTask, guestTask] = await Promise.all([
-    rpc('tasks.create', {
-      agentId: 'venue-manager',
+    dispatch('venue-manager', {
       instruction: `Book venue for "${eventName}" on ${date}`,
       expectedOutput: 'Confirmed venue details with cost',
       context: date,
     }),
-    rpc('tasks.create', {
-      agentId: 'marketing-agent',
+    dispatch('marketing-agent', {
       instruction: `Compile initial guest list for "${eventName}"`,
       expectedOutput: 'Guest list with 50-100 attendees and RSVPs',
       context: date,
@@ -1075,14 +1070,12 @@ async function planEvent(eventName: string): Promise<void> {
 
   // ── Phase 3: Parallel — catering (needs guest list) + marketing (needs venue) ──
   const [cateringTask, marketingTask] = await Promise.all([
-    rpc('tasks.create', {
-      agentId: 'catering-agent',
+    dispatch('catering-agent', {
       instruction: `Plan catering menu for "${eventName}"`,
       expectedOutput: 'Full catering plan with budget',
       context: `Guest count: ${guestList}\nVenue: ${venue}`,
     }),
-    rpc('tasks.create', {
-      agentId: 'marketing-agent',
+    dispatch('marketing-agent', {
       instruction: `Develop marketing campaign for "${eventName}"`,
       expectedOutput: 'Marketing plan with channels and timeline',
       context: `Date: ${date}\nVenue: ${venue}`,
@@ -1096,14 +1089,12 @@ async function planEvent(eventName: string): Promise<void> {
 
   // ── Phase 4: Parallel — venue setup + promotion ───────────────────────────
   const [setupTask, promoteTask] = await Promise.all([
-    rpc('tasks.create', {
-      agentId: 'venue-manager',
+    dispatch('venue-manager', {
       instruction: `Coordinate venue setup for "${eventName}"`,
       expectedOutput: 'Setup checklist and timeline',
       context: `${venue}\n${catering}`,
     }),
-    rpc('tasks.create', {
-      agentId: 'marketing-agent',
+    dispatch('marketing-agent', {
       instruction: `Execute marketing campaign for "${eventName}"`,
       expectedOutput: 'Campaign execution report and registration count',
       context: marketing,
@@ -1116,8 +1107,7 @@ async function planEvent(eventName: string): Promise<void> {
   ]);
 
   // ── Phase 5: Final approval ───────────────────────────────────────────────
-  const approvalTask = await rpc('tasks.create', {
-    agentId: 'event-manager',
+  const approvalTask = await dispatch('event-manager', {
     instruction: `Perform final inspection and approval for "${eventName}"`,
     expectedOutput: 'Final event report with go/no-go decision',
     context: `${setup}\n\n${promote}`,
@@ -1142,8 +1132,7 @@ async function runRelease(version: string): Promise<void> {
   const router = new CompletionRouter(completedDriver);
 
   // Run automated tests first
-  const testsTask = await rpc('tasks.create', {
-    agentId: 'developer',
+  const testsTask = await dispatch('developer', {
     instruction: `Run automated test suite for version ${version}`,
     expectedOutput: 'Test results: pass/fail count, coverage percentage',
   });
@@ -1157,14 +1146,12 @@ async function runRelease(version: string): Promise<void> {
 
   // Parallel: update version + manual QA (both depend on passing tests)
   const [versionTask, qaTask] = await Promise.all([
-    rpc('tasks.create', {
-      agentId: 'developer',
+    dispatch('developer', {
       instruction: `Update version numbers to ${version} in package.json and CHANGELOG`,
       expectedOutput: 'Updated files list with changes',
       context: testResults,
     }),
-    rpc('tasks.create', {
-      agentId: 'qa-engineer',
+    dispatch('qa-engineer', {
       instruction: `Perform manual QA checks for version ${version}`,
       expectedOutput: 'QA checklist results with pass/fail per item',
       context: testResults,
@@ -1177,8 +1164,7 @@ async function runRelease(version: string): Promise<void> {
   ]);
 
   // Create release package (depends on both version update and QA)
-  const releaseTask = await rpc('tasks.create', {
-    agentId: 'developer',
+  const releaseTask = await dispatch('developer', {
     instruction: `Create release package for version ${version}`,
     expectedOutput: 'Release package path and checksum',
     context: `${versionUpdate}\n\nQA Report:\n${qaReport}`,
@@ -1186,8 +1172,7 @@ async function runRelease(version: string): Promise<void> {
   const releasePackage = await router.wait(String(releaseTask['taskId']), 60000, 'release creation');
 
   // Deploy (depends on release package)
-  const deployTask = await rpc('tasks.create', {
-    agentId: 'developer',
+  const deployTask = await dispatch('developer', {
     instruction: `Deploy version ${version} to production`,
     expectedOutput: 'Deployment status and production URL',
     context: releasePackage,
@@ -1210,8 +1195,7 @@ async function processDatasets(datasets: string[]): Promise<void> {
   const router = new CompletionRouter(completedDriver);
 
   // Load raw data
-  const loadTask = await rpc('tasks.create', {
-    agentId: 'data-processor',
+  const loadTask = await dispatch('data-processor', {
     instruction: 'Load and catalog the raw datasets from storage',
     expectedOutput: 'Dataset catalog with file paths, sizes, and schemas',
   });
@@ -1220,8 +1204,7 @@ async function processDatasets(datasets: string[]): Promise<void> {
   // Validate all datasets in parallel
   const validationTasks = await Promise.all(
     datasets.map((dataset) =>
-      rpc('tasks.create', {
-        agentId: 'data-processor',
+      dispatch('data-processor', {
         instruction: `Validate integrity of dataset: ${dataset}`,
         expectedOutput: 'Validation report: row count, null count, schema conformance',
         context: catalog,
@@ -1239,8 +1222,7 @@ async function processDatasets(datasets: string[]): Promise<void> {
   // Process validated datasets in parallel
   const processingTasks = await Promise.all(
     datasets.map((dataset, i) =>
-      rpc('tasks.create', {
-        agentId: 'data-processor',
+      dispatch('data-processor', {
         instruction: `Process and transform dataset: ${dataset}`,
         expectedOutput: 'Processed dataset statistics and output path',
         context: validationResults[i]!,
@@ -1256,8 +1238,7 @@ async function processDatasets(datasets: string[]): Promise<void> {
   );
 
   // Merge all processed datasets
-  const mergeTask = await rpc('tasks.create', {
-    agentId: 'data-processor',
+  const mergeTask = await dispatch('data-processor', {
     instruction: 'Merge all processed datasets into a unified output',
     expectedOutput: 'Merged dataset statistics and final output path',
     context: processedResults.join('\n\n---\n\n'),
@@ -1407,8 +1388,7 @@ import { injectTraceContext, extractTraceContext } from '../src/infrastructure/t
 const carrier: Record<string, string> = {};
 injectTraceContext(carrier);
 
-await rpc('tasks.create', {
-  agentId: 'researcher',
+await dispatch('researcher', {
   instruction: '...',
   // Pass carrier as part of inputs for trace propagation
   inputs: { ...inputs, _traceContext: carrier },
@@ -1481,11 +1461,10 @@ The simplest pattern: each task waits for the previous to complete. Used in blog
 
 ```typescript
 // Submit → wait → submit → wait → ...
-const t1 = await rpc('tasks.create', { agentId: 'agent-a', instruction: 'Step 1: ...' });
+const t1 = await dispatch('agent-a', { instruction: 'Step 1: ...' });
 const result1 = await router.wait(String(t1['taskId']), 60000, 'step-1');
 
-const t2 = await rpc('tasks.create', {
-  agentId: 'agent-b',
+const t2 = await dispatch('agent-b', {
   instruction: 'Step 2: ...',
   context: result1,  // chain results
 });
@@ -1499,9 +1478,9 @@ Submit multiple tasks simultaneously; wait for all to complete.
 ```typescript
 // Submit all tasks at once
 const tasks = await Promise.all([
-  rpc('tasks.create', { agentId: 'agent-a', instruction: 'Parallel task A' }),
-  rpc('tasks.create', { agentId: 'agent-b', instruction: 'Parallel task B' }),
-  rpc('tasks.create', { agentId: 'agent-c', instruction: 'Parallel task C' }),
+  dispatch('agent-a', { instruction: 'Parallel task A' }),
+  dispatch('agent-b', { instruction: 'Parallel task B' }),
+  dispatch('agent-c', { instruction: 'Parallel task C' }),
 ]);
 
 // Wait for all to complete
@@ -1525,8 +1504,7 @@ async function fanOutFanIn(items: string[]): Promise<string> {
   // Fan-out: process all items in parallel
   const taskRefs = await Promise.all(
     items.map((item) =>
-      rpc('tasks.create', {
-        agentId: 'specialist-agent',
+      dispatch('specialist-agent', {
         instruction: `Analyze this item: ${item}`,
         expectedOutput: 'Analysis result',
         inputs: { item },
@@ -1542,8 +1520,7 @@ async function fanOutFanIn(items: string[]): Promise<string> {
   );
 
   // Synthesize
-  const synthesisTask = await rpc('tasks.create', {
-    agentId: 'synthesis-agent',
+  const synthesisTask = await dispatch('synthesis-agent', {
     instruction: 'Synthesize all analysis results into a unified report',
     expectedOutput: 'Comprehensive synthesis report',
     context: results.map((r, i) => `Item ${items[i]}:\n${r}`).join('\n\n---\n\n'),
@@ -1593,8 +1570,7 @@ async function executeDag(tasks: TaskDef[]): Promise<Record<string, string>> {
         inFlight.add(task.id);
 
         const context = task.deps.map((d) => `${d}:\n${results[d]}`).join('\n\n');
-        const ref = await rpc('tasks.create', {
-          agentId: task.agentId,
+        const ref = await dispatch(task.agentId, {
           instruction: task.instruction,
           expectedOutput: `Result for ${task.id}`,
           context,
@@ -1872,8 +1848,7 @@ const analyzerConfig: KaibanAgentConfig = {
 };
 
 // In the orchestrator, the structured result comes back as JSON string:
-const analysisTask = await rpc('tasks.create', {
-  agentId: 'text-analyzer',
+const analysisTask = await dispatch('text-analyzer', {
   instruction: 'Analyze the following text and output valid JSON matching the schema: {text}',
   expectedOutput: 'JSON object with title, summary, keywords, sentiment fields',
   inputs: { text: 'Your text here...' },
@@ -1884,8 +1859,7 @@ const analysisJson = await router.wait(String(analysisTask['taskId']), 60000, 'a
 const analysis = JSON.parse(analysisJson);
 
 // Node B: receives structured context
-const validationTask = await rpc('tasks.create', {
-  agentId: 'data-validator',
+const validationTask = await dispatch('data-validator', {
   instruction: 'Validate and enhance this text analysis',
   expectedOutput: 'Validation report with enhanced analysis',
   context: JSON.stringify(analysis, null, 2),
@@ -2171,8 +2145,7 @@ if (decision === '1') {
 
 // 4b. Revise: send back to writer with editorial notes
 if (decision === '2') {
-  const revisionTask = await rpc('tasks.create', {
-    agentId: 'writer',
+  const revisionTask = await dispatch('writer', {
     instruction: `Revise blog post addressing all editorial feedback`,
     context: `--- ORIGINAL ---\n${blogDraft}\n\n--- FEEDBACK ---\n${editorialReview}`,
   });
@@ -2235,6 +2208,8 @@ const decision = await awaitHumanDecision(editTaskId);
 
 ## 12. A2A (Agent-to-Agent) Protocol
 
+> **A2A v0.3 (ADR-015).** This surface is now the official `@a2a-js/sdk` v0.3 server. The legacy custom methods (`tasks.create` / `tasks.get` / `agent.status`) and the flat `{ capabilities: string[] }` card were removed in the v2.0 migration. The live methods are `message/send`, `message/stream`, `tasks/get`, `tasks/cancel`; live agent status is `GET /a2a/agents/:agentId/status`.
+
 kaiban-distributed implements JSON-RPC 2.0 over HTTP for inter-system communication.
 
 ### 12.1 Agent Card Discovery
@@ -2245,53 +2220,75 @@ curl http://localhost:3000/.well-known/agent-card.json
 
 ```json
 {
+  "protocolVersion": "0.3.0",
   "name": "kaiban-gateway",
-  "version": "1.0.0",
-  "description": "Distributed KaibanJS agent node",
-  "capabilities": ["tasks.create", "tasks.get", "agent.status"],
-  "endpoints": {
-    "rpc": "/a2a/rpc"
-  }
+  "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
+  "url": "http://localhost:3000/a2a/rpc",
+  "version": "1.5.0-beta",
+  "preferredTransport": "JSONRPC",
+  "additionalInterfaces": [
+    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" },
+    { "transport": "HTTP+JSON", "url": "http://localhost:3000/a2a/rest" },
+    { "transport": "GRPC", "url": "http://localhost:3000/a2a/grpc" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": false, "stateTransitionHistory": false },
+  "defaultInputModes": ["text/plain", "application/json"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    { "id": "researcher", "name": "Delegate to researcher", "tags": ["task", "agent", "researcher"] },
+    { "id": "writer", "name": "Delegate to writer", "tags": ["task", "agent", "writer"] },
+    { "id": "editor", "name": "Delegate to editor", "tags": ["task", "agent", "editor"] }
+  ]
 }
 ```
 
-### 12.2 `tasks.create` — Submit a Task
+`capabilities` is an object in v0.3 (it was a `string[]` in the old card); an agent's discrete abilities live in `skills[]` (one per agent id).
+
+### 12.2 `message/send` — Submit a Task (A2A v0.3)
 
 ```bash
 curl -X POST http://localhost:3000/a2a/rpc \
   -H 'Content-Type: application/json' \
   -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tasks.create",
+    "jsonrpc": "2.0", "id": 1,
+    "method": "message/send",
     "params": {
-      "agentId": "researcher",
-      "instruction": "Research the latest developments in quantum computing",
-      "expectedOutput": "300-word summary with key developments and sources",
-      "inputs": { "topic": "quantum computing" }
+      "message": {
+        "kind": "message", "role": "user", "messageId": "m1",
+        "parts": [{ "kind": "text", "text": "Research the latest developments in quantum computing" }],
+        "metadata": {
+          "agentId": "researcher",
+          "expectedOutput": "300-word summary with key developments and sources",
+          "inputs": { "topic": "quantum computing" }
+        }
+      }
     }
   }'
 ```
 
-Response:
+Response — a JSON-RPC result whose `result` is an A2A v0.3 `Task` object:
 ```json
 {
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "taskId": "task-uuid-here",
-    "status": "QUEUED",
-    "agentId": "researcher"
+    "kind": "task",
+    "id": "3f1a9c2e-7b40-4d2a-9c3e-1a2b3c4d5e6f",
+    "contextId": "b8e1d6a4-2c90-4f51-8a7b-9c0d1e2f3a4b",
+    "status": { "state": "completed", "timestamp": "2026-06-22T10:15:30.000Z" }
   }
 }
 ```
 
-### 12.3 `agent.status` — Check Agent Status
+The terminal result text is delivered as an artifact / message `part` (not a flat `result` string). Prefer `message/stream` to stream the lifecycle (`submitted → working → completed`) over SSE.
+
+### 12.3 Agent Status — `GET /a2a/agents/:agentId/status`
+
+Live agent status is a REST endpoint, not a JSON-RPC method:
 
 ```bash
-curl -X POST http://localhost:3000/a2a/rpc \
-  -H 'Content-Type: application/json' \
-  -d '{ "jsonrpc": "2.0", "id": 2, "method": "agent.status", "params": {} }'
+curl http://localhost:3000/a2a/agents/researcher/status
+# → { "data": { "agentId": "researcher", "status": "IDLE", "seen": false }, "meta": {}, "errors": [] }
 ```
 
 ### 12.4 TypeScript A2A Client
@@ -2317,17 +2314,47 @@ export class A2AClient {
     return body.result;
   }
 
+  // A2A v0.3: submit a task via `message/send`. The target agent + optional fields go in
+  // `message.metadata`; the instruction is a text part. Returns the v0.3 Task object.
   async createTask(params: {
     agentId: string;
     instruction: string;
-    expectedOutput: string;
+    expectedOutput?: string;
     inputs?: Record<string, unknown>;
     context?: string;
-  }): Promise<{ taskId: string; status: string; agentId: string }> {
-    return this.rpc('tasks.create', params);
+  }): Promise<{ kind: 'task'; id: string; contextId: string; status: { state: string } }> {
+    const { agentId, instruction, expectedOutput, inputs, context } = params;
+    return this.rpc('message/send', {
+      message: {
+        kind: 'message',
+        role: 'user',
+        messageId: `m-${++this.idCounter}-${Date.now()}`,
+        parts: [{ kind: 'text', text: instruction }],
+        metadata: {
+          agentId,
+          ...(expectedOutput !== undefined ? { expectedOutput } : {}),
+          ...(inputs !== undefined ? { inputs } : {}),
+          ...(context !== undefined ? { context } : {}),
+        },
+      },
+    });
   }
 
-  async getAgentCard(): Promise<{ name: string; capabilities: string[] }> {
+  // A2A v0.3: fetch a task by id via `tasks/get`.
+  async getTasks(taskId: string): Promise<{ kind: 'task'; id: string; status: { state: string } }> {
+    return this.rpc('tasks/get', { id: taskId });
+  }
+
+  // A2A v0.3: cancel a task via `tasks/cancel`.
+  async cancelTask(taskId: string): Promise<{ kind: 'task'; id: string; status: { state: string } }> {
+    return this.rpc('tasks/cancel', { id: taskId });
+  }
+
+  async getAgentCard(): Promise<{
+    name: string;
+    capabilities: Record<string, boolean>;
+    skills: Array<{ id: string; name: string }>;
+  }> {
     const res = await fetch(`${this.baseUrl}/.well-known/agent-card.json`);
     return res.json();
   }
@@ -2347,7 +2374,7 @@ const task = await client.createTask({
   expectedOutput: 'Comparative analysis of top frameworks',
   inputs: { topic: 'AI agent frameworks' },
 });
-console.log('Task created:', task.taskId);
+console.log('Task created:', task.id, task.status.state);
 ```
 
 ### 12.5 Rate Limiting
@@ -2399,8 +2426,7 @@ async function researchWithMCP(query: string): Promise<string> {
   await mcp.disconnect();
 
   // Pass MCP results as context to the distributed agent
-  const task = await rpc('tasks.create', {
-    agentId: 'researcher',
+  const task = await dispatch('researcher', {
     instruction: `Analyze and synthesize the following search results for: "${query}"`,
     expectedOutput: 'Comprehensive analysis of the search results',
     context: `--- WEB SEARCH RESULTS ---\n${searchContext}`,
@@ -2769,7 +2795,7 @@ For high-volume scenarios, the orchestrator should batch submissions or add dela
 ```typescript
 // Add jitter between task submissions
 await new Promise((r) => setTimeout(r, 100 + Math.random() * 200));
-const task = await rpc('tasks.create', { ... });
+const task = await dispatch('researcher', { instruction: '...' });
 ```
 
 ---

@@ -126,16 +126,26 @@ function resetHoistedMocks(): void {
 function makeRlMock(): {
   rl: HitlOptions["rl"];
   sendAnswer: (answer: string) => void;
+  triggerClose: () => void;
 } {
   let questionCallback: ((answer: string) => void) | null = null;
+  let closeHandler: (() => void) | null = null;
   const question = vi
     .fn()
     .mockImplementation((_prompt: string, cb: (answer: string) => void) => {
       questionCallback = cb;
     });
   const write = vi.fn();
+  // readline.Interface extends EventEmitter; the prompt registers once('close')
+  // to detect stdin EOF and stop re-arming. Capture that handler so a test can
+  // simulate the close that triggers the (now-fixed) infinite re-prompt spin.
+  const once = vi
+    .fn()
+    .mockImplementation((event: string, cb: () => void) => {
+      if (event === "close") closeHandler = cb;
+    });
 
-  const rl = { question, write } as unknown as Parameters<
+  const rl = { question, write, once } as unknown as Parameters<
     typeof waitForHITLDecision
   >[0]["rl"];
 
@@ -144,6 +154,10 @@ function makeRlMock(): {
     // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     sendAnswer: (answer: string) => {
       if (questionCallback) questionCallback(answer);
+    },
+    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+    triggerClose: () => {
+      if (closeHandler) closeHandler();
     },
   };
 }
@@ -195,7 +209,11 @@ describe("waitForHITLDecision — terminal path", () => {
       .mockImplementation((_prompt: string, cb: (ans: string) => void) => {
         questionCallback.push(cb);
       });
-    const rl = { question, write: vi.fn() } as unknown as HitlOptions["rl"];
+    const rl = {
+      question,
+      write: vi.fn(),
+      once: vi.fn(),
+    } as unknown as HitlOptions["rl"];
     const promise = waitForHITLDecision({
       taskId: "task-x",
       rl,
@@ -227,7 +245,11 @@ describe("waitForHITLDecision — terminal path", () => {
         }
         call++;
       });
-    const rl = { question, write: vi.fn() } as unknown as HitlOptions["rl"];
+    const rl = {
+      question,
+      write: vi.fn(),
+      once: vi.fn(),
+    } as unknown as HitlOptions["rl"];
     const onView = (): void => {
       viewCallCount++;
     };
@@ -698,6 +720,173 @@ describe("waitForHITLDecision — BRPOP path", () => {
     );
     warnSpy.mockRestore();
     return promise;
+  });
+});
+
+// ── Bug 2 regression: closed / absent readline must not crash the board path ──
+//
+// The live run crashed with ERR_USE_AFTER_CLOSE: when a board-only / non-TTY / EOF
+// run leaves an unusable readline, rl.question() (and finish()'s rl.write('\n'))
+// throw on the closed interface. Those throws MUST be swallowed so the board path
+// (Redis pub/sub or BRPOP list) still resolves the decision.
+
+describe("waitForHITLDecision — closed/absent readline (Bug 2)", () => {
+  beforeEach(() => {
+    resetHoistedMocks();
+  });
+
+  it("board-only (rl:null): resolves REVISE without any terminal interaction", async () => {
+    const promise = waitForHITLDecision({
+      taskId: "board-only-revise",
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    state.capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      boardMsg("board-only-revise", "REVISE"),
+    );
+    await expect(promise).resolves.toBe("REVISE");
+  });
+
+  it("board-only (rl:null): resolves REJECT without any terminal interaction", async () => {
+    const promise = waitForHITLDecision({
+      taskId: "board-only-reject",
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    state.capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      boardMsg("board-only-reject", "REJECT"),
+    );
+    await expect(promise).resolves.toBe("REJECT");
+  });
+
+  it("swallows ERR_USE_AFTER_CLOSE from rl.question() and still resolves via board", async () => {
+    // A closed readline: question() throws ERR_USE_AFTER_CLOSE the way Node does.
+    const question = vi.fn().mockImplementation(() => {
+      const err = new Error(
+        "readline was closed",
+      ) as Error & { code?: string };
+      err.code = "ERR_USE_AFTER_CLOSE";
+      throw err;
+    });
+    const write = vi.fn();
+    const rl = { question, write, once: vi.fn() } as unknown as HitlOptions["rl"];
+
+    // Constructing must NOT throw even though question() throws synchronously.
+    const promise = waitForHITLDecision({
+      taskId: "closed-rl-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    expect(question).toHaveBeenCalledTimes(1);
+
+    // The board path still drives the decision to resolution.
+    await Promise.resolve();
+    state.capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      boardMsg("closed-rl-task", "PUBLISH"),
+    );
+    await expect(promise).resolves.toBe("PUBLISH");
+  });
+
+  it("swallows a throwing rl.write('\\n') in finish() and still resolves", async () => {
+    // question() works (registers nothing — board resolves), but write() throws
+    // ERR_USE_AFTER_CLOSE when finish() tries to release the pending prompt.
+    const question = vi.fn();
+    const write = vi.fn().mockImplementation(() => {
+      const err = new Error(
+        "readline was closed",
+      ) as Error & { code?: string };
+      err.code = "ERR_USE_AFTER_CLOSE";
+      throw err;
+    });
+    const rl = { question, write, once: vi.fn() } as unknown as HitlOptions["rl"];
+
+    const promise = waitForHITLDecision({
+      taskId: "closed-write-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+
+    await Promise.resolve();
+    state.capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      boardMsg("closed-write-task", "REJECT"),
+    );
+    // finish() calls rl.write('\n') which throws — must be swallowed, not rejected.
+    await expect(promise).resolves.toBe("REJECT");
+    expect(write).toHaveBeenCalledWith("\n");
+  });
+});
+
+// ── Bug 3 regression: terminal prompt must not re-arm into an infinite loop ───
+//
+// Live failure (REVISE from the board, then stdin EOF): the terminal prompt was
+// not cancelled when the board resolved the decision, and ask() re-armed itself
+// on any non-1/2/3 input. On a closed stdin, rl.question fired its callback with
+// "" over and over → an infinite ask()→ask() spin (100% CPU, the orchestrator
+// never exited, Ctrl-C ineffective), and a stale prompt could steal the input for
+// the next HITL round. The fix: never re-arm once the decision is in OR stdin
+// has closed.
+
+describe("waitForHITLDecision — no orphaned terminal re-arm (Bug 3)", () => {
+  beforeEach(() => {
+    resetHoistedMocks();
+  });
+
+  it("does NOT re-arm the terminal prompt after the board resolves the decision", async () => {
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "no-orphan",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    // Board resolves the decision (the live REVISE-from-web case).
+    state.capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      boardMsg("no-orphan", "REVISE"),
+    );
+    await expect(promise).resolves.toBe("REVISE");
+
+    const callsBefore = (rl!.question as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls.length;
+    // A late/stray terminal line arrives (leftover keystroke, or finish()'s
+    // rl.write('\n')). It must be ignored — and must NOT re-arm a new prompt.
+    sendAnswer("9");
+    const callsAfter = (rl!.question as unknown as ReturnType<typeof vi.fn>).mock
+      .calls.length;
+    expect(callsAfter).toBe(callsBefore);
+  });
+
+  it("does NOT re-arm after stdin closes (EOF) — breaks the infinite spin", async () => {
+    const { rl, sendAnswer, triggerClose } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "eof-stop",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    const callsBefore = (rl!.question as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls.length; // initial ask() armed once
+    // stdin reaches EOF → readline emits 'close'.
+    triggerClose();
+    // The pending question now fires repeatedly with "" (as a closed stdin does).
+    sendAnswer("");
+    sendAnswer("");
+    const callsAfter = (rl!.question as unknown as ReturnType<typeof vi.fn>).mock
+      .calls.length;
+    expect(callsAfter).toBe(callsBefore); // no re-arm → no spin
+
+    // The board path still drives the decision to resolution.
+    await Promise.resolve();
+    state.capturedMessageHandler!(
+      "kaiban-hitl-decisions",
+      boardMsg("eof-stop", "PUBLISH"),
+    );
+    await expect(promise).resolves.toBe("PUBLISH");
   });
 });
 

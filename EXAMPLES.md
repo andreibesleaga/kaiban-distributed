@@ -407,11 +407,11 @@ docker run -p 3000:3000 \
   kaiban-distributed:latest
 ```
 
-Submit tasks:
+Submit tasks (A2A v0.3 `message/send`; target agent in `metadata.agentId`):
 ```bash
 curl -X POST http://localhost:3000/a2a/rpc \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tasks.create","params":{"agentId":"researcher","instruction":"Research AI agent trends 2025","expectedOutput":"A 200-word summary"}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"Research AI agent trends 2025"}],"metadata":{"agentId":"researcher","expectedOutput":"A 200-word summary"}}}}'
 ```
 
 ---
@@ -421,7 +421,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 769 unit tests, 77 files, 100% coverage of src (+146 board tests via `cd board && npm test`)
+# → 107 unit-test files, 100% coverage of src (board tests run separately via `cd board && npm test`)
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e

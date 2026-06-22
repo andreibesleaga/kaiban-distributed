@@ -106,6 +106,8 @@ export type {
   WorkflowOrchestratorOptions,
   RedisCheckpointStoreOptions,
 } from "./shared/orchestrator";
+export { dispatchToAgent, AGENT_CHANNEL_PREFIX } from "./shared/dispatch";
+export type { DispatchParams } from "./shared/dispatch";
 export { replayDlq, DLQ_POISON_REASONS } from "./resilience/dlq-replay";
 export type {
   DlqReplayDeps,

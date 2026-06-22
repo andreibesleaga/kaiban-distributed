@@ -63,3 +63,14 @@ export type {
 
 export { startAgentNode } from "./agent-node";
 export type { AgentNodeConfig } from "./agent-node";
+
+export { dispatchToAgent, AGENT_CHANNEL_PREFIX } from "./dispatch";
+export type { DispatchParams } from "./dispatch";
+
+export {
+  BudgetExceededError,
+  workflowBudgetFromEnv,
+  overBudgetReason,
+  assertWithinBudget,
+} from "./budget";
+export type { SpendTotals, WorkflowBudget } from "./budget";

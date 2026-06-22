@@ -118,7 +118,7 @@ flowchart TB
   subgraph Workers["Agent worker nodes (1..N)"]
     A1["AgentActor<br/>+ KaibanJS bridge<br/>+ AgentStatePublisher"]
   end
-  Ext -- "tasks.create" --> GW
+  Ext -- "message/send (A2A v0.3)" --> GW
   GW -- "publish task" --> Redis
   Redis -- "consume (kaiban-agents-*)" --> A1
   Kafka -. "alt transport" .- A1
@@ -303,7 +303,7 @@ stateDiagram-v2
 | `DistributedStateMiddleware` | `src/adapters/state/` | Intercepts Zustand store `setState()` and publishes deltas to messaging layer |
 | `GatewayApp` | `src/adapters/gateway/` | Express HTTP: `/health`, `/.well-known/agent-card.json`, `/a2a/rpc` |
 | `SocketGateway` | `src/adapters/gateway/` | Socket.io server + Redis pub/sub subscriber; broadcasts `state:update` to board |
-| `A2AConnector` | `src/infrastructure/federation/` | JSON-RPC 2.0; `tasks.create` publishes to messaging layer |
+| A2A stack (`buildA2AStack`: `KaibanAgentExecutor` + `RedisTaskStore` + `AgentStatusTracker`) | `src/infrastructure/federation/` | Official `@a2a-js/sdk` v0.3 server; `message/send` validates + publishes to the agent mailbox (ADR-015) |
 | `MCPFederationClient` | `src/infrastructure/federation/` | Connects to any MCP tool server via stdio transport |
 | `HeuristicFirewall` | `src/infrastructure/security/` | Regex-based prompt injection detection (ASI01); opt-in via `SEMANTIC_FIREWALL_ENABLED` |
 | `EnvTokenProvider` | `src/infrastructure/security/` | JIT token abstraction (ASI03); reads API keys from env vars; opt-in via `JIT_TOKENS_ENABLED` |
@@ -372,7 +372,7 @@ curl http://localhost:3000/health
 # → {"data":{"status":"ok","timestamp":"..."}}
 
 curl http://localhost:3000/.well-known/agent-card.json
-# → {"name":"kaiban-worker","version":"1.0.0","capabilities":[...]}
+# → {"protocolVersion":"0.3.0","name":"kaiban-gateway",...,"capabilities":{"streaming":true,...},"skills":[...]}  (A2A v0.3)
 ```
 
 ---
@@ -462,10 +462,10 @@ OPENAI_API_KEY=sk-... node dist/examples/blog-team/researcher-node.js
 # Terminal 2 — writer
 OPENAI_API_KEY=sk-... node dist/examples/blog-team/writer-node.js
 
-# Terminal 3 — send a task via A2A
+# Terminal 3 — send a task via A2A v0.3 (message/send; target agent in metadata.agentId)
 curl -X POST http://localhost:3000/a2a/rpc \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tasks.create","params":{"agentId":"researcher","instruction":"Research the latest AI agent frameworks in 2025","expectedOutput":"A concise summary"}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"Research the latest AI agent frameworks in 2025"}],"metadata":{"agentId":"researcher","expectedOutput":"A concise summary"}}}}'
 ```
 
 ---
@@ -620,9 +620,11 @@ const result = await bridge.start({ topic: 'AI agents 2025' });
 
 ## A2A Protocol (Agent-to-Agent)
 
-The Edge Gateway exposes an **A2A** JSON-RPC surface for interoperability with other AI systems. It serves an agent card at the spec-recommended path (`/.well-known/agent-card.json`), but the RPC method names (`tasks.create`, `tasks.get`, `agent.status`) and the card schema are a pragmatic subset and are **not wire-compatible** with the current [A2A Protocol](https://a2a-protocol.org/) spec (Linux Foundation, v1.0 — which uses `message/send`, `tasks/get`, etc. and a richer `AgentCard`). Full A2A conformance is tracked for a future version.
+The Edge Gateway exposes a **wire-conformant A2A v0.3** JSON-RPC surface (served by the official [`@a2a-js/sdk`](https://a2a-protocol.org/) v0.3.x, ADR-015) for interoperability with other AI systems. It serves a v0.3 AgentCard at the spec path (`/.well-known/agent-card.json`) and implements the real v0.3 methods `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`. A real `@a2a-js/sdk` client interoperates with it (proven by `tests/e2e/a2a-protocol.test.ts`).
 
-### Agent Card
+> **History (superseded):** v1.x exposed a custom, non-standard method set (`tasks.create` / `tasks.get` / `agent.status`) and a flat `{ capabilities: string[], endpoints }` card. Those were **removed** in the v2.0 A2A migration (the custom `A2AConnector` is gone). See `MIGRATION.md` + `docs/decisions/ADR-015`.
+
+### Agent Card (v0.3)
 
 ```bash
 curl http://localhost:3000/.well-known/agent-card.json
@@ -630,36 +632,72 @@ curl http://localhost:3000/.well-known/agent-card.json
 
 ```json
 {
-  "name": "kaiban-worker",
-  "version": "1.0.0",
-  "description": "Kaiban distributed agent worker node",
-  "capabilities": ["tasks.create", "tasks.get", "agent.status"],
-  "endpoints": { "rpc": "/a2a/rpc" }
+  "protocolVersion": "0.3.0",
+  "name": "kaiban-gateway",
+  "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
+  "url": "http://localhost:3000/a2a/rpc",
+  "version": "1.5.0-beta",
+  "preferredTransport": "JSONRPC",
+  "additionalInterfaces": [
+    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" },
+    { "transport": "HTTP+JSON", "url": "http://localhost:3000/a2a/rest" },
+    { "transport": "GRPC", "url": "http://localhost:3000/a2a/grpc" }
+  ],
+  "capabilities": { "streaming": true, "pushNotifications": false, "stateTransitionHistory": false },
+  "defaultInputModes": ["text/plain", "application/json"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    { "id": "researcher", "name": "Delegate to researcher", "tags": ["task", "agent", "researcher"] }
+  ]
 }
 ```
 
-### RPC Methods
+> `capabilities` is an **object** in v0.3 (it was a `string[]` in the old card); an agent's discrete abilities live in `skills[]` (one skill per agent id).
 
-| Method | Params | Returns |
-|--------|--------|---------|
-| `tasks.create` | `{ agentId, instruction, expectedOutput, inputs?, context? }` | `{ taskId, status: 'QUEUED', agentId }` |
-| `tasks.get` | `{ taskId }` | `{ taskId, status }` |
-| `agent.status` | — | `{ status: 'IDLE', agentId }` |
+### RPC Methods (A2A v0.3)
+
+| Method | Purpose | Notes |
+|--------|---------|-------|
+| `message/send` | Dispatch a task; await terminal result | Target agent in `message.metadata.agentId`; optional `instruction`/`expectedOutput`/`context`/`inputs` in `metadata` (or plain text parts). Input caps (`A2A_INPUT_CAPS`, 64 KB); oversized/wrong-typed → `-32602`. |
+| `message/stream` | Same, streamed over SSE | `submitted → working → completed/failed/canceled` |
+| `tasks/get` | Fetch a persisted task by id | Real data from `RedisTaskStore` |
+| `tasks/cancel` | Cancel an in-flight task | Aborts the wait; emits terminal `canceled` |
+
+Live agent status is `GET /a2a/agents/:agentId/status` (not a JSON-RPC method).
 
 ```bash
+# External A2A v0.3 caller: dispatch a task via message/send
 curl -X POST http://localhost:3000/a2a/rpc \
   -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc": "2.0", "id": 1,
-    "method": "tasks.create",
+    "method": "message/send",
     "params": {
-      "agentId": "researcher",
-      "instruction": "Research quantum computing breakthroughs in 2025",
-      "expectedOutput": "A 300-word technical summary",
-      "inputs": { "topic": "quantum computing" }
+      "message": {
+        "kind": "message", "role": "user", "messageId": "m1",
+        "parts": [{ "kind": "text", "text": "Research quantum computing breakthroughs in 2025" }],
+        "metadata": {
+          "agentId": "researcher",
+          "expectedOutput": "A 300-word technical summary",
+          "inputs": { "topic": "quantum computing" }
+        }
+      }
     }
   }'
 ```
+
+> **In-process dispatch (not A2A).** When you orchestrate your own agent nodes in the same process, dispatch over the actor mailbox directly instead of the HTTP A2A surface:
+>
+> ```typescript
+> import { createDriver, dispatchToAgent, CompletionRouter } from 'kaiban-distributed/shared';
+> const driver = createDriver('researcher');
+> const taskId = await dispatchToAgent(driver, 'researcher', {
+>   instruction: 'Research quantum computing breakthroughs in 2025',
+>   expectedOutput: 'A 300-word technical summary',
+>   inputs: { topic: 'quantum computing' },
+> });
+> // await the result by taskId via CompletionRouter.wait(...)
+> ```
 
 ---
 
@@ -756,7 +794,8 @@ Set `MESSAGING_DRIVER=kafka` (or `bullmq`) — the `IMessagingDriver` interface 
 |--------|------|-------------|
 | `GET` | `/health` | `{ data: { status: 'ok', timestamp } }` |
 | `GET` | `/.well-known/agent-card.json` | A2A agent capabilities |
-| `POST` | `/a2a/rpc` | JSON-RPC 2.0: `tasks.create`, `tasks.get`, `agent.status` |
+| `POST` | `/a2a/rpc` | A2A v0.3 JSON-RPC: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel` |
+| `GET` | `/a2a/agents/:agentId/status` | Real last-known agent status (`AgentStatusTracker`) |
 
 All responses: `{ data, meta, errors }` envelope.
 
@@ -841,7 +880,7 @@ For a complete reference of every security feature, configuration option, and de
 | **W3C Traceparent Validation** | `BullMQDriver` | MED-06 | always-on |
 | **HTTP Hardening** | `GatewayApp` (Helmet, rate limit, CSP, HSTS) | MED-04/05 | always-on |
 | **WebSocket Hardening** | `SocketGateway` (buffer limit, ping, HITL validation) | — | always-on |
-| **agentId Input Validation** | `A2AConnector` | HIGH-04 | always-on |
+| **A2A Task-Input Validation** | `validateTaskInput` (`a2a-input-validation.ts`) | HIGH-04 | always-on |
 
 Authentication and signing features are **env-var gated**: when the relevant secret is not set, the system behaves exactly as before (backwards-compatible). When set, full enforcement is active.
 
@@ -929,7 +968,9 @@ kaiban-distributed/
 │   │   │   ├── bullmq-driver.ts    # BullMQ Worker + Queue; optional TLS; no colons in queue names
 │   │   │   └── kafka-driver.ts     # KafkaJS producer + consumer; optional SSL/mTLS
 │   │   ├── federation/
-│   │   │   ├── a2a-connector.ts    # JSON-RPC 2.0; tasks.create routes to messaging layer
+│   │   │   ├── a2a-executor.ts     # KaibanAgentExecutor: A2A v0.3 message/send → agent mailbox (ADR-015)
+│   │   │   ├── a2a-agent-card.ts   # buildAgentCard: v0.3 AgentCard (capabilities object + skills[])
+│   │   │   ├── a2a-task-store.ts   # RedisTaskStore: persisted tasks for tasks/get, tasks/cancel
 │   │   │   └── mcp-client.ts       # MCPFederationClient via stdio transport
 │   │   ├── kaibanjs/
 │   │   │   ├── kaiban-agent-bridge.ts  # createKaibanTaskHandler; JIT tokens; error detection

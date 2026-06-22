@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import {
   runResearchPhase,
   runWritePhase,
@@ -9,6 +9,8 @@ import {
   WRITE_WAIT_MS,
   EDIT_WAIT_MS,
 } from "../../../examples/blog-team/phases";
+import type { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
+import { AGENT_CHANNEL_PREFIX } from "../../../src/shared";
 
 // ── mock waitForHITLDecision from shared ─────────────────────────────────────
 const { mockWaitForHITL } = vi.hoisted(() => ({ mockWaitForHITL: vi.fn() }));
@@ -17,10 +19,13 @@ vi.mock("../../../src/shared", async (importOriginal) => {
   return { ...actual, waitForHITLDecision: mockWaitForHITL };
 });
 
-// ── helpers to build mock deps ────────────────────────────────────────────────
+// ── typed driver mock (replaces the removed rpc.call('tasks.create', …) seam) ──
+type PublishFn = (channel: string, payload: MessagePayload) => Promise<void>;
+
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 function makeMocks() {
-  const mockRpc = { call: vi.fn(), setToken: vi.fn() };
+  const publish = vi.fn<PublishFn>(() => Promise.resolve());
+  const driver = { publish };
   const mockRouter = { wait: vi.fn(), waitAll: vi.fn(), clearPending: vi.fn() };
   const mockPub = {
     taskQueued: vi.fn(),
@@ -57,7 +62,18 @@ function makeMocks() {
       return { totalTokens: _totalTokens, totalCost: _totalCost };
     },
   };
-  return { mockRpc, mockRouter, mockPub, mockRunLog };
+  return { driver, publish, mockRouter, mockPub, mockRunLog };
+}
+
+/** Find the dispatch published to a given agent's mailbox channel. */
+function dispatchTo(
+  publish: Mock<PublishFn>,
+  agentId: string,
+): { channel: string; payload: MessagePayload } {
+  const channel = `${AGENT_CHANNEL_PREFIX}${agentId}`;
+  const call = publish.mock.calls.find((c) => c[0] === channel);
+  if (!call) throw new Error(`no dispatch published to ${channel}`);
+  return { channel: call[0], payload: call[1] };
 }
 
 function parsedResult(answer = "Result text"): string {
@@ -88,35 +104,43 @@ describe("phase wait constants", () => {
 describe("runResearchPhase()", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("calls rpc.call to create task and returns summary", async () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
-    mockRpc.call.mockResolvedValue({ taskId: "research-1" });
+  it("dispatches to the researcher mailbox and returns summary", async () => {
+    const { driver, publish, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRouter.wait.mockResolvedValue(parsedResult("Research summary"));
 
     const result = await runResearchPhase(
       "AI topic",
       mockRouter as never,
       mockPub as never,
-      mockRpc as never,
+      driver,
       mockRunLog as never,
     );
 
-    expect(mockRpc.call).toHaveBeenCalledWith(
-      "tasks.create",
-      expect.objectContaining({ agentId: "researcher" }),
+    // Regression: the phase MUST publish to the researcher's actor mailbox
+    // (kaiban-agents-researcher), not the removed tasks.create RPC.
+    const { channel, payload } = dispatchTo(publish, "researcher");
+    expect(channel).toBe("kaiban-agents-researcher");
+    expect(payload.agentId).toBe("researcher");
+    expect(payload.taskId).toBe(result.taskId);
+    expect(typeof payload.timestamp).toBe("number");
+    expect(payload.data["instruction"]).toEqual(
+      expect.stringContaining("AI topic"),
     );
+    expect(payload.data["expectedOutput"]).toEqual(expect.any(String));
+    expect(payload.data["inputs"]).toEqual({ topic: "AI topic" });
+
+    // taskId is now random — read it back, do not assert a fixed value.
+    expect(result.taskId).toEqual(expect.any(String));
     expect(mockPub.taskQueued).toHaveBeenCalledWith(
-      "research-1",
+      result.taskId,
       expect.any(String),
       "researcher",
     );
-    expect(result.taskId).toBe("research-1");
     expect(result.summary).toBe("Research summary");
   });
 
   it("calls taskFailed and rethrows when router.wait rejects", async () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
-    mockRpc.call.mockResolvedValue({ taskId: "research-1" });
+    const { driver, publish, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRouter.wait.mockRejectedValue(new Error("timeout"));
 
     await expect(
@@ -124,12 +148,13 @@ describe("runResearchPhase()", () => {
         "topic",
         mockRouter as never,
         mockPub as never,
-        mockRpc as never,
+        driver,
         mockRunLog as never,
       ),
     ).rejects.toThrow("timeout");
+    const { payload } = dispatchTo(publish, "researcher");
     expect(mockPub.taskFailed).toHaveBeenCalledWith(
-      "research-1",
+      payload.taskId,
       "researcher",
       expect.any(String),
       "timeout",
@@ -142,9 +167,8 @@ describe("runResearchPhase()", () => {
 describe("runWritePhase()", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("creates writer task and returns draft", async () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
-    mockRpc.call.mockResolvedValue({ taskId: "write-1" });
+  it("dispatches to the writer mailbox and returns draft", async () => {
+    const { driver, publish, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRouter.wait.mockResolvedValue(parsedResult("Draft content"));
 
     const result = await runWritePhase(
@@ -152,21 +176,27 @@ describe("runWritePhase()", () => {
       "research summary",
       mockRouter as never,
       mockPub as never,
-      mockRpc as never,
+      driver,
       mockRunLog as never,
     );
 
-    expect(mockRpc.call).toHaveBeenCalledWith(
-      "tasks.create",
-      expect.objectContaining({ agentId: "writer" }),
+    const { channel, payload } = dispatchTo(publish, "writer");
+    expect(channel).toBe("kaiban-agents-writer");
+    expect(payload.agentId).toBe("writer");
+    expect(payload.taskId).toBe(result.taskId);
+    expect(typeof payload.timestamp).toBe("number");
+    expect(payload.data["instruction"]).toEqual(
+      expect.stringContaining("topic"),
     );
-    expect(result.taskId).toBe("write-1");
+    expect(payload.data["context"]).toBe("research summary");
+    expect(payload.data["inputs"]).toEqual({ topic: "topic" });
+
+    expect(result.taskId).toEqual(expect.any(String));
     expect(result.draft).toBe("Draft content");
   });
 
   it("calls taskFailed on writer error", async () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
-    mockRpc.call.mockResolvedValue({ taskId: "write-1" });
+    const { driver, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRouter.wait.mockRejectedValue(new Error("write error"));
 
     await expect(
@@ -175,7 +205,7 @@ describe("runWritePhase()", () => {
         "summary",
         mockRouter as never,
         mockPub as never,
-        mockRpc as never,
+        driver,
         mockRunLog as never,
       ),
     ).rejects.toThrow("write error");
@@ -188,13 +218,10 @@ describe("runWritePhase()", () => {
 describe("runEditorialPhase()", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("creates editor task and returns recommendation and score", async () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
-    mockRpc.call.mockResolvedValue({ taskId: "edit-1" });
+  it("dispatches to the editor mailbox and returns recommendation and score", async () => {
+    const { driver, publish, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRouter.wait.mockResolvedValue(
-      parsedResult(
-        "Recommendation: PUBLISH\nAccuracy Score: 9/10\nDetails here",
-      ),
+      parsedResult("Recommendation: PUBLISH\nAccuracy Score: 9/10\nDetails here"),
     );
 
     const result = await runEditorialPhase(
@@ -203,21 +230,32 @@ describe("runEditorialPhase()", () => {
       "draft",
       mockRouter as never,
       mockPub as never,
-      mockRpc as never,
+      driver,
       mockRunLog as never,
     );
 
-    expect(mockRpc.call).toHaveBeenCalledWith(
-      "tasks.create",
-      expect.objectContaining({ agentId: "editor" }),
-    );
-    expect(result.taskId).toBe("edit-1");
+    const { channel, payload } = dispatchTo(publish, "editor");
+    expect(channel).toBe("kaiban-agents-editor");
+    expect(payload.agentId).toBe("editor");
+    expect(payload.taskId).toBe(result.taskId);
+    expect(typeof payload.timestamp).toBe("number");
+    expect(payload.data["instruction"]).toEqual(expect.any(String));
+    expect(payload.data["context"]).toContain("--- RESEARCH SUMMARY ---");
+    expect(payload.data["context"]).toContain("research");
+    expect(payload.data["context"]).toContain("draft");
+    expect(payload.data["inputs"]).toEqual({ topic: "topic" });
+
+    expect(result.taskId).toEqual(expect.any(String));
     expect(result.recommendation).toBe("PUBLISH");
+    expect(mockPub.taskQueued).toHaveBeenCalledWith(
+      result.taskId,
+      "Editorial Review",
+      "editor",
+    );
   });
 
   it("calls taskFailed on editorial error", async () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
-    mockRpc.call.mockResolvedValue({ taskId: "edit-1" });
+    const { driver, mockRouter, mockPub, mockRunLog } = makeMocks();
     mockRouter.wait.mockRejectedValue(new Error("edit error"));
 
     await expect(
@@ -227,7 +265,7 @@ describe("runEditorialPhase()", () => {
         "draft",
         mockRouter as never,
         mockPub as never,
-        mockRpc as never,
+        driver,
         mockRunLog as never,
       ),
     ).rejects.toThrow("edit error");
@@ -242,7 +280,7 @@ describe("runBlogRevision()", () => {
 
   // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   const baseRevDeps = () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    const { driver, publish, mockRouter, mockPub, mockRunLog } = makeMocks();
     return {
       deps: {
         topic: "topic",
@@ -253,13 +291,14 @@ describe("runBlogRevision()", () => {
         researchSummary: "summary",
         router: mockRouter as never,
         pub: mockPub as never,
-        rpc: mockRpc as never,
+        driver,
         rl: { question: vi.fn(), write: vi.fn(), close: vi.fn() } as never,
         runLog: mockRunLog as never,
         totalTokens: 100,
         totalCost: 0.001,
       },
-      mockRpc,
+      driver,
+      publish,
       mockRouter,
       mockPub,
       mockRunLog,
@@ -267,19 +306,29 @@ describe("runBlogRevision()", () => {
   };
 
   it("returns PUBLISHED when HITL decision is PUBLISH", async () => {
-    const { deps, mockRpc, mockRouter, mockPub } = baseRevDeps();
-    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
+    const { deps, publish, mockRouter, mockPub } = baseRevDeps();
     mockRouter.wait.mockResolvedValue(parsedResult("Revised draft"));
     mockWaitForHITL.mockResolvedValue("PUBLISH");
 
     const outcome = await runBlogRevision(deps);
     expect(outcome).toBe("PUBLISHED");
     expect(mockPub.workflowFinished).toHaveBeenCalled();
+
+    // Regression: the revision is dispatched back to the writer mailbox.
+    const { channel, payload } = dispatchTo(publish, "writer");
+    expect(channel).toBe("kaiban-agents-writer");
+    expect(payload.agentId).toBe("writer");
+    expect(typeof payload.timestamp).toBe("number");
+    expect(payload.data["instruction"]).toEqual(
+      expect.stringContaining("Revise"),
+    );
+    expect(payload.data["context"]).toContain("--- EDITORIAL FEEDBACK ---");
+    expect(payload.data["context"]).toContain("review");
+    expect(payload.data["inputs"]).toEqual({ topic: "topic" });
   });
 
   it("returns STOPPED when HITL decision is not PUBLISH", async () => {
-    const { deps, mockRpc, mockRouter, mockPub } = baseRevDeps();
-    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
+    const { deps, mockRouter, mockPub } = baseRevDeps();
     mockRouter.wait.mockResolvedValue(parsedResult("Revised draft"));
     mockWaitForHITL.mockResolvedValue("REJECT");
 
@@ -289,8 +338,7 @@ describe("runBlogRevision()", () => {
   });
 
   it("invokes onView callback when waitForHITL triggers it (line 165)", async () => {
-    const { deps, mockRpc, mockRouter } = baseRevDeps();
-    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
+    const { deps, mockRouter } = baseRevDeps();
     mockRouter.wait.mockResolvedValue(parsedResult("Revised draft"));
 
     // Make mockWaitForHITL invoke the onView callback before resolving
@@ -319,7 +367,7 @@ describe("handleBlogDecision()", () => {
 
   // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   const baseDecisionDeps = () => {
-    const { mockRpc, mockRouter, mockPub, mockRunLog } = makeMocks();
+    const { driver, publish, mockRouter, mockPub, mockRunLog } = makeMocks();
     return {
       deps: {
         topic: "topic",
@@ -347,11 +395,12 @@ describe("handleBlogDecision()", () => {
         },
         router: mockRouter as never,
         pub: mockPub as never,
-        rpc: mockRpc as never,
+        driver,
         rl: { question: vi.fn(), write: vi.fn(), close: vi.fn() } as never,
         runLog: mockRunLog as never,
       },
-      mockRpc,
+      driver,
+      publish,
       mockRouter,
       mockPub,
       mockRunLog,
@@ -375,28 +424,29 @@ describe("handleBlogDecision()", () => {
   });
 
   it("REVISE decision calls runBlogRevision and finishes REVISED when revision publishes", async () => {
-    const { deps, mockRpc, mockRouter, mockRunLog } = baseDecisionDeps();
+    const { deps, publish, mockRouter, mockRunLog } = baseDecisionDeps();
     mockWaitForHITL
       .mockResolvedValueOnce("REVISE") // first call — handleBlogDecision
       .mockResolvedValueOnce("PUBLISH"); // second call — runBlogRevision
-    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
     mockRouter.wait.mockResolvedValue(parsedResult("revised"));
 
     await handleBlogDecision(deps);
 
-    expect(mockRpc.call).toHaveBeenCalledWith(
-      "tasks.create",
-      expect.objectContaining({ agentId: "writer" }),
+    // Regression: REVISE re-dispatches to the writer mailbox.
+    const { channel, payload } = dispatchTo(publish, "writer");
+    expect(channel).toBe("kaiban-agents-writer");
+    expect(payload.agentId).toBe("writer");
+    expect(payload.data["instruction"]).toEqual(
+      expect.stringContaining("Revise"),
     );
     expect(mockRunLog.finish).toHaveBeenCalledWith("REVISED");
   });
 
   it("REVISE decision finishes STOPPED when revision is rejected (line 226 false branch)", async () => {
-    const { deps, mockRpc, mockRouter, mockRunLog } = baseDecisionDeps();
+    const { deps, mockRouter, mockRunLog } = baseDecisionDeps();
     mockWaitForHITL
       .mockResolvedValueOnce("REVISE") // first call — handleBlogDecision
       .mockResolvedValueOnce("REJECT"); // second call — runBlogRevision → STOPPED
-    mockRpc.call.mockResolvedValue({ taskId: "rev-1" });
     mockRouter.wait.mockResolvedValue(parsedResult("revised"));
 
     await handleBlogDecision(deps);

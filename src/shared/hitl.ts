@@ -70,7 +70,14 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
       poller.disconnect();
       // Feed empty line to release any pending rl.question callback so the
       // readline interface is ready for a potential second HITL round (REVISE).
-      if (rl) rl.write("\n");
+      // Guarded: the interface may already be closed (EOF / board-only run).
+      if (rl) {
+        try {
+          rl.write("\n");
+        } catch {
+          /* readline already closed — board path resolved the decision */
+        }
+      }
       resolve(decision);
     };
 
@@ -134,7 +141,12 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     void runPoller();
 
     // ── Terminal path ────────────────────────────────────────────────────
-    if (rl) spawnTerminalPrompt(rl, finish, onView);
+    // When there is no usable readline (non-TTY / EOF / board-only run), the
+    // board path drives the decision; spawnTerminalPrompt no-ops on a closed rl.
+    // `() => resolved` lets the prompt stop re-arming the moment ANY path (board
+    // or terminal) resolves — without it, a board decision leaves the terminal
+    // prompt orphaned and re-arming, which on EOF spins forever.
+    if (rl) spawnTerminalPrompt(rl, finish, () => resolved, onView);
   });
 }
 
@@ -179,28 +191,50 @@ function handleBoardMessage(
 function spawnTerminalPrompt(
   rl: readline.Interface,
   finish: (d: HitlDecision) => void,
+  isResolved: () => boolean,
   onView?: () => void,
 ): void {
   const PROMPT =
     "\nYour decision [1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW: ";
 
+  // Track stdin EOF/close. A closed input makes rl.question fire its callback
+  // with "" immediately and repeatedly — without this the re-prompt below spins
+  // in a tight ask()→ask() loop (100% CPU, the process never exits, Ctrl-C is
+  // ineffective). Seen live when the board resolves a REVISE and stdin then EOFs.
+  let inputClosed = false;
+  rl.once("close", () => {
+    inputClosed = true;
+  });
+
   const ask = (): void => {
-    rl.question(PROMPT, (answer) => {
-      const a = answer.trim();
-      if (a === "1") {
-        console.log("\n[HITL] Terminal decision: PUBLISH");
-        finish("PUBLISH");
-      } else if (a === "2") {
-        console.log("\n[HITL] Terminal decision: REVISE");
-        finish("REVISE");
-      } else if (a === "3") {
-        console.log("\n[HITL] Terminal decision: REJECT");
-        finish("REJECT");
-      } else {
-        if (a === "4" && onView) onView();
-        ask();
-      }
-    });
+    // rl.question may throw ERR_USE_AFTER_CLOSE on a closed interface — swallow
+    // it; the board path still resolves the decision.
+    try {
+      rl.question(PROMPT, (answer) => {
+        // Stop the moment the decision is already in (board OR terminal) or stdin
+        // ended — never re-arm an orphaned prompt. This guard breaks the infinite
+        // re-prompt loop (EOF spin: a closed stdin fires this callback with "" over
+        // and over) and stops a stale prompt from stealing input meant for the next
+        // HITL round (e.g. REVISE → re-review).
+        if (isResolved() || inputClosed) return;
+        const a = answer.trim();
+        if (a === "1") {
+          console.log("\n[HITL] Terminal decision: PUBLISH");
+          finish("PUBLISH");
+        } else if (a === "2") {
+          console.log("\n[HITL] Terminal decision: REVISE");
+          finish("REVISE");
+        } else if (a === "3") {
+          console.log("\n[HITL] Terminal decision: REJECT");
+          finish("REJECT");
+        } else {
+          if (a === "4" && onView) onView();
+          ask();
+        }
+      });
+    } catch {
+      /* readline closed (EOF / non-TTY / board-only) — stop prompting */
+    }
   };
 
   ask();

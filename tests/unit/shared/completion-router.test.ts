@@ -43,33 +43,61 @@ describe("CompletionRouter", () => {
     vi.useRealTimers();
   });
 
-  it("subscribes completedDriver to kaiban-events-completed on construction", () => {
-    const { driver } = makeCapturingDriver();
-    new CompletionRouter(driver);
-    expect(driver.subscribe).toHaveBeenCalledWith(
+  // ── Bug 1 regression: LAZY subscription (subscribe on first wait(), not in ctor) ─
+  // Two routers on one node (gateway's A2A executor router + an orchestrator router)
+  // are competing BullMQ consumers on the shared kaiban-events-completed queue. The
+  // gateway never wait()s in the examples; if it subscribed eagerly it would steal
+  // and silently drop completions, hanging the real orchestrator waiter. The fix:
+  // subscribe lazily on the first wait(), so a router that never waits never consumes.
+
+  it("does NOT subscribe on construction (gateway-never-waits scenario)", () => {
+    const { driver: completedDriver } = makeCapturingDriver();
+    const { driver: failedDriver } = makeCapturingDriver();
+    new CompletionRouter(completedDriver, failedDriver);
+    // A router that never wait()s must never become a competing consumer.
+    expect(completedDriver.subscribe).not.toHaveBeenCalled();
+    expect(failedDriver.subscribe).not.toHaveBeenCalled();
+  });
+
+  it("subscribes both queues exactly once on the first wait()", () => {
+    const { driver: completedDriver } = makeCapturingDriver();
+    const { driver: failedDriver } = makeCapturingDriver();
+    const router = new CompletionRouter(completedDriver, failedDriver);
+
+    void router.wait("first-task", 5000, "test");
+
+    expect(completedDriver.subscribe).toHaveBeenCalledTimes(1);
+    expect(completedDriver.subscribe).toHaveBeenCalledWith(
       "kaiban-events-completed",
       expect.any(Function),
     );
-  });
-
-  it("subscribes failedDriver to kaiban-events-failed (separate DLQ driver)", () => {
-    const { driver: completedDriver } = makeCapturingDriver();
-    const failedDriver: IMessagingDriver = {
-      publish: vi.fn().mockResolvedValue(undefined),
-      subscribe: vi.fn().mockResolvedValue(undefined),
-      unsubscribe: vi.fn().mockResolvedValue(undefined),
-      disconnect: vi.fn().mockResolvedValue(undefined),
-    };
-    new CompletionRouter(completedDriver, failedDriver);
+    expect(failedDriver.subscribe).toHaveBeenCalledTimes(1);
     expect(failedDriver.subscribe).toHaveBeenCalledWith(
       "kaiban-events-failed",
       expect.any(Function),
     );
   });
 
-  it("uses same driver for both queues when no failedDriver provided", () => {
+  it("does NOT subscribe again on a second wait() (idempotent ensureSubscribed)", () => {
+    const { driver: completedDriver } = makeCapturingDriver();
+    const { driver: failedDriver } = makeCapturingDriver();
+    const router = new CompletionRouter(completedDriver, failedDriver);
+
+    void router.wait("task-a", 5000, "test");
+    void router.wait("task-b", 5000, "test");
+
+    // Subscribe call counts are unchanged by the second wait().
+    expect(completedDriver.subscribe).toHaveBeenCalledTimes(1);
+    expect(failedDriver.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses same driver for both queues when no failedDriver provided (lazily, on first wait)", () => {
     const { driver } = makeCapturingDriver();
-    new CompletionRouter(driver);
+    const router = new CompletionRouter(driver);
+    expect(driver.subscribe).not.toHaveBeenCalled();
+
+    void router.wait("lazy-task", 5000, "test");
+
     expect(driver.subscribe).toHaveBeenCalledTimes(2);
     const queues = (
       driver.subscribe as ReturnType<typeof vi.fn>

@@ -79,15 +79,13 @@ blog-team-editor-1               Up
 curl http://localhost:3000/health
 # Expected: {"data":{"status":"ok","timestamp":"..."},"meta":{},"errors":[]}
 
-# Agent card
+# Agent card (A2A v0.3 — `capabilities` is an object; abilities are in `skills[]`)
 curl http://localhost:3000/.well-known/agent-card.json
-# Expected: {"name":"kaiban-gateway","version":"1.0.0","capabilities":["tasks.create","tasks.get","agent.status"],...}
+# Expected (v0.3): {"protocolVersion":"0.3.0","name":"kaiban-gateway",...,"capabilities":{"streaming":true,...},"skills":[{"id":"researcher","name":"Delegate to researcher",...},...]}
 
-# Agent status via A2A
-curl -X POST http://localhost:3000/a2a/rpc \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"agent.status"}'
-# Expected: {"jsonrpc":"2.0","id":1,"result":{"status":"IDLE","agentId":"kaiban-gateway"}}
+# Agent status (A2A v0.3 — now a REST endpoint, not a JSON-RPC method)
+curl http://localhost:3000/a2a/agents/researcher/status
+# Expected: {"data":{"agentId":"researcher","status":"IDLE",...},...}
 ```
 
 ---
@@ -154,7 +152,7 @@ TOPIC="Large Language Models in 2025: Capabilities and Limitations" \
 ════════════════════════════════════════════════════════════
 
 ✓ Gateway: OK at http://localhost:3000
-✓ Agent:   kaiban-gateway — [tasks.create, tasks.get, agent.status]
+✓ Agent:   kaiban-gateway — [Delegate to researcher, Delegate to writer, Delegate to editor]
 
 📋 Topic: "Large Language Models in 2025: Capabilities and Limitations"
 

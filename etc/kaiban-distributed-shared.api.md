@@ -8,6 +8,9 @@ import type { IAgentParams } from 'kaibanjs';
 import readline from 'readline';
 import { Redis } from 'ioredis';
 
+// @public
+export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
+
 // @public (undocumented)
 export interface AgentNodeConfig {
     // Warning: (ae-forgotten-export) The symbol "KaibanAgentConfig" needs to be exported by the entry point index.d.ts
@@ -18,6 +21,16 @@ export interface AgentNodeConfig {
     queue: string;
     redisUrl?: string;
     role: string;
+}
+
+// @public
+export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
+
+// @public
+export class BudgetExceededError extends Error {
+    constructor(reason: string);
+    // (undocumented)
+    readonly reason: string;
 }
 
 // Warning: (ae-forgotten-export) The symbol "LLMConfig" needs to be exported by the entry point index.d.ts
@@ -58,6 +71,17 @@ export function createLogger(tag: string): Logger;
 
 // @public
 export function createRpcClient(gatewayUrl: string): RpcClient;
+
+// @public (undocumented)
+export interface DispatchParams {
+    context?: string;
+    expectedOutput?: string;
+    inputs?: Record<string, unknown>;
+    instruction: string;
+}
+
+// @public
+export function dispatchToAgent(driver: Pick<IMessagingDriver, "publish">, agentId: string, params: DispatchParams): Promise<string>;
 
 // @public (undocumented)
 export type DriverType = "bullmq" | "kafka" | "amqp";
@@ -133,6 +157,9 @@ export class OrchestratorStatePublisher {
 }
 
 // @public
+export function overBudgetReason(totals: SpendTotals, budget: WorkflowBudget): string | null;
+
+// @public
 export function parseHandlerResult(raw: string): HandlerResult;
 
 // @public
@@ -179,6 +206,14 @@ export interface RunStepOptions {
 }
 
 // @public
+export interface SpendTotals {
+    // (undocumented)
+    estimatedCost: number;
+    // (undocumented)
+    totalTokens: number;
+}
+
+// @public
 export function startAgentNode(config: AgentNodeConfig): Promise<void>;
 
 // @public
@@ -191,6 +226,17 @@ export interface StepCheckpoint {
 
 // @public
 export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision>;
+
+// @public
+export interface WorkflowBudget {
+    // (undocumented)
+    maxCostUsd: number;
+    // (undocumented)
+    maxTokens: number;
+}
+
+// @public
+export function workflowBudgetFromEnv(env?: NodeJS.ProcessEnv): WorkflowBudget;
 
 // @public
 export type WorkflowCheckpoint = Record<string, StepCheckpoint>;
