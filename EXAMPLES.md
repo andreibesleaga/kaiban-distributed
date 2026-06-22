@@ -421,19 +421,28 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 107 unit-test files, 100% coverage of src (board tests run separately via `cd board && npm test`)
+# → 108 unit-test files / 1131 tests, 100% coverage of src (board tests run separately via `cd board && npm test`)
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
-# → 65 tests: task execution, fault tolerance, state sync, A2A protocol
+# → 69 tests: task execution, fault tolerance, state sync, A2A protocol, completion routing
 
 # Kafka E2E (requires Kafka — starts automatically)
 npm run test:e2e:kafka
 # → 3 tests: publish-subscribe round-trip, unsubscribe
 
+# Playwright visual baselines of the board + example viewers (needs the board dev server + gateway)
+cd board && npm run test:visual   # add :update to regenerate baselines
+
 # All quality gates at once
 npm run lint && npm run typecheck && npm run test:coverage
 ```
+
+> **Runaway-spend guard.** Both example orchestrators enforce a workflow-level
+> budget between phases (and before each revision) via `MAX_WORKFLOW_COST_USD`
+> (default `0.50` in the example compose files) and `MAX_WORKFLOW_TOKENS`
+> (`0` = unlimited). On breach the workflow stops gracefully (STOPPED) instead of
+> draining the budget. This is separate from the per-agent `MAX_TOKEN_BUDGET`.
 
 ---
 

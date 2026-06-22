@@ -911,10 +911,11 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 769 unit tests (no external deps)
+npm run test           # 1131 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
+# cd board && npm run test:visual   # Playwright visual baselines (board + example viewers)
 npm run lint           # ESLint + complexity ≤10 — 0 errors target
 npm run typecheck      # tsc --noEmit — strict mode
 npm run format         # prettier --write
@@ -925,9 +926,11 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 769 tests, 77 files | None (all mocked) |
-| BullMQ E2E | `npm run test:e2e` | 65 tests, 10 files | Docker Redis (auto-managed by globalSetup) |
+| Unit | `npm test` | 1131 tests, 108 files | None (all mocked) |
+| BullMQ E2E | `npm run test:e2e` | 69 tests, 11 files | Docker Redis (auto-managed by globalSetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
+| Board | `cd board && npm test` | React component + Zustand store + a11y tests | happy-dom |
+| Visual (Playwright) | `cd board && npm run test:visual` | board + example-viewer screenshot baselines | board dev server + gateway + chromium |
 
 ### Coverage
 

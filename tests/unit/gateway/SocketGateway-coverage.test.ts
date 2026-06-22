@@ -196,8 +196,12 @@ describe("SocketGateway — coverage branches", () => {
     expect(socket.emit).not.toHaveBeenCalled();
   });
 
-  it("logs and acks failure when publishing a HITL decision to Redis fails", async () => {
+  it("acks failure when forwarding a HITL decision to Redis fails (pub/sub rejects)", async () => {
+    // The durable list write (lpush+expire) runs first, then publish — so the
+    // failing publisher must resolve lpush/expire and reject only on publish.
     const failingHitlPublisher = {
+      lpush: vi.fn().mockResolvedValue(1),
+      expire: vi.fn().mockResolvedValue(1),
       publish: vi.fn().mockRejectedValue(new Error("redis-down")),
       quit: vi.fn().mockResolvedValue(undefined),
     } as unknown as Redis;
@@ -210,16 +214,15 @@ describe("SocketGateway — coverage branches", () => {
     const ack = vi.fn();
     getHitlHandler(socket)({ taskId: "task-123", decision: "PUBLISH" }, ack);
 
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(ack).toHaveBeenCalledWith({
-      ok: false,
-      error: "Redis publish failed",
-    });
+    await vi.waitFor(() =>
+      expect(ack).toHaveBeenCalledWith({
+        ok: false,
+        error: "Redis write failed",
+      }),
+    );
     expect(mockLog.error).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
-      "Failed to publish HITL decision to Redis",
+      "Failed to forward HITL decision to Redis",
     );
 
     errorSpy.mockRestore();
@@ -240,29 +243,31 @@ describe("SocketGateway — coverage branches", () => {
     errorSpy.mockRestore();
   });
 
-  it("logs warning when lpush rejects after successful publish (line 232)", async () => {
-    // For lpush to be called, publish must succeed first.
-    // Use redisPublisher (default hitlPublisher) where mockPublish succeeds.
+  it("acks failure when the durable list write (lpush) rejects", async () => {
+    // lpush is now the FIRST write; its rejection short-circuits to the catch
+    // (the board is told to retry rather than the decision being silently lost).
     mockLpush.mockRejectedValueOnce(new Error("Redis OOM"));
     initGateway();
 
     const socket = makeMockSocket();
     connectionHandler!(socket);
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const ack = vi.fn();
     getHitlHandler(socket)({ taskId: "task-lpush", decision: "PUBLISH" }, ack);
 
-    // Wait for publish .then() → lpush rejection → .catch()
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(mockLog.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(Error) }),
-      "HITL list write failed",
+    // Wait for lpush rejection → .catch()
+    await vi.waitFor(() =>
+      expect(ack).toHaveBeenCalledWith({
+        ok: false,
+        error: "Redis write failed",
+      }),
     );
-    warnSpy.mockRestore();
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "Failed to forward HITL decision to Redis",
+    );
+    errorSpy.mockRestore();
   });
 
   it("disconnects a distinct HITL publisher during shutdown", async () => {

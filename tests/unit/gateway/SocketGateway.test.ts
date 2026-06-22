@@ -323,27 +323,33 @@ describe("SocketGateway", () => {
     return handler!;
   }
 
-  it("publishes valid hitl:decision to Redis", () => {
+  it("publishes valid hitl:decision to Redis", async () => {
     sg.initialize();
     const mockSocket = makeMockSocket();
     connectionHandler!(mockSocket);
 
     getHitlHandler(mockSocket)({ taskId: "task-42", decision: "PUBLISH" });
-    expect(mockPublish).toHaveBeenCalledWith(
-      "kaiban-hitl-decisions",
-      JSON.stringify({ taskId: "task-42", decision: "PUBLISH", _signed: true }),
+    // Durable list write (lpush+expire) runs before pub/sub publish.
+    await vi.waitFor(() =>
+      expect(mockPublish).toHaveBeenCalledWith(
+        "kaiban-hitl-decisions",
+        JSON.stringify({
+          taskId: "task-42",
+          decision: "PUBLISH",
+          _signed: true,
+        }),
+      ),
     );
   });
 
-  it("calls ack with ok:true after successful Redis publish", async () => {
+  it("calls ack with ok:true after successful Redis writes", async () => {
     sg.initialize();
     const mockSocket = makeMockSocket();
     connectionHandler!(mockSocket);
 
     const ack = vi.fn();
     getHitlHandler(mockSocket)({ taskId: "task-42", decision: "REVISE" }, ack);
-    await Promise.resolve(); // flush microtasks (mockPublish resolves immediately)
-    expect(ack).toHaveBeenCalledWith({ ok: true });
+    await vi.waitFor(() => expect(ack).toHaveBeenCalledWith({ ok: true }));
   });
 
   it("calls ack with ok:false for invalid payload", () => {

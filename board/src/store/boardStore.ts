@@ -81,6 +81,7 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
       if (Array.isArray(delta.agents) && delta.agents.length > 0) {
         const agentMap = new Map(next.agents); // use next.agents (may have been cleared above)
         for (const a of delta.agents) {
+          if (!a.agentId) continue; // skip malformed delta — never key the map by "undefined"
           agentMap.set(a.agentId, { ...(agentMap.get(a.agentId) ?? {} as AgentDelta), ...a });
         }
         next.agents = agentMap;
@@ -90,6 +91,7 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
       if (Array.isArray(delta.tasks) && delta.tasks.length > 0) {
         const taskMap = new Map(next.tasks); // use next.tasks (may have been cleared above)
         for (const t of delta.tasks) {
+          if (!t.taskId) continue; // skip malformed delta — never key the map by "undefined"
           taskMap.set(t.taskId, { ...(taskMap.get(t.taskId) ?? {} as TaskDelta), ...t });
         }
         next.tasks = taskMap;
