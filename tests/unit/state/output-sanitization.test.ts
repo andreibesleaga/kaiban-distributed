@@ -108,7 +108,8 @@ describe("Large LLM output truncation via AgentStatePublisher", () => {
       Record<string, unknown>
     >;
     const resultStr = tasks[0]["result"] as string;
-    expect(resultStr.length).toBeLessThanOrEqual(MAX);
+    // Invariant is BYTES — assert the UTF-8 byte budget.
+    expect(Buffer.byteLength(resultStr, "utf8")).toBeLessThanOrEqual(MAX);
     expect(resultStr.length).toBeGreaterThan(0);
   });
 

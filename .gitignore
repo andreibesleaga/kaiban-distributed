@@ -10,7 +10,10 @@
 *.swp
 .DS_Store
 
+.agents
 .claude
+.cline
+.clinerules
 .gemini
 .github/skills
 .github/copilot-instructions.md
@@ -22,14 +25,23 @@ coverage
 /agents/
 certs
 runs
+project
+setup-context.sh
 
 # In-repo audit deliverables — kept locally + mirrored in OpenSourceAudit, not published in the repo
 docs/audit/
 
+AGENTS.md
+GEMINI.md
 CHANGES_LOG.md
 CHANGES_GITLOG.md
-
+KAIBAN-v2.0-MASTER-PLAN.md
+BOOTSTRAP_MISSION.md
 
 temp/
 reports/
 .stryker-tmp/
+
+# Phase 4b staging-publish artifacts
+dist-staging/
+*.tgz

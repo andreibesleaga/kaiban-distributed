@@ -47,15 +47,14 @@ function makeCapturingDriver(): {
 describe("AgentActor", () => {
   it("subscribes to the correct queue on start", async () => {
     const d = makeMockDriver();
-    const actor = new AgentActor("agent-1", d, "q");
+    const actor = new AgentActor("agent-1", d, "q", vi.fn());
     await actor.start();
     expect(d.subscribe).toHaveBeenCalledWith("q", expect.any(Function));
   });
 
-  it("processes a matching task (with default executeTask) and publishes completion", async () => {
+  it("processes a matching task and publishes completion", async () => {
     const { driver, getHandler } = makeCapturingDriver();
-    // No custom handler → uses default delay-based execute
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await getHandler()({
       taskId: "t",
@@ -89,7 +88,7 @@ describe("AgentActor", () => {
 
   it("stop() calls driver.unsubscribe(), NOT driver.disconnect()", async () => {
     const d = makeMockDriver();
-    const actor = new AgentActor("agent-1", d, "q");
+    const actor = new AgentActor("agent-1", d, "q", vi.fn());
     await actor.start();
     await actor.stop();
     expect(d.unsubscribe).toHaveBeenCalledWith("q");
@@ -120,7 +119,7 @@ describe("AgentActor", () => {
   it("does not log raw agentId in console output", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const d = makeMockDriver();
-    const actor = new AgentActor("agent-secret-id", d, "q");
+    const actor = new AgentActor("agent-secret-id", d, "q", vi.fn());
     await actor.start();
     await actor.stop();
     for (const log of logSpy.mock.calls.map((c) => c.join(" "))) {
@@ -131,7 +130,7 @@ describe("AgentActor", () => {
 
   it("ignores a task addressed to a different agent", async () => {
     const { driver, getHandler } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await getHandler()({
       taskId: "t",
@@ -144,7 +143,7 @@ describe("AgentActor", () => {
 
   it("processes a wildcard task (agentId = *)", async () => {
     const { driver, getHandler } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await getHandler()({ taskId: "t", agentId: "*", data: {}, timestamp: 0 });
     expect(driver.publish).toHaveBeenCalledWith(

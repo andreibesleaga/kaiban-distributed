@@ -407,11 +407,11 @@ docker run -p 3000:3000 \
   kaiban-distributed:latest
 ```
 
-Submit tasks:
+Submit tasks (A2A v0.3 `message/send`; target agent in `metadata.agentId`):
 ```bash
 curl -X POST http://localhost:3000/a2a/rpc \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tasks.create","params":{"agentId":"researcher","instruction":"Research AI agent trends 2025","expectedOutput":"A 200-word summary"}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"Research AI agent trends 2025"}],"metadata":{"agentId":"researcher","expectedOutput":"A 200-word summary"}}}}'
 ```
 
 ---
@@ -421,19 +421,30 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 769 unit tests, 77 files, 100% coverage of src (+146 board tests via `cd board && npm test`)
+# → 108 unit-test files / 1155 tests, 100% coverage of src (board tests run separately via `cd board && npm test`)
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
-# → 65 tests: task execution, fault tolerance, state sync, A2A protocol
+# → 69 tests: task execution, fault tolerance, state sync, A2A protocol, completion routing
 
 # Kafka E2E (requires Kafka — starts automatically)
 npm run test:e2e:kafka
 # → 3 tests: publish-subscribe round-trip, unsubscribe
 
+# Playwright visual baselines of the board + example viewers (needs the board dev server + gateway)
+cd board && npm run test:visual   # add :update to regenerate baselines
+
 # All quality gates at once
 npm run lint && npm run typecheck && npm run test:coverage
 ```
+
+> **Runaway-spend guard.** Both example orchestrators enforce a workflow-level
+> budget after **every** phase (blog-team: research/write/edit; global-research:
+> search/write/governance/editorial) and before each revision, via
+> `MAX_WORKFLOW_COST_USD` (default `0.50` in the example compose files) and
+> `MAX_WORKFLOW_TOKENS` (`0` = unlimited). On breach the workflow stops gracefully
+> (STOPPED) instead of draining the budget. This is separate from the per-agent
+> `MAX_TOKEN_BUDGET`.
 
 ---
 
@@ -560,7 +571,7 @@ interactive Human-in-the-Loop Approve / Revise / Reject controls.
 ### Prerequisites
 
 - Any kaiban-distributed gateway running (e.g. `./scripts/blog-team.sh start`)
-- Node.js ≥ 18 (board only; gateway still needs ≥ 22)
+- Node.js ≥ 20.19 (board uses Vite 8, which needs Node 20.19+/22.12+; gateway needs ≥ 22)
 
 ### Start
 

@@ -27,15 +27,35 @@ export class CompletionRouter {
   private pendingResolve = new Map<string, (result: string) => void>();
   private pendingReject = new Map<string, (err: Error) => void>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly completedDriver: IMessagingDriver;
+  private readonly dlqDriver: IMessagingDriver;
+  private subscribed = false;
 
   constructor(
     completedDriver: IMessagingDriver,
     failedDriver?: IMessagingDriver,
   ) {
-    const dlqDriver = failedDriver ?? completedDriver;
+    this.completedDriver = completedDriver;
+    this.dlqDriver = failedDriver ?? completedDriver;
+  }
+
+  /**
+   * Subscribe to the completed/failed queues — **lazily, on the first `wait()`**.
+   * Two routers on the same node (e.g. the gateway's A2A executor router and an
+   * orchestrator's router) are competing consumers on the shared BullMQ
+   * `kaiban-events-completed` queue; whichever wins a completion it never
+   * dispatched silently drops it, hanging the real waiter. Subscribing only when a
+   * router actually has work to wait for means a router that never dispatches
+   * (e.g. a gateway serving only the board with no A2A traffic) never consumes the
+   * queue. BullMQ is durable, so a completion published before this subscribe lands
+   * still waits in the queue for the late consumer.
+   */
+  private ensureSubscribed(): void {
+    if (this.subscribed) return;
+    this.subscribed = true;
 
     // Successful completions
-    void completedDriver.subscribe(COMPLETED_QUEUE, async (payload) => {
+    void this.completedDriver.subscribe(COMPLETED_QUEUE, async (payload) => {
       const resolve = this.pendingResolve.get(payload.taskId);
       if (resolve) {
         this.clearPending(payload.taskId);
@@ -47,7 +67,7 @@ export class CompletionRouter {
     });
 
     // Failed tasks (after max retries → DLQ) — surfaces real LLM error to orchestrator
-    void dlqDriver.subscribe(FAILED_QUEUE, async (payload) => {
+    void this.dlqDriver.subscribe(FAILED_QUEUE, async (payload) => {
       const reject = this.pendingReject.get(payload.taskId);
       if (reject) {
         this.clearPending(payload.taskId);
@@ -76,14 +96,38 @@ export class CompletionRouter {
    * @param taskId    Task ID to wait for.
    * @param timeoutMs Max wait time in milliseconds.
    * @param label     Human-readable label used in timeout error messages.
+   * @param signal    Optional AbortSignal — aborting rejects the wait and cleans up
+   *                  (used by the A2A executor's `tasks/cancel` path).
    */
-  wait(taskId: string, timeoutMs: number, label: string): Promise<string> {
+  wait(
+    taskId: string,
+    timeoutMs: number,
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    this.ensureSubscribed();
     return new Promise((resolve, reject) => {
       // Guard against a duplicate in-flight taskId: overwriting the maps would
       // orphan the first waiter's resolver + timer, hanging it forever.
       if (this.pendingResolve.has(taskId)) {
         reject(new Error(`Duplicate wait() for in-flight taskId: ${taskId}`));
         return;
+      }
+      if (signal) {
+        if (signal.aborted) {
+          reject(new Error(`Aborted wait for ${label}`));
+          return;
+        }
+        signal.addEventListener(
+          "abort",
+          () => {
+            if (this.pendingResolve.has(taskId)) {
+              this.clearPending(taskId);
+              reject(new Error(`Aborted wait for ${label}`));
+            }
+          },
+          { once: true },
+        );
       }
       this.pendingResolve.set(taskId, resolve);
       this.pendingReject.set(taskId, reject);

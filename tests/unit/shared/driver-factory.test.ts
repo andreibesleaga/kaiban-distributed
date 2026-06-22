@@ -47,6 +47,11 @@ describe("getDriverType", () => {
     process.env["MESSAGING_DRIVER"] = "redis";
     expect(getDriverType()).toBe("bullmq");
   });
+
+  it("returns 'amqp' when MESSAGING_DRIVER=amqp", () => {
+    process.env["MESSAGING_DRIVER"] = "amqp";
+    expect(getDriverType()).toBe("amqp");
+  });
 });
 
 describe("createDriver", () => {
@@ -159,5 +164,14 @@ describe("createDriver", () => {
     vi.clearAllMocks();
     createDriver(); // no suffix
     expect(BullMQDriver).toHaveBeenCalled();
+  });
+
+  it("creates the (unimplemented) AmqpDriver when MESSAGING_DRIVER=amqp", async () => {
+    process.env["MESSAGING_DRIVER"] = "amqp";
+    const { AmqpDriver } = await import(
+      "../../../src/infrastructure/messaging/amqp-driver"
+    );
+    const driver = createDriver();
+    expect(driver).toBeInstanceOf(AmqpDriver);
   });
 });

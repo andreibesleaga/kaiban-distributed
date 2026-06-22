@@ -66,6 +66,8 @@ describe("buildSecurityDeps", () => {
     delete process.env["JIT_TOKENS_ENABLED"];
     delete process.env["CIRCUIT_BREAKER_THRESHOLD"];
     delete process.env["CIRCUIT_BREAKER_WINDOW_MS"];
+    delete process.env["GOVERNANCE_ENABLED"];
+    delete process.env["GOVERNANCE_POLICIES_PATH"];
   });
 
   afterEach(() => {
@@ -74,6 +76,8 @@ describe("buildSecurityDeps", () => {
     delete process.env["JIT_TOKENS_ENABLED"];
     delete process.env["CIRCUIT_BREAKER_THRESHOLD"];
     delete process.env["CIRCUIT_BREAKER_WINDOW_MS"];
+    delete process.env["GOVERNANCE_ENABLED"];
+    delete process.env["GOVERNANCE_POLICIES_PATH"];
   });
 
   it("returns empty actorDeps and no tokenProvider when all flags disabled", () => {
@@ -131,5 +135,17 @@ describe("buildSecurityDeps", () => {
     expect(actorDeps.firewall).toBeDefined();
     expect(actorDeps.circuitBreaker).toBeDefined();
     expect(tokenProvider).toBeDefined();
+  });
+
+  it("wires an admission gate when GOVERNANCE_ENABLED=true (default-allow policy)", () => {
+    process.env["GOVERNANCE_ENABLED"] = "true";
+    const { actorDeps } = buildSecurityDeps();
+    expect(actorDeps.admissionGate).toBeDefined();
+  });
+
+  it("does NOT wire an admission gate when governance is disabled (even with a policies path)", () => {
+    process.env["GOVERNANCE_POLICIES_PATH"] = "/etc/kaiban/policies.yml";
+    const { actorDeps } = buildSecurityDeps();
+    expect(actorDeps.admissionGate).toBeUndefined();
   });
 });

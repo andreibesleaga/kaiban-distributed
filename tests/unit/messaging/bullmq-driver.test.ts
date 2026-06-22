@@ -3,6 +3,7 @@ import { BullMQDriver } from "../../../src/infrastructure/messaging/bullmq-drive
 import { Queue, Worker } from "bullmq";
 
 const mockWorkerClose = vi.fn();
+const mockWorkerOn = vi.fn();
 const mockQueueClose = vi.fn();
 const mockQueueAdd = vi.fn().mockResolvedValue({ id: "j" });
 
@@ -14,7 +15,7 @@ vi.mock("bullmq", () => ({
     _name: string,
     processor: (job: { data: unknown }) => Promise<void>,
   ) {
-    return { close: mockWorkerClose, _processor: processor };
+    return { close: mockWorkerClose, on: mockWorkerOn, _processor: processor };
   }),
 }));
 
@@ -25,6 +26,18 @@ vi.mock("@opentelemetry/api", () => ({
   },
   propagation: { inject: vi.fn(), extract: vi.fn().mockReturnValue({}) },
   ROOT_CONTEXT: {},
+}));
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+vi.mock("../../../src/shared/structured-logger", () => ({
+  createStructuredLogger: (): typeof mockLog => mockLog,
+  logger: mockLog,
+  resolveLogLevel: (): string => "silent",
 }));
 
 describe("BullMQDriver", () => {
@@ -153,5 +166,83 @@ describe("BullMQDriver", () => {
     const payload = { taskId: "t", agentId: "a", data: {}, timestamp: 0 };
     await processor({ data: payload });
     expect(handler).toHaveBeenCalledWith(payload);
+  });
+
+  it("Queue is created with retention defaultJobOptions (S9 — bounds Redis memory)", async () => {
+    const driver = new BullMQDriver(cfg);
+    await driver.publish("q", {
+      taskId: "t",
+      agentId: "a",
+      data: {},
+      timestamp: 0,
+    });
+    const queueOpts = vi.mocked(Queue).mock.calls[0][1] as {
+      defaultJobOptions?: {
+        removeOnComplete?: { age?: number; count?: number };
+        removeOnFail?: { age?: number };
+      };
+    };
+    expect(queueOpts.defaultJobOptions).toEqual({
+      removeOnComplete: { age: 3600, count: 1000 },
+      removeOnFail: { age: 86400 },
+    });
+  });
+
+  it("caller-supplied defaultJobOptions override the retention defaults", async () => {
+    const driver = new BullMQDriver({
+      ...cfg,
+      defaultJobOptions: { removeOnComplete: { age: 60 } },
+    });
+    await driver.publish("q", {
+      taskId: "t",
+      agentId: "a",
+      data: {},
+      timestamp: 0,
+    });
+    const queueOpts = vi.mocked(Queue).mock.calls[0][1] as {
+      defaultJobOptions?: { removeOnComplete?: { age?: number } };
+    };
+    expect(queueOpts.defaultJobOptions?.removeOnComplete).toEqual({ age: 60 });
+  });
+
+  it("subscribe registers a worker 'error' listener that logs (S9)", async () => {
+    const driver = new BullMQDriver(cfg);
+    await driver.subscribe("q", vi.fn());
+    expect(mockWorkerOn).toHaveBeenCalledWith("error", expect.any(Function));
+    const errHandler = mockWorkerOn.mock.calls.find(
+      (c) => c[0] === "error",
+    )?.[1] as (err: Error) => void;
+    errHandler(new Error("redis dropped"));
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: "redis dropped", queue: "q" }),
+      "BullMQ worker error",
+    );
+  });
+
+  it("TLS config still merges retention defaultJobOptions (S9)", async () => {
+    const driver = new BullMQDriver({
+      ...cfg,
+      tls: {
+        ca: Buffer.from("ca"),
+        cert: Buffer.from("cert"),
+        key: Buffer.from("key"),
+        rejectUnauthorized: true,
+      },
+    });
+    await driver.publish("q", {
+      taskId: "t",
+      agentId: "a",
+      data: {},
+      timestamp: 0,
+    });
+    const queueOpts = vi.mocked(Queue).mock.calls[0][1] as {
+      defaultJobOptions?: { removeOnComplete?: { age?: number } };
+      connection?: { tls?: unknown };
+    };
+    expect(queueOpts.defaultJobOptions?.removeOnComplete).toEqual({
+      age: 3600,
+      count: 1000,
+    });
+    expect(queueOpts.connection?.tls).toBeDefined();
   });
 });

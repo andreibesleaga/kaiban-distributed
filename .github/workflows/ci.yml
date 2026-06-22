@@ -85,7 +85,10 @@ jobs:
       - name: Dependency audit (fail on HIGH+; moderates triaged in SECURITY.md)
         run: npm audit --audit-level=high
       - name: Generate CycloneDX 1.6 SBOM
-        run: npx --yes @cyclonedx/cyclonedx-npm@latest --output-format JSON --spec-version 1.6 --output-file sbom.json
+        # --ignore-npm-errors: `npm ls` exits non-zero on a harmless dev-only peer
+        # mismatch (madge→precinct wants TypeScript 5.x while the project pins 6.x);
+        # the installed tree is valid, so the SBOM is still complete and accurate.
+        run: npx --yes @cyclonedx/cyclonedx-npm@latest --ignore-npm-errors --output-format JSON --spec-version 1.6 --output-file sbom.json
       - name: Upload SBOM
         uses: actions/upload-artifact@v7
         with:

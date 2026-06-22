@@ -144,7 +144,7 @@ describe("AgentActor — retry recovery (partial failure)", () => {
 describe("AgentActor — lifecycle edge cases", () => {
   it("stop() before any tasks does not throw", async () => {
     const { driver } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await expect(actor.stop()).resolves.not.toThrow();
     expect(driver.unsubscribe).toHaveBeenCalledWith("q");
@@ -152,7 +152,7 @@ describe("AgentActor — lifecycle edge cases", () => {
 
   it("multiple stop() calls are safe (idempotent unsubscribe)", async () => {
     const { driver } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await actor.stop();
     await actor.stop();
@@ -161,7 +161,7 @@ describe("AgentActor — lifecycle edge cases", () => {
 
   it("start → stop → start re-subscribes to queue", async () => {
     const { driver } = makeCapturingDriver();
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await actor.stop();
     await actor.start();
@@ -296,7 +296,7 @@ describe("AgentActor — DLQ payload shape", () => {
         .fn()
         .mockResolvedValue({ allowed: false, reason: "prompt injection" }),
     };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, {
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
       firewall,
     });
     await actor.start();
@@ -318,7 +318,7 @@ describe("AgentActor — DLQ payload shape", () => {
     const firewall = {
       evaluate: vi.fn().mockResolvedValue({ allowed: false }),
     };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, {
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
       firewall,
     });
     await actor.start();
@@ -333,6 +333,70 @@ describe("AgentActor — DLQ payload shape", () => {
     warnSpy.mockRestore();
   });
 
+  it("DLQ from admission gate block has both error and reason", async () => {
+    const { driver, getHandler } = makeCapturingDriver();
+    const admissionGate = {
+      evaluate: vi.fn().mockResolvedValue({ allowed: false, reason: "gate:block" }),
+    };
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
+      admissionGate,
+    });
+    await actor.start();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await getHandler()(makePayload());
+
+    const dlqCall = (
+      driver.publish as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c: unknown[]) => c[0] === "kaiban-events-failed");
+    expect(dlqCall).toBeDefined();
+    expect(dlqCall![1].data.error).toBe("blocked_by_admission_gate");
+    expect(dlqCall![1].data.reason).toBe("gate:block");
+    warnSpy.mockRestore();
+  });
+
+  it("admission gate block with no reason still routes to DLQ", async () => {
+    const { driver, getHandler } = makeCapturingDriver();
+    const admissionGate = {
+      evaluate: vi.fn().mockResolvedValue({ allowed: false }),
+    };
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
+      admissionGate,
+    });
+    await actor.start();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await getHandler()(makePayload());
+
+    const dlqCall = (
+      driver.publish as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c: unknown[]) => c[0] === "kaiban-events-failed");
+    expect(dlqCall).toBeDefined();
+    expect(dlqCall![1].data.error).toBe("blocked_by_admission_gate");
+    warnSpy.mockRestore();
+  });
+
+  it("admission gate allow lets the task execute (completed, not DLQ)", async () => {
+    const { driver, getHandler } = makeCapturingDriver();
+    const admissionGate = {
+      evaluate: vi.fn().mockResolvedValue({ allowed: true }),
+    };
+    const handler = vi.fn().mockResolvedValue("done");
+    const actor = new AgentActor("agent-1", driver, "q", handler, {
+      admissionGate,
+    });
+    await actor.start();
+    await getHandler()(makePayload());
+
+    expect(admissionGate.evaluate).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+    const publish = driver.publish as ReturnType<typeof vi.fn>;
+    expect(
+      publish.mock.calls.find((c: unknown[]) => c[0] === "kaiban-events-completed"),
+    ).toBeDefined();
+    expect(
+      publish.mock.calls.find((c: unknown[]) => c[0] === "kaiban-events-failed"),
+    ).toBeUndefined();
+  });
+
   it("DLQ from circuit breaker has error but no reason", async () => {
     const { driver, getHandler } = makeCapturingDriver();
     const breaker: ICircuitBreaker = {
@@ -340,7 +404,7 @@ describe("AgentActor — DLQ payload shape", () => {
       recordSuccess: vi.fn(),
       recordFailure: vi.fn(),
     };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, {
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), {
       circuitBreaker: breaker,
     });
     await actor.start();

@@ -14,7 +14,7 @@ vi.mock("bullmq", () => ({
     processor: (job: { data: unknown }) => Promise<void>,
   ) {
     capturedProcessor = processor;
-    return { close: vi.fn() };
+    return { close: vi.fn(), on: vi.fn() };
   }),
 }));
 

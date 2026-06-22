@@ -34,9 +34,13 @@ import {
 import { AgentStatePublisher } from "../adapters/state/agent-state-publisher";
 import { createDriver } from "./driver-factory";
 import { buildSecurityDeps } from "./build-security-deps";
+import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "./structured-logger";
 
 const log = createStructuredLogger({ component: "agent-node" });
+
+/** Bounded deadline (ms) for a worker node's graceful drain on SIGTERM. */
+const NODE_SHUTDOWN_DEADLINE_MS = 25_000;
 
 export interface AgentNodeConfig {
   /** Unique agent identifier (also used as messaging group suffix). */
@@ -83,12 +87,20 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   log.info({ label, agent: displayName, queue }, "Agent node started");
   statePublisher.publishIdle();
 
+  // Graceful drain (Phase R): stop the actor (no new work) → drain in-flight →
+  // close driver → close publisher, ordered + best-effort, within a bounded
+  // deadline (after which the orchestrator SIGKILLs anyway).
   process.on("SIGTERM", () => {
     void (async (): Promise<void> => {
-      await actor.stop();
-      await driver.disconnect();
-      await statePublisher.disconnect();
-      process.exit(0);
+      const result = await gracefulShutdown({
+        deadlineMs: NODE_SHUTDOWN_DEADLINE_MS,
+        steps: [
+          { name: "stop-actor", run: (): Promise<void> => actor.stop() },
+          { name: "close-driver", run: (): Promise<void> => driver.disconnect() },
+          { name: "close-publisher", run: (): Promise<void> => statePublisher.disconnect() },
+        ],
+      });
+      process.exit(result.timedOut || result.errors.length > 0 ? 1 : 0);
     })();
   });
 }

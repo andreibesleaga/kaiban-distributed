@@ -36,8 +36,13 @@ describe("loadConfig", () => {
   it("throws on invalid MESSAGING_DRIVER value", () => {
     process.env["MESSAGING_DRIVER"] = "rabbitmq";
     expect(() => loadConfig()).toThrow(
-      'MESSAGING_DRIVER must be "bullmq" or "kafka"',
+      'MESSAGING_DRIVER must be "bullmq", "kafka", or "amqp"',
     );
+  });
+
+  it("accepts the amqp seam value", () => {
+    process.env["MESSAGING_DRIVER"] = "amqp";
+    expect(loadConfig().messagingDriver).toBe("amqp");
   });
 
   it("throws when AGENT_IDS is not set", () => {
@@ -102,5 +107,114 @@ describe("loadConfig", () => {
     process.env["VALID_HITL_DECISIONS"] = " PUBLISH , REJECT , , ";
     const config = loadConfig();
     expect(config.validHitlDecisions).toEqual(["PUBLISH", "REJECT"]);
+  });
+
+  it("MCP server is off by default with no allow-list filters", () => {
+    const { mcp } = loadConfig();
+    expect(mcp).toEqual({
+      enabled: false,
+      path: "/mcp",
+      requireDispatchConsent: true,
+    });
+  });
+
+  it("economics is off by default with unlimited budgets", () => {
+    const { economics } = loadConfig();
+    expect(economics).toEqual({
+      enabled: false,
+      maxRequestsPerWindow: 0,
+      maxCostPerWindow: 0,
+      globalCostCeiling: 0,
+      windowSeconds: 60,
+      degradeThreshold: 0.75,
+    });
+  });
+
+  it("reads the economics env (enable, budgets, window, degrade threshold)", () => {
+    process.env["ECONOMICS_ENABLED"] = "true";
+    process.env["ECONOMICS_MAX_REQUESTS_PER_WINDOW"] = "120";
+    process.env["ECONOMICS_MAX_COST_PER_WINDOW"] = "5000";
+    process.env["ECONOMICS_GLOBAL_COST_CEILING"] = "100000";
+    process.env["ECONOMICS_WINDOW_SECONDS"] = "30";
+    process.env["ECONOMICS_DEGRADE_THRESHOLD"] = "0.8";
+    const { economics } = loadConfig();
+    expect(economics).toEqual({
+      enabled: true,
+      maxRequestsPerWindow: 120,
+      maxCostPerWindow: 5000,
+      globalCostCeiling: 100000,
+      windowSeconds: 30,
+      degradeThreshold: 0.8,
+    });
+  });
+
+  it("governance is off by default with no policies path", () => {
+    expect(loadConfig().governance).toEqual({ enabled: false });
+  });
+
+  it("reads the governance env (enable + policies path)", () => {
+    process.env["GOVERNANCE_ENABLED"] = "true";
+    process.env["GOVERNANCE_POLICIES_PATH"] = "/etc/kaiban/policies.yml";
+    expect(loadConfig().governance).toEqual({
+      enabled: true,
+      policiesPath: "/etc/kaiban/policies.yml",
+    });
+  });
+
+  it("reads the MCP server env (enable, path, consent, allow-lists)", () => {
+    process.env["MCP_SERVER_ENABLED"] = "true";
+    process.env["MCP_SERVER_PATH"] = "/federation/mcp";
+    process.env["MCP_DISPATCH_CONSENT"] = "false";
+    process.env["MCP_ALLOWED_TOOLS"] = "dispatch_task";
+    process.env["MCP_ALLOWED_RESOURCES"] = " agents , agent-status ";
+    process.env["MCP_ALLOWED_PROMPTS"] = "";
+    const { mcp } = loadConfig();
+    expect(mcp).toEqual({
+      enabled: true,
+      path: "/federation/mcp",
+      requireDispatchConsent: false,
+      allowedTools: ["dispatch_task"],
+      allowedResources: ["agents", "agent-status"],
+      allowedPrompts: [],
+    });
+  });
+
+  it("falls back to the default agentTimeoutMs when AGENT_TIMEOUT_MS is non-numeric", () => {
+    // Guards against NaN → setTimeout(fn, NaN) firing instantly (every task times out).
+    process.env["AGENT_TIMEOUT_MS"] = "abc";
+    expect(loadConfig().agentTimeoutMs).toBe(300000);
+  });
+
+  it("reads a valid AGENT_TIMEOUT_MS", () => {
+    process.env["AGENT_TIMEOUT_MS"] = "120000";
+    expect(loadConfig().agentTimeoutMs).toBe(120000);
+  });
+
+  it("falls back to the default port when PORT is non-numeric", () => {
+    process.env["PORT"] = "not-a-port";
+    expect(loadConfig().port).toBe(3000);
+  });
+
+  it("falls back to the default maxTokenBudget when MAX_TOKEN_BUDGET is non-numeric", () => {
+    process.env["MAX_TOKEN_BUDGET"] = "lots";
+    expect(loadConfig().maxTokenBudget).toBe(0);
+  });
+
+  it("falls back to defaults for non-numeric economics numerics", () => {
+    process.env["ECONOMICS_MAX_REQUESTS_PER_WINDOW"] = "x";
+    process.env["ECONOMICS_WINDOW_SECONDS"] = "y";
+    process.env["ECONOMICS_DEGRADE_THRESHOLD"] = "z";
+    const { economics } = loadConfig();
+    expect(economics.maxRequestsPerWindow).toBe(0);
+    expect(economics.windowSeconds).toBe(60);
+    expect(economics.degradeThreshold).toBe(0.75);
+  });
+
+  it("falls back to defaults for non-numeric circuit-breaker numerics", () => {
+    process.env["CIRCUIT_BREAKER_THRESHOLD"] = "nope";
+    process.env["CIRCUIT_BREAKER_WINDOW_MS"] = "nope";
+    const { security } = loadConfig();
+    expect(security.circuitBreakerThreshold).toBe(10);
+    expect(security.circuitBreakerWindowMs).toBe(60000);
   });
 });

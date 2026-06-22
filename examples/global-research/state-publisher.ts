@@ -60,11 +60,17 @@ export class ResearchStatePublisher extends OrchestratorStatePublisher {
     });
   }
 
-  searchPhaseComplete(results: Array<{ taskId: string; result?: string; error?: string }>): void {
+  searchPhaseComplete(
+    results: Array<{ taskId: string; result?: string; error?: string }>,
+    indexByTaskId: Map<string, number>,
+  ): void {
+    // `results` arrive in COMPLETION order (router.waitAll), not dispatch order —
+    // resolve each result's real dispatch index via its taskId so an out-of-order
+    // searcher is still attributed to its correct `searcher-N` card on the board.
     this.publish({
-      tasks: results.map((r, i) => ({
+      tasks: results.map((r) => ({
         taskId: r.taskId, status: r.error ? 'BLOCKED' : 'DONE',
-        assignedToAgentId: `searcher-${i}`,
+        assignedToAgentId: `searcher-${indexByTaskId.get(r.taskId) ?? 0}`,
         ...(r.error ? { result: `Failed: ${r.error.slice(0, 100)}` } : {}),
       })),
     });

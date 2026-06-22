@@ -223,30 +223,27 @@ export class SocketGateway {
             "HITL decision received",
           );
           const msg = wrapSigned({ taskId, decision });
-          // Dual delivery: pub/sub (fast) + per-task list (reliable fallback).
-          // Pub/sub can miss messages if the subscriber connects after publish;
-          // the list-based path guarantees delivery regardless of timing.
+          // Dual delivery: write the durable per-task list FIRST (the reliable
+          // BRPOP fallback — no timing dependency), then publish on pub/sub (the
+          // fast path). ACK the board only after the reliable path is persisted,
+          // so a pub/sub message the orchestrator connects too late to receive is
+          // always recoverable via BRPOP. If either write fails, tell the board
+          // to retry rather than silently dropping the decision.
           const listKey = `${HITL_CHANNEL}:${taskId}`;
           this.hitlPublisher
-            .publish(HITL_CHANNEL, msg)
+            .lpush(listKey, msg)
+            .then(() => this.hitlPublisher.expire(listKey, 300))
+            .then(() => this.hitlPublisher.publish(HITL_CHANNEL, msg))
             .then(() => {
               log.info(
-                { decision: String(decision) },
-                "HITL decision forwarded to Redis",
+                { decision: String(decision), taskId: taskId.slice(-8) },
+                "HITL decision forwarded to Redis (list + pub/sub)",
               );
-              // Fire-and-forget: write to per-task list for BRPOP fallback.
-              // Errors here don't affect the board ACK — pub/sub already succeeded.
-              void this.hitlPublisher
-                .lpush(listKey, msg)
-                .then(() => this.hitlPublisher.expire(listKey, 300))
-                .catch((err: unknown) =>
-                  log.warn({ err }, "HITL list write failed"),
-                );
               ack?.({ ok: true });
             })
             .catch((err: unknown) => {
-              log.error({ err }, "Failed to publish HITL decision to Redis");
-              ack?.({ ok: false, error: "Redis publish failed" });
+              log.error({ err }, "Failed to forward HITL decision to Redis");
+              ack?.({ ok: false, error: "Redis write failed" });
             });
         },
       );

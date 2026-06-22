@@ -46,7 +46,7 @@ describe("AgentActor — Security deps", () => {
       recordFailure: vi.fn(),
     };
     const deps: AgentActorDeps = { circuitBreaker: breaker };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload());
 
@@ -65,7 +65,7 @@ describe("AgentActor — Security deps", () => {
         .mockResolvedValue({ allowed: false, reason: "test-blocked" }),
     };
     const deps: AgentActorDeps = { firewall };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload());
 
@@ -85,7 +85,7 @@ describe("AgentActor — Security deps", () => {
       evaluate: vi.fn().mockResolvedValue({ allowed: true }),
     };
     const deps: AgentActorDeps = { firewall };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload());
 
@@ -104,7 +104,7 @@ describe("AgentActor — Security deps", () => {
       recordFailure: vi.fn(),
     };
     const deps: AgentActorDeps = { circuitBreaker: breaker };
-    const actor = new AgentActor("agent-1", driver, "q", undefined, deps);
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn(), deps);
     await actor.start();
     await subscribedHandler(makePayload());
 
@@ -129,7 +129,7 @@ describe("AgentActor — Security deps", () => {
   });
 
   it("works without any security deps (backwards compatible)", async () => {
-    const actor = new AgentActor("agent-1", driver, "q");
+    const actor = new AgentActor("agent-1", driver, "q", vi.fn());
     await actor.start();
     await subscribedHandler(makePayload());
 

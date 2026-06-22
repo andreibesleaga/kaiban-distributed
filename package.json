@@ -1,6 +1,6 @@
 {
   "name": "kaiban-distributed",
-  "version": "1.5.0-beta",
+  "version": "2.0.0",
   "description": "Kaiban Distributed: Distributed Agentic AI Platform - Actor Model Kanban Framework Implementation with Enterprise Messaging Layer State (Redis/Kafka) and Individual Deployed AI Nodes (TypeScript).",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -8,12 +8,17 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./shared": {
+      "types": "./dist/src/shared/index.d.ts",
+      "default": "./dist/src/shared/index.js"
     }
   },
   "files": [
     "dist/src",
     "README.md",
-    "LICENSE",
+    "LICENSE-APACHE",
+    "LICENSING.md",
     "SECURITY.md",
     "CHANGELOG.md"
   ],
@@ -24,6 +29,8 @@
     "build": "tsc --project tsconfig.build.json",
     "prepublishOnly": "npm run build",
     "dev": "node dist/src/main/index.js",
+    "dev:gateway": "ROLE=gateway node dist/src/main/index.js",
+    "dev:worker": "ROLE=worker node dist/src/main/index.js",
     "lint": "eslint src tests examples --max-warnings 0",
     "format": "prettier --write src tests",
     "test": "vitest run --config vitest.config.mts",
@@ -36,8 +43,8 @@
     "typecheck": "tsc --noEmit",
     "lint:arch": "madge --circular --extensions ts src/",
     "bench": "vitest bench --run --config vitest.bench.config.mts",
-    "api:check": "npm run build && api-extractor run --verbose",
-    "api:update": "npm run build && api-extractor run --local --verbose",
+    "api:check": "npm run build && api-extractor run --verbose && api-extractor run -c api-extractor.shared.json --verbose",
+    "api:update": "npm run build && api-extractor run --local --verbose && api-extractor run -c api-extractor.shared.json --local --verbose",
     "test:mutation": "stryker run"
   },
   "repository": {
@@ -46,7 +53,7 @@
   },
   "keywords": [],
   "author": "Andrei Besleaga",
-  "license": "GPL-3.0",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "engines": {
     "node": ">=22"
@@ -55,6 +62,10 @@
     "url": "https://github.com/andreibesleaga/kaiban-distributed/issues"
   },
   "homepage": "https://github.com/andreibesleaga/kaiban-distributed#readme",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "overrides": {
     "langsmith": ">=0.7.4",
     "expr-eval": ">=2.0.2",
@@ -76,7 +87,10 @@
     "ip-address": ">=10.2.0",
     "glob": ">=10.5.0",
     "@opentelemetry/exporter-prometheus": ">=0.217.0",
-    "postcss": ">=8.4.31"
+    "postcss": ">=8.4.31",
+    "madge": {
+      "typescript": "$typescript"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -94,31 +108,36 @@
     "prettier": "^3.8.1",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@a2a-js/sdk": "^0.3.13",
+    "@langchain/openai": "^0.5.7",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.75.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.217.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.217.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.77.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.219.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
     "@opentelemetry/sdk-metrics": "^2.6.0",
-    "@opentelemetry/sdk-node": "^0.217.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
     "@opentelemetry/sdk-trace-node": "^2.6.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@types/jsonwebtoken": "^9.0.10",
-    "bullmq": "^5.70.4",
-    "dotenv": "^16.6.1",
+    "bullmq": "^5.79.0",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
     "ioredis": "^5.10.0",
     "jsonwebtoken": "^9.0.3",
     "kafkajs": "^2.2.4",
-    "kaibanjs": "^0.23.1",
+    "kaibanjs": "0.24.2",
     "pino": "^10.3.1",
+    "rate-limiter-flexible": "^11.2.0",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   }
 }

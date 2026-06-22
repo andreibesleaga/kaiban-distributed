@@ -9,6 +9,7 @@
  */
 import { Redis } from "ioredis";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
+import type { TaskHandler } from "../../application/actor/AgentActor";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import { sanitizeDelta } from "./distributedMiddleware";
@@ -37,8 +38,27 @@ interface TaskState {
   cost?: number;
 }
 
-// 20 KB — large enough for a full blog post (typically 3–6 KB), still bounds message size
+// 20 KB — large enough for a full blog post (typically 3–6 KB), still bounds
+// message size. The invariant is BYTES (state events are serialized to UTF-8
+// over Redis Pub/Sub), so truncation uses Buffer.byteLength(...,"utf8") and
+// never splits a multi-byte character — mirrors a2a-input-validation.ts.
 const MAX_RESULT_LEN = 20_000;
+
+/**
+ * Truncate a string to at most `maxBytes` UTF-8 bytes WITHOUT splitting a
+ * multi-byte character. Over-trim by UTF-16 code units (each ≥1 byte) then
+ * shrink one unit at a time until within budget. Terminates: the empty string
+ * is 0 bytes ≤ maxBytes.
+ */
+function truncateToBytes(str: string, maxBytes: number): string {
+  const buf = Buffer.from(str, "utf8");
+  if (buf.length <= maxBytes) return str;
+  // Back up past UTF-8 continuation bytes (10xxxxxx = 0x80–0xBF) so a multi-byte
+  // codepoint is never split. O(n) (one encode + a ≤3-byte backup), not O(n²).
+  let end = maxBytes;
+  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--;
+  return buf.toString("utf8", 0, end);
+}
 
 export interface AgentStatePublisherOpts {
   /** Max cumulative tokens before the publisher throws BudgetExceededError. 0 = unlimited. */
@@ -119,11 +139,11 @@ export class AgentStatePublisher {
         : result;
 
     if (displayResult == null) return "";
-    return (
+    const str =
       typeof displayResult === "string"
         ? displayResult
-        : JSON.stringify(displayResult)
-    ).slice(0, MAX_RESULT_LEN);
+        : JSON.stringify(displayResult);
+    return truncateToBytes(str, MAX_RESULT_LEN);
   }
 
   private extractTokenMetadata(
@@ -147,14 +167,15 @@ export class AgentStatePublisher {
    * Wraps a task handler to publish EXECUTING → DONE/ERROR state transitions.
    * The original handler's return value (LLM result) is preserved.
    */
-  wrapHandler(
-    handler: (payload: MessagePayload) => Promise<unknown>,
-  ): (payload: MessagePayload) => Promise<unknown> {
+  wrapHandler(handler: TaskHandler): TaskHandler {
     const { agentId, name, role } = this.agentInfo;
     const pub = (d: Parameters<AgentStatePublisher["publish"]>[0]): void =>
       this.publish(d);
 
-    return async (payload: MessagePayload): Promise<unknown> => {
+    return async (
+      payload: MessagePayload,
+      signal?: AbortSignal,
+    ): Promise<unknown> => {
       const title = String(payload.data["instruction"] ?? payload.taskId).slice(
         0,
         60,
@@ -197,7 +218,7 @@ export class AgentStatePublisher {
       });
 
       try {
-        const result = await handler(payload);
+        const result = await handler(payload, signal);
 
         // → DONE
         this.currentStatus = "IDLE";

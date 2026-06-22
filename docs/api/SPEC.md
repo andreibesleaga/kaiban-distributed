@@ -21,7 +21,7 @@ interface DistributedAgentState {
 }
 ```
 
-> **Note on `THINKING`:** `AgentStatePublisher` directly emits `IDLE`, `EXECUTING`, and `ERROR`. The `THINKING` status appears when KaibanJS internally transitions between reasoning steps — it is forwarded to the board via `DistributedStateMiddleware` (Zustand state interception), not via `AgentStatePublisher.wrapHandler()`.
+> **Note on `THINKING`:** `AgentStatePublisher.wrapHandler()` emits the full per-task status sequence directly — `EXECUTING` (task starting) → `THINKING` (LLM call in progress) → `IDLE` (done) or `ERROR` (`src/adapters/state/agent-state-publisher.ts`). The deprecated `DistributedStateMiddleware` (Zustand state interception) is an alternative bridge for the in-process `KaibanTeamBridge` path; on the distributed worker path `THINKING` comes from `wrapHandler()`, not the middleware.
 
 ### Task Workflow Schema
 
@@ -90,19 +90,39 @@ interface IMessagingDriver {
 
 ## 3. Federation: A2A Protocol Standard Endpoints
 
-### Agent Card
+> **A2A v0.3 (ADR-015).** As of the v2.0 migration the A2A surface is served by the
+> official `@a2a-js/sdk` (v0.3.x) — it is now a real, wire-conformant A2A v0.3 server.
+> The legacy custom methods (`tasks.create` / `tasks.get` / `agent.status`) and the flat
+> `{ capabilities: string[], endpoints: { rpc } }` card shape were **removed** (the custom
+> `A2AConnector` is gone). The shapes below reflect the v0.3 implementation.
+
+### Agent Card (v0.3)
 
 ```
 GET /.well-known/agent-card.json
 ```
 
 ```typescript
+// @a2a-js/sdk AgentCard (v0.3) — built by src/infrastructure/federation/a2a-agent-card.ts
 interface AgentCard {
+  protocolVersion: string;            // '0.3.0'
   name: string;
-  version: string;
   description: string;
-  capabilities: string[];       // e.g. ['tasks.create', 'tasks.get', 'agent.status']
-  endpoints: { rpc: string };   // e.g. '/a2a/rpc'
+  url: string;                        // JSON-RPC URL, e.g. '<baseUrl>/a2a/rpc'
+  version: string;
+  preferredTransport: 'JSONRPC';
+  additionalInterfaces: Array<{ transport: string; url: string }>;  // JSONRPC + HTTP+JSON + GRPC
+  capabilities: {                     // ← an OBJECT in v0.3 (was a string[] in the old card)
+    streaming: boolean;
+    pushNotifications: boolean;
+    stateTransitionHistory: boolean;
+  };
+  defaultInputModes: string[];        // ['text/plain', 'application/json']
+  defaultOutputModes: string[];
+  skills: Array<{ id: string; name: string; description?: string; tags?: string[] }>;  // one skill per agent id
+  securitySchemes?: Record<string, unknown>;  // env-gated JWT bearer scheme
+  security?: Array<Record<string, string[]>>;
+  provider?: { organization: string; url: string };
 }
 ```
 
@@ -118,7 +138,7 @@ Content-Type: application/json
 interface JsonRpcRequest {
   jsonrpc: '2.0';
   id: string | number;
-  method: 'agent.status' | 'tasks.create' | 'tasks.get';
+  method: 'message/send' | 'message/stream' | 'tasks/get' | 'tasks/cancel';
   params?: Record<string, unknown>;
 }
 ```
@@ -133,19 +153,29 @@ interface JsonRpcResponse {
 }
 ```
 
-**Supported methods:**
+**Supported methods (A2A v0.3, served by `@a2a-js/sdk`):**
 
-| Method | Request `params` | Returns |
-|--------|-----------------|---------|
-| `agent.status` | `{}` | `{ status: 'IDLE', agentId: string }` ¹ |
-| `tasks.create` | `{ agentId, instruction, expectedOutput, inputs?, context? }` | `{ taskId, status: 'QUEUED', agentId }` |
-| `tasks.get` | `{ taskId }` | `{ taskId, status: TaskStatus }` |
+| Method | Purpose | Notes |
+|--------|---------|-------|
+| `message/send` | Dispatch a task and await its terminal result | Target agent in `message.metadata.agentId`; optional `instruction`/`expectedOutput`/`context`/`inputs` in `metadata` (or plain text parts). Input caps (`A2A_INPUT_CAPS`, 64 KB) enforced; oversized/wrong-typed input → `-32602`. |
+| `message/stream` | Same as `message/send` but streams lifecycle events over SSE | `submitted → working → completed/failed/canceled` |
+| `tasks/get` | Fetch a persisted task by id | Real data from the Redis-backed `RedisTaskStore` (survives restart / scaled pool) |
+| `tasks/cancel` | Cancel an in-flight task | Aborts the in-flight `CompletionRouter.wait` and emits a terminal `canceled` |
 
-¹ `agent.status` always returns the static value `'IDLE'`. Live agent state is broadcast via Socket.io `state:update` events (see §6).
+Live agent status is **not** a JSON-RPC method — it is `GET /a2a/agents/:agentId/status`
+(real last-known status from `AgentStatusTracker`, which reads `kaiban-state-events` over
+Redis Pub/Sub). Live agent state is also broadcast via Socket.io `state:update` (see §6).
 
-`tasks.create` publishes to `kaiban-agents-{agentId}` queue when `IMessagingDriver` is wired (see `src/infrastructure/federation/a2a-connector.ts`).
+`message/send` validates the input then publishes a `MessagePayload` to the
+`kaiban-agents-{agentId}` mailbox (via `KaibanAgentExecutor`, see
+`src/infrastructure/federation/a2a-executor.ts`) and resolves the result via
+`CompletionRouter`. The A2A `taskId` is the dedup key end-to-end (invariant I3).
 
-> **Note:** The `tasks.create` response uses `status: 'QUEUED'` as an API-level acknowledgment that the task has been accepted and enqueued. This is distinct from the domain `TaskStatus` type (`'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'`). Once a worker claims the task, its domain status transitions to `'DOING'`.
+> **Internal dispatch path.** Internal orchestration (an orchestrator → its workers) does
+> **not** go through A2A — it uses the actor-mailbox primitive
+> `dispatchToAgent(driver, agentId, { instruction, expectedOutput?, context?, inputs? })`
+> (`src/shared/dispatch.ts`), which returns a `taskId` to await via `CompletionRouter.wait`.
+> A2A is the **external** federation surface; `dispatchToAgent` is the in-process one.
 
 ---
 
@@ -159,8 +189,11 @@ function createKaibanTaskHandler(
   agentConfig: KaibanAgentConfig,    // IAgentParams from kaibanjs
   _driver: IMessagingDriver,
   tokenProvider?: ITokenProvider,   // optional JIT token provider
-): (payload: MessagePayload) => Promise<unknown>
-// Returns the LLM finalAnswer, included in kaiban-events-completed data.result
+): TaskHandler   // (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>
+// Resolves to a KaibanHandlerResult:
+//   { answer: string; inputTokens: number; outputTokens: number; estimatedCost: number }
+// `answer` is the LLM result (JSON-stringified if non-string), included in
+// kaiban-events-completed data.result; the token/cost fields drive the economics panel.
 ```
 
 ### Team State Bridge
@@ -171,7 +204,7 @@ function createKaibanTaskHandler(
 class KaibanTeamBridge {
   constructor(config: KaibanTeamConfig, middleware?: IStateMiddleware)
   getTeam(): Team
-  start(inputs?: Record<string, unknown>): Promise<WorkflowResult>
+  start(inputs?: Record<string, unknown>): Promise<{ status: string; result: unknown; stats: unknown }>
   subscribeToChanges(listener, properties?): () => void
 }
 ```
@@ -218,7 +251,7 @@ interface StateDelta {
     title: string;
     status: TaskStatus;          // 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'
     assignedToAgentId: string;
-    result?: string;             // capped at 20,000 chars (20 KB)
+    result?: string;             // capped at 20,000 UTF-8 bytes (≈20 KB), truncated on a codepoint boundary
   }>;
 
   // Workflow lifecycle (set exclusively by the orchestrator — never by workers)
@@ -226,7 +259,7 @@ interface StateDelta {
 }
 ```
 
-> **Source of deltas:** `AgentStatePublisher` emits `IDLE → EXECUTING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. `DistributedStateMiddleware` forwards KaibanJS internal state (including `THINKING`) as additional deltas.
+> **Source of deltas:** `AgentStatePublisher.wrapHandler()` emits `EXECUTING → THINKING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. The deprecated `DistributedStateMiddleware` forwards KaibanJS internal state for the in-process `KaibanTeamBridge` path.
 
 PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped before publishing (see `DistributedStateMiddleware.sanitizeDelta`).
 

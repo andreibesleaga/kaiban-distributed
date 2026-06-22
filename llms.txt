@@ -21,7 +21,7 @@ Architecture is Clean/DDD: `domain` · `application` · `adapters` · `infrastru
 - [Messaging interface](src/infrastructure/messaging/interfaces.ts): `IMessagingDriver`
 - [Channels](src/infrastructure/messaging/channels.ts): canonical channel names
 - [KaibanJS bridge](src/infrastructure/kaibanjs/kaiban-agent-bridge.ts): task handler + token/cost
-- [A2A connector](src/infrastructure/federation/a2a-connector.ts): JSON-RPC RPC surface
+- [A2A executor](src/infrastructure/federation/a2a-executor.ts): @a2a-js/sdk v0.3 bridge to the messaging layer (the removed custom `a2a-connector.ts` was replaced by `a2a-executor.ts` + `a2a-gateway-factory.ts` + `a2a-input-validation.ts`)
 
 ## Examples
 - [blog-team](examples/blog-team/): 3-agent editorial pipeline with HITL

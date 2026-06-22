@@ -90,10 +90,23 @@ describe("KafkaDriver", () => {
     expect(mockRun).toHaveBeenCalledOnce();
   });
 
-  it("consumer not reconnected on second subscribe", async () => {
+  it("2nd subscribe() throws (one topic per driver — C2)", async () => {
     await driver.subscribe("t", vi.fn());
-    await driver.subscribe("t2", vi.fn());
+    await expect(driver.subscribe("t2", vi.fn())).rejects.toThrow(
+      "KafkaDriver supports a single topic per driver; create a separate " +
+        "driver for additional topics",
+    );
+    // Guard short-circuits before any 2nd consumer.connect()/subscribe()/run()
     expect(mockConsumerConnect).toHaveBeenCalledOnce();
+    expect(mockConsumerSubscribe).toHaveBeenCalledOnce();
+    expect(mockRun).toHaveBeenCalledOnce();
+  });
+
+  it("subscribe() works again after unsubscribe() resets the topic guard", async () => {
+    await driver.subscribe("t", vi.fn());
+    await driver.unsubscribe("t");
+    await driver.subscribe("t2", vi.fn());
+    expect(mockConsumerSubscribe).toHaveBeenCalledTimes(2);
   });
 
   it("eachMessage extracts trace context and invokes handler", async () => {

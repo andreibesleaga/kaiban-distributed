@@ -13,7 +13,7 @@
 3. [Input Validation & API Hardening](#3-input-validation--api-hardening)
    - [HTTP Gateway Hardening](#31-http-gateway-hardening)
    - [WebSocket Gateway Hardening](#32-websocket-gateway-hardening)
-   - [A2A Connector Input Validation](#33-a2a-connector-input-validation)
+   - [A2A Task-Input Validation](#33-a2a-task-input-validation)
    - [BullMQ Trace Header Validation](#34-bullmq-trace-header-validation)
 4. [Agent Runtime Security](#4-agent-runtime-security)
    - [Semantic Firewall](#41-semantic-firewall)
@@ -88,7 +88,9 @@ node -e "
 
 ### 1.2 A2A Service-to-Service JWT (HTTP RPC)
 
-**Purpose:** Restricts which services can submit tasks via `POST /a2a/rpc`.
+**Purpose:** Restricts which services can submit tasks via `POST /a2a/rpc` (the A2A v0.3
+`message/send` / `message/stream` / `tasks/get` / `tasks/cancel` surface). The Bearer-JWT
+gate is method-agnostic — it guards the endpoint regardless of which A2A method is called.
 
 **File:** [`src/infrastructure/security/a2a-auth.ts`](../../src/infrastructure/security/a2a-auth.ts)
 
@@ -236,35 +238,45 @@ SOCKET_CORS_ORIGINS=http://localhost:5173,https://board.example.com
 
 ---
 
-### 3.3 A2A Connector Input Validation
+### 3.3 A2A Task-Input Validation
 
-**File:** [`src/infrastructure/federation/a2a-connector.ts`](../../src/infrastructure/federation/a2a-connector.ts)
+**File:** [`src/infrastructure/federation/a2a-input-validation.ts`](../../src/infrastructure/federation/a2a-input-validation.ts) — `validateTaskInput` + `A2A_INPUT_CAPS`
+
+> JSON-RPC framing/method dispatch is now handled by the official `@a2a-js/sdk` v0.3 server
+> (ADR-015): invalid envelopes and unknown methods are rejected by the SDK, and the live
+> methods are `message/send` / `message/stream` / `tasks/get` / `tasks/cancel` (the old
+> `tasks.create` / `tasks.get` / `agent.status` whitelist no longer exists). This module
+> preserves the Phase-1.3 input contract — `KaibanAgentExecutor` runs `validateTaskInput`
+> on every inbound `message/send` and only forwards a validated, size-capped payload onto
+> the messaging layer (never raw caller input).
 
 | Field | Validation | Error Code |
 |-------|-----------|------------|
-| `jsonrpc` | Must be `'2.0'` | `-32600` Invalid Request |
-| `method` | Whitelist: `agent.status`, `tasks.create`, `tasks.get` | `-32601` Method Not Found |
 | `agentId` | Required, non-empty | `-32602` Invalid Params |
 | `agentId` | Pattern: `/^[\w-]+$/` (alphanumeric/hyphen/underscore) | `-32602` |
 | `agentId` | Max 64 characters | `-32602` |
-| `agentId` | Wildcard `*` rejected | `-32602` |
 | `instruction` | Max 10,000 characters | `-32602` |
-| Error method echo | Truncated to 100 characters | — |
+| `expectedOutput` | Max 10,000 characters | `-32602` |
+| `context` | Max 20,000 characters | `-32602` |
+| `inputs` | Plain object, max 64 keys | `-32602` |
+| Total serialized `params` | Max 65,536 bytes (64 KB OOM guard) | `-32602` |
 
 ---
 
-### 3.4 BullMQ Trace Header Validation
+### 3.4 Trace Header Validation (shared by every driver)
 
-**File:** [`src/infrastructure/messaging/bullmq-driver.ts`](../../src/infrastructure/messaging/bullmq-driver.ts)
+**File:** [`src/infrastructure/telemetry/TraceContext.ts`](../../src/infrastructure/telemetry/TraceContext.ts) — `sanitizeTraceHeaders()`
 
-Before passing job headers to `extractTraceContext`, the worker validates all trace headers:
+Before passing message/job headers to `extractTraceContext`, every messaging driver
+(`bullmq-driver.ts` and `kafka-driver.ts`) routes them through the shared
+`sanitizeTraceHeaders()` helper, which validates all trace headers:
 
 ```typescript
 const TRACEPARENT_RE = /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/;
-// Strips any non-string values; skips traceparent if format invalid
+// Strips any non-string keys/values; skips traceparent if format invalid
 ```
 
-This prevents crafted job payloads from injecting malformed OpenTelemetry trace headers (MED-06 from V2 audit).
+This prevents crafted payloads from injecting malformed OpenTelemetry trace headers (MED-06 from V2 audit).
 
 ---
 
@@ -366,7 +378,7 @@ TLS_REJECT_UNAUTHORIZED=true
 
 **Purpose:** Strips personally identifiable information from state events before they are broadcast to the board.
 
-**Files:** `src/adapters/state/` — `sanitizeDelta()`, `sanitizeId()`
+**Files:** `sanitizeDelta()` — `src/adapters/state/distributedMiddleware.ts` (also applied on the worker `AgentStatePublisher` path); `sanitizeId()` — a small SHA-256 helper defined where IDs are logged (e.g. `src/application/actor/AgentActor.ts`, `src/adapters/gateway/SocketGateway.ts`).
 
 | Function | Behaviour |
 |----------|-----------|
@@ -386,8 +398,8 @@ TLS_REJECT_UNAUTHORIZED=true
 | Outbound task result in messages | 64 KB | `AgentActor` |
 | HTTP request body | 1 MB | `GatewayApp` — `express.json({ limit: '1mb' })` |
 | WebSocket frame | 1 MB | `SocketGateway` — `maxHttpBufferSize: 1e6` |
-| `instruction` field | 10,000 characters | `A2AConnector` input validation |
-| `agentId` field | 64 characters | `A2AConnector` input validation |
+| `instruction` field | 10,000 characters | `a2a-input-validation.ts` (`validateTaskInput`) |
+| `agentId` field | 64 characters | `a2a-input-validation.ts` (`validateTaskInput`) |
 
 ---
 

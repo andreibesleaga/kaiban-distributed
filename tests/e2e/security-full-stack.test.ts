@@ -36,11 +36,7 @@ import {
   unwrapVerified,
 } from "../../src/infrastructure/security/channel-signing";
 import { issueA2AToken } from "../../src/infrastructure/security/a2a-auth";
-import { GatewayApp } from "../../src/adapters/gateway/GatewayApp";
-import {
-  A2AConnector,
-  type AgentCard,
-} from "../../src/infrastructure/federation/a2a-connector";
+import { makeA2AGateway, rpcSendBody } from "./helpers/a2a-gateway";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -76,13 +72,6 @@ async function waitFor(
   }
 }
 
-const agentCard: AgentCard = {
-  name: "security-e2e-worker",
-  version: "1.0.0",
-  description: "Security full-stack test agent",
-  capabilities: ["agent.status", "tasks.create"],
-  endpoints: { rpc: "/a2a/rpc" },
-};
 
 // ─── 1. Semantic Firewall ─────────────────────────────────────────────────────
 
@@ -798,8 +787,7 @@ describe("6. Rate Limiting (real HTTP server)", () => {
     baseUrl: string;
     close: () => Promise<void>;
   }> {
-    const connector = new A2AConnector(agentCard);
-    const gateway = new GatewayApp(connector);
+    const gateway = makeA2AGateway();
     const server = createServer(gateway.app);
     await new Promise<void>((resolve) => server.listen(0, () => resolve()));
     const addr = server.address() as { port: number };
@@ -832,11 +820,7 @@ describe("6. Rate Limiting (real HTTP server)", () => {
     try {
       // A2A_JWT_SECRET is set in this test run, so we need a valid token
       const token = issueA2AToken("rate-limit-tester");
-      const rpcBody = JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "agent.status",
-      });
+      const rpcBody = JSON.stringify(rpcSendBody());
 
       const makeReq = (): Promise<number> =>
         fetch(`${baseUrl}/a2a/rpc`, {
@@ -886,8 +870,7 @@ describe("7. A2A Auth Enforcement (production mode, real HTTP)", () => {
   let closeServer: () => Promise<void>;
 
   beforeEach(async () => {
-    const connector = new A2AConnector(agentCard);
-    const gateway = new GatewayApp(connector);
+    const gateway = makeA2AGateway();
     const server = createServer(gateway.app);
     await new Promise<void>((resolve) => server.listen(0, () => resolve()));
     const addr = server.address() as { port: number };
@@ -906,7 +889,7 @@ describe("7. A2A Auth Enforcement (production mode, real HTTP)", () => {
     fetch(`${baseUrl}/a2a/rpc`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "agent.status" }),
+      body: JSON.stringify(rpcSendBody()),
     });
 
   it("no Authorization header → 401", async () => {
@@ -957,15 +940,15 @@ describe("7. A2A Auth Enforcement (production mode, real HTTP)", () => {
     expect(bodyText).not.toContain("Error:");
   });
 
-  it("Content-Type missing on POST → 415 (not 401 — content check before auth)", async () => {
+  it("authed POST with an unparseable body yields a JSON-RPC error, never a 5xx", async () => {
     const token = issueA2AToken("legit");
     const res = await fetch(`${baseUrl}/a2a/rpc`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: "{}",
     });
-    // Note: auth runs AFTER content-type check in the middleware chain
-    expect([415, 401]).toContain(res.status);
+    // The SDK handler answers with a structured JSON-RPC error; it must not crash.
+    expect(res.status).toBeLessThan(500);
   });
 
   it("GET /health does not require A2A token", async () => {
@@ -976,8 +959,8 @@ describe("7. A2A Auth Enforcement (production mode, real HTTP)", () => {
   it("GET /.well-known/agent-card.json does not require A2A token", async () => {
     const res = await fetch(`${baseUrl}/.well-known/agent-card.json`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { capabilities: string[] };
-    expect(body.capabilities).toContain("tasks.create");
+    const body = (await res.json()) as { skills: Array<{ id: string }> };
+    expect(body.skills.map((s) => s.id)).toContain("researcher");
   });
 });
 

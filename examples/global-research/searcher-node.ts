@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { Redis } from 'ioredis';
-import { AgentActor } from '../../src/application/actor/AgentActor';
+import { AgentActor, type TaskHandler } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
 import type { MessagePayload } from '../../src/infrastructure/messaging/interfaces';
@@ -46,13 +46,13 @@ async function main(): Promise<void> {
   });
 
   // Wrap handler with chaos simulation (20% crash rate)
-  function wrapWithChaos(handler: (payload: MessagePayload) => Promise<unknown>) {
-    return async (payload: MessagePayload): Promise<unknown> => {
+  function wrapWithChaos(handler: TaskHandler): TaskHandler {
+    return async (payload: MessagePayload, signal?: AbortSignal): Promise<unknown> => {
       if (CHAOS_MODE && Math.random() < 0.2) {
         console.error(`[Searcher:${SEARCHER_ID}] CHAOS: simulating crash mid-task`);
         process.exit(1); // BullMQ auto-reassigns to another worker
       }
-      return handler(payload);
+      return handler(payload, signal);
     };
   }
 

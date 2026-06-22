@@ -222,7 +222,7 @@ describe("SocketGateway — HITL edge cases", () => {
     await vi.waitFor(() =>
       expect(ack).toHaveBeenCalledWith({
         ok: false,
-        error: "Redis publish failed",
+        error: "Redis write failed",
       }),
     );
   });

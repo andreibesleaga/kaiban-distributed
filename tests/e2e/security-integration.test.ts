@@ -20,11 +20,7 @@ import {
   afterEach,
 } from "vitest";
 import { createServer, type Server } from "http";
-import { GatewayApp } from "../../src/adapters/gateway/GatewayApp";
-import {
-  A2AConnector,
-  type AgentCard,
-} from "../../src/infrastructure/federation/a2a-connector";
+import { makeA2AGateway, rpcSendBody } from "./helpers/a2a-gateway";
 import { issueA2AToken } from "../../src/infrastructure/security/a2a-auth";
 import {
   wrapSigned,
@@ -35,18 +31,10 @@ import {
   verifyBoardToken,
 } from "../../src/infrastructure/security/board-auth";
 
-const agentCard: AgentCard = {
-  name: "security-e2e-worker",
-  version: "1.0.0",
-  description: "Security integration test agent",
-  capabilities: ["agent.status", "tasks.create"],
-  endpoints: { rpc: "/a2a/rpc" },
-};
-
 const A2A_SECRET = "e2e-a2a-secret-must-be-32-chars!!";
 const BOARD_SECRET = "e2e-board-secret-must-32-chars!!!";
 const CHANNEL_SECRET = "e2e-channel-secret-32bytes!!!!!";
-const RPC_BODY = { jsonrpc: "2.0", id: 1, method: "agent.status" };
+const RPC_BODY = rpcSendBody();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,7 +57,7 @@ describe("E2E: A2A JWT authentication", () => {
 
   beforeEach(async () => {
     process.env["A2A_JWT_SECRET"] = A2A_SECRET;
-    const gateway = new GatewayApp(new A2AConnector(agentCard));
+    const gateway = makeA2AGateway();
     server = createServer(gateway.app);
     await new Promise<void>((resolve) => server.listen(0, () => resolve()));
     const addr = server.address() as { port: number };
@@ -115,7 +103,7 @@ describe("E2E: A2A JWT authentication", () => {
   it("passes through when A2A_JWT_SECRET is not set", async () => {
     // Create a separate gateway with no secret
     delete process.env["A2A_JWT_SECRET"];
-    const gw2 = new GatewayApp(new A2AConnector(agentCard));
+    const gw2 = makeA2AGateway();
     const srv2 = createServer(gw2.app);
     await new Promise<void>((resolve) => srv2.listen(0, () => resolve()));
     const addr2 = srv2.address() as { port: number };
@@ -227,7 +215,7 @@ describe("E2E: GatewayApp hardening", () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    const gateway = new GatewayApp(new A2AConnector(agentCard));
+    const gateway = makeA2AGateway();
     server = createServer(gateway.app);
     await new Promise<void>((resolve) => server.listen(0, () => resolve()));
     const addr = server.address() as { port: number };
@@ -240,12 +228,16 @@ describe("E2E: GatewayApp hardening", () => {
     );
   });
 
-  it("POST /a2a/rpc without Content-Type returns 415", async () => {
+  it("POST /a2a/rpc without Content-Type yields a JSON-RPC error (not a crash)", async () => {
+    // The SDK JSON-RPC handler returns a structured error envelope for a body
+    // it cannot parse, rather than the old custom 415. It must never 5xx.
     const res = await fetch(`${baseUrl}/a2a/rpc`, {
       method: "POST",
       body: "{}",
     });
-    expect(res.status).toBe(415);
+    expect(res.status).toBeLessThan(500);
+    const body = (await res.json()) as { jsonrpc?: string; error?: unknown };
+    expect(body.error ?? body.jsonrpc).toBeDefined();
   });
 
   it("GET /health returns 200 with ok status", async () => {
@@ -260,11 +252,11 @@ describe("E2E: GatewayApp hardening", () => {
     expect(res.status).toBe(404);
   });
 
-  it("agent.status returns correct JSON-RPC 2.0 structure", async () => {
+  it("message/send returns correct JSON-RPC 2.0 structure", async () => {
     const res = await fetch(`${baseUrl}/a2a/rpc`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 99, method: "agent.status" }),
+      body: JSON.stringify({ ...rpcSendBody(), id: 99 }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -274,6 +266,6 @@ describe("E2E: GatewayApp hardening", () => {
     };
     expect(body.jsonrpc).toBe("2.0");
     expect(body.id).toBe(99);
-    expect(body.result["status"]).toBe("IDLE");
+    expect(body.result).toBeDefined();
   });
 });

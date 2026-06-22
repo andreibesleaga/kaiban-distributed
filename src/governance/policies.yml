@@ -1,0 +1,45 @@
+# Example policy-as-code rule set for the Action Gate (master plan §B5.1 Phase G).
+#
+# Reference/example only — NOT compiled. Load it at startup via:
+#   loadPolicySet(readFileSync(policiesPath, "utf8"))  ->  new PolicyEngine(set)
+#
+# Semantics (see src/governance/policy-engine.ts):
+#   - Rules are evaluated TOP-DOWN; the FIRST matching rule wins.
+#   - A rule matches when ALL of its provided fields match:
+#       operation : strict equality (any when omitted)
+#       agentId   : strict equality (any when omitted)
+#       matchAny  : any lower-cased term is a substring of the JSON payload
+#   - If no rule matches, `default` applies.
+#   - reason is optional; it falls back to the rule `id` in the verdict.
+
+default: allow
+
+rules:
+  # Block secrets from ever being written to durable memory.
+  - id: block-secrets-in-memory
+    operation: memory-write
+    matchAny: [password, secret, api_key]
+    effect: block
+    reason: refusing to persist credential-like material to memory
+
+  # Escalate dangerous shell / DB tool calls to a human reviewer.
+  - id: escalate-destructive-tool-call
+    operation: tool-call
+    matchAny: ["rm -rf", "drop table", "truncate table"]
+    effect: escalate
+    reason: destructive command requires human approval
+
+  # Hard-block a specific quarantined agent regardless of operation.
+  - id: block-quarantined-agent
+    agentId: quarantined-agent
+    effect: block
+    reason: agent is quarantined pending review
+
+  # Combined match: a known-flaky agent may not send outbound messages
+  # that mention internal hostnames.
+  - id: degrade-flaky-agent-leak
+    operation: outbound-message
+    agentId: flaky-agent
+    matchAny: [internal.corp, 10.0.0]
+    effect: degrade
+    reason: redact internal references for this agent's outbound traffic

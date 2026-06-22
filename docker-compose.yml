@@ -73,8 +73,13 @@ services:
           cpus: "1.0"
           memory: 512M
 
-  kaiban-worker:
-    build: .
+  # Gateway role (ADR-013): HTTP / WebSocket / A2A front door. Exposes /health;
+  # builds NO task-consuming actors. This is what the board connects to.
+  kaiban-gateway:
+    build:
+      context: .
+      args:
+        ROLE: gateway
     depends_on:
       redis:
         condition: service_healthy
@@ -83,21 +88,52 @@ services:
     ports:
       - "3000:3000"
     environment:
+      ROLE: gateway
       REDIS_URL: redis://redis:6379
       KAFKA_BROKERS: kafka:29092
-      KAFKA_CLIENT_ID: kaiban-worker
+      KAFKA_CLIENT_ID: kaiban-gateway
       KAFKA_GROUP_ID: kaiban-group
       MESSAGING_DRIVER: bullmq
       PORT: "3000"
-      SERVICE_NAME: kaiban-worker
-      AGENT_IDS: researcher,writer
+      SERVICE_NAME: kaiban-gateway
+      AGENT_IDS: gateway
     restart: on-failure
-    # Override Dockerfile HEALTHCHECK — only gateway mode exposes /health
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  # Worker role (ADR-013): LLM-backed task-consuming agent pool. No HTTP surface,
+  # so no /health probe. Scale this tier independently of the gateway.
+  kaiban-worker:
+    build:
+      context: .
+      args:
+        ROLE: worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      ROLE: worker
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: kaiban-worker
+      KAFKA_GROUP_ID: kaiban-group
+      MESSAGING_DRIVER: bullmq
+      SERVICE_NAME: kaiban-worker
+      AGENT_IDS: researcher,writer
+    restart: on-failure
+    # Worker role has no HTTP /health — disable the inherited Dockerfile probe.
+    healthcheck:
+      disable: true
     deploy:
       resources:
         limits:

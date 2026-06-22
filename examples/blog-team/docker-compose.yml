@@ -162,6 +162,9 @@ services:
       RESEARCH_WAIT_MS: ${RESEARCH_WAIT_MS:-120000}
       WRITE_WAIT_MS: ${WRITE_WAIT_MS:-240000}
       EDIT_WAIT_MS: ${EDIT_WAIT_MS:-300000}
+      # Workflow-level spend guard (0 = unlimited). Stops a runaway before it drains the budget.
+      MAX_WORKFLOW_COST_USD: ${MAX_WORKFLOW_COST_USD:-0.50}
+      MAX_WORKFLOW_TOKENS: ${MAX_WORKFLOW_TOKENS:-0}
     # stdin_open + tty are required for readline-based HITL interaction
     stdin_open: true
     tty: true

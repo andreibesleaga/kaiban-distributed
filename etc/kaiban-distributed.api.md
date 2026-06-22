@@ -4,34 +4,131 @@
 
 ```ts
 
+import { A2ARequestHandler } from '@a2a-js/sdk/server';
 import type { Agent } from 'kaibanjs';
+import type { AgentCard } from '@a2a-js/sdk';
+import type { AgentExecutor } from '@a2a-js/sdk/server';
 import { Application } from 'express';
+import type { ExecutionEventBus } from '@a2a-js/sdk/server';
 import type { IAgentParams } from 'kaibanjs';
+import type { IncomingMessage } from 'http';
 import jwt from 'jsonwebtoken';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { propagation } from '@opentelemetry/api';
 import { QueueOptions } from 'bullmq';
+import type { RateLimiterAbstract } from 'rate-limiter-flexible';
 import type Redis from 'ioredis';
+import type { RequestContext } from '@a2a-js/sdk/server';
 import { Server } from 'http';
+import type { ServerResponse } from 'http';
 import type { Task } from 'kaibanjs';
+import type { Task as Task_2 } from '@a2a-js/sdk';
+import type { TaskStore } from '@a2a-js/sdk/server';
 import { Team } from 'kaibanjs';
 
-// @public (undocumented)
-export class A2AConnector {
-    // Warning: (ae-forgotten-export) The symbol "AgentCard" needs to be exported by the entry point index.d.ts
-    constructor(agentCard: AgentCard, driver?: IMessagingDriver | undefined);
+// @public
+export const A2A_INPUT_CAPS: {
+    readonly maxAgentIdLen: 64;
+    readonly maxInstructionLen: 10000;
+    readonly maxExpectedOutputLen: 10000;
+    readonly maxContextLen: 20000;
+    readonly maxInputsKeys: 64;
+    readonly maxTotalParamsBytes: 65536;
+};
+
+// @public
+export const A2A_PROTOCOL_VERSION = "0.3.0";
+
+// @public
+export interface A2AInputError {
     // (undocumented)
-    getAgentCard(): AgentCard;
-    // Warning: (ae-forgotten-export) The symbol "JsonRpcRequest" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "JsonRpcResponse" needs to be exported by the entry point index.d.ts
-    //
+    code: number;
     // (undocumented)
-    handleRpc(request: JsonRpcRequest): Promise<Result<JsonRpcResponse, DomainError>>;
+    message: string;
 }
 
 // @public (undocumented)
+export interface A2AStack {
+    close(): Promise<void>;
+    // (undocumented)
+    requestHandler: A2ARequestHandler;
+    start(): Promise<void>;
+    // (undocumented)
+    statusTracker: AgentStatusTracker;
+    // (undocumented)
+    taskStore: RedisTaskStore;
+}
+
+// @public (undocumented)
+export interface A2AStackOptions {
+    agentIds: string[];
+    baseUrl: string;
+    driver: Pick<IMessagingDriver, "publish">;
+    jwtEnabled?: boolean;
+    name: string;
+    provider?: {
+        organization: string;
+        url: string;
+    };
+    pushNotifications?: boolean;
+    redisUrl: string;
+    // Warning: (ae-forgotten-export) The symbol "CompletionRouter" needs to be exported by the entry point index.d.ts
+    router: CompletionRouter;
+    timeoutMs: number;
+    version: string;
+}
+
+// @public
+export class ActionGate {
+    constructor(deps: ActionGateDeps);
+    evaluate(ctx: GateContext): Promise<GateDecision>;
+}
+
+// @public
+export interface ActionGateDeps {
+    // (undocumented)
+    audit: AuditSink;
+    clock?: () => string;
+    // (undocumented)
+    config: GovernanceConfig;
+    // (undocumented)
+    validators: GateValidator[];
+}
+
+// @public
+export type AdmissionDecision = "allow" | "degrade" | "reject";
+
+// @public (undocumented)
+export interface AdmissionGateOptions {
+    estimatedCostUnitsOf?: (payload: EvaluationPayload) => number | undefined;
+    operation?: GateOperation;
+    tenantIdOf?: (payload: EvaluationPayload) => string | undefined;
+}
+
+// @public (undocumented)
+export interface AdmissionResult {
+    // (undocumented)
+    decision: AdmissionDecision;
+    // (undocumented)
+    reason: string;
+    remaining: number;
+    utilization: number;
+}
+
+// @public (undocumented)
+export interface AdmissionVerdict {
+    allowed: boolean;
+    reason?: string;
+}
+
+// @public
+export const AGENT_CARD_PATH = ".well-known/agent-card.json";
+
+// @public
+export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
+
+// @public (undocumented)
 export class AgentActor {
-    // Warning: (ae-forgotten-export) The symbol "TaskHandler" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
     constructor(id: string, driver: IMessagingDriver, queueName: string, taskHandler?: TaskHandler, deps?: AgentActorDeps);
     // (undocumented)
     start(): Promise<void>;
@@ -40,10 +137,61 @@ export class AgentActor {
 }
 
 // @public (undocumented)
+export interface AgentActorDeps {
+    admissionGate?: IAdmissionGate;
+    // (undocumented)
+    circuitBreaker?: ICircuitBreaker;
+    // (undocumented)
+    firewall?: ISemanticFirewall;
+    taskTimeoutMs?: number;
+}
+
+// @public (undocumented)
+export interface AgentCardInput {
+    agentIds: string[];
+    baseUrl: string;
+    description?: string;
+    jwtEnabled?: boolean;
+    name: string;
+    provider?: {
+        organization: string;
+        url: string;
+    };
+    pushNotifications?: boolean;
+    version: string;
+}
+
+// @public (undocumented)
 export class AgentNotFoundError extends DomainError {
     constructor(agentId: string);
     // (undocumented)
     readonly code = "AGENT_NOT_FOUND";
+}
+
+// @public
+export interface AgentRegistration {
+    // (undocumented)
+    agentId: string;
+    expiresAt?: string;
+    invocationLimit?: number;
+    purpose: string;
+    scope?: GateOperation[];
+    selfInstantiation: boolean;
+}
+
+// @public
+export class AgentRegistry {
+    asValidator(opts?: {
+        now?: () => string;
+    }): GateValidator;
+    mayInstantiate(agentId: string): boolean;
+    recordInvocation(agentId: string): void;
+    register(reg: AgentRegistration): void;
+    revoke(agentId: string, reason?: string): void;
+    status(agentId: string, opts?: {
+        now?: string;
+        operation?: GateOperation;
+    }): RegistryStatus;
 }
 
 // @public (undocumented)
@@ -54,11 +202,33 @@ export class AgentStatePublisher {
     // (undocumented)
     disconnect(): Promise<void>;
     publishIdle(heartbeatIntervalMs?: number): void;
-    wrapHandler(handler: (payload: MessagePayload) => Promise<unknown>): (payload: MessagePayload) => Promise<unknown>;
+    wrapHandler(handler: TaskHandler): TaskHandler;
 }
 
 // @public (undocumented)
 export type AgentStatus = "IDLE" | "THINKING" | "EXECUTING" | "ERROR";
+
+// @public (undocumented)
+export class AgentStatusTracker {
+    // Warning: (ae-forgotten-export) The symbol "RedisSubscriber" needs to be exported by the entry point index.d.ts
+    constructor(redis: RedisSubscriber | string);
+    getStatus(agentId: string): AgentStatus;
+    hasSeen(agentId: string): boolean;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+}
+
+// @public (undocumented)
+export class AmqpDriver implements IMessagingDriver {
+    // (undocumented)
+    disconnect(): Promise<void>;
+    // (undocumented)
+    publish(_queueName: string, _payload: MessagePayload): Promise<void>;
+    // (undocumented)
+    subscribe(_queueName: string, _handler: (payload: MessagePayload) => Promise<void>): Promise<void>;
+    // (undocumented)
+    unsubscribe(_queueName: string): Promise<void>;
+}
 
 // @public (undocumented)
 export interface AppConfig {
@@ -66,6 +236,10 @@ export interface AppConfig {
     agentIds: string[];
     // (undocumented)
     agentTimeoutMs: number;
+    // (undocumented)
+    economics: EconomicsConfig;
+    // (undocumented)
+    governance: GovernanceConfig;
     // (undocumented)
     kafka: {
         brokers: string[];
@@ -75,6 +249,8 @@ export interface AppConfig {
     };
     // (undocumented)
     maxTokenBudget: number;
+    // (undocumented)
+    mcp: McpConfig;
     // (undocumented)
     messagingDriver: MessagingDriver;
     // (undocumented)
@@ -108,6 +284,69 @@ export interface AppConfig {
     validHitlDecisions: string[];
 }
 
+// @public
+export class AuditLog implements AuditSink {
+    append(decision: GateDecision, timestamp: string): AuditRecord;
+    records(): readonly AuditRecord[];
+    verify(): AuditVerification;
+}
+
+// @public
+export interface AuditRecord {
+    // (undocumented)
+    decision: GateDecision;
+    hash: string;
+    index: number;
+    prevHash: string;
+    timestamp: string;
+}
+
+// @public
+export interface AuditSink {
+    append(decision: GateDecision, timestamp: string): AuditRecord;
+}
+
+// @public
+export interface AuditVerification {
+    brokenAt?: number;
+    // (undocumented)
+    valid: boolean;
+}
+
+// @public
+export function breakerValidator(breaker: ICircuitBreaker): GateValidator;
+
+// @public
+export interface BudgetScope {
+    // (undocumented)
+    agentId?: string;
+    // (undocumented)
+    tenantId?: string;
+}
+
+// @public (undocumented)
+export function buildA2AStack(opts: A2AStackOptions): A2AStack;
+
+// @public
+export function buildAdmissionGate(gate: Pick<ActionGate, "evaluate">, opts?: AdmissionGateOptions): IAdmissionGate;
+
+// @public
+export function buildAgentCard(input: AgentCardInput): AgentCard;
+
+// @public
+export function buildMcpServer(deps: McpServerDeps): McpServer;
+
+// @public
+export function buildReadinessProbe(deps: ReadinessDeps): () => Promise<ProbeResult>;
+
+// Warning: (ae-forgotten-export) The symbol "StartupDeps" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function buildStartupProbe(deps: StartupDeps): () => Promise<ProbeResult>;
+
+// @public
+export function buildWorkerAdmissionGate(governance: GovernanceConfig, deps?: WorkerAdmissionGateDeps): IAdmissionGate | undefined;
+
 // @public (undocumented)
 export class BullMQDriver implements IMessagingDriver {
     // Warning: (ae-forgotten-export) The symbol "BullMQDriverOptions" needs to be exported by the entry point index.d.ts
@@ -122,11 +361,80 @@ export class BullMQDriver implements IMessagingDriver {
     unsubscribe(queueName: string): Promise<void>;
 }
 
+// @public
+export interface CheckpointStore {
+    clear(workflowId: string): Promise<void>;
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
+
+// @public
+export type Classification = "public" | "internal" | "confidential";
+
 // @public (undocumented)
 export const COMPLETED_CHANNEL = "kaiban-events-completed";
 
 // @public
-export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): (payload: MessagePayload) => Promise<unknown>;
+export interface CostBreakdown {
+    cacheSavings: CostUnits;
+    costUnits: CostUnits;
+}
+
+// @public
+export interface CostLimiterPort {
+    consumeRequest(scope: BudgetScope): Promise<LimiterReservation>;
+    releaseCost(scope: BudgetScope, units: CostUnits): Promise<void>;
+    reserveCost(scope: BudgetScope, units: CostUnits): Promise<LimiterReservation>;
+}
+
+// @public (undocumented)
+export class CostReservation {
+    constructor(deps: CostReservationDeps);
+    // (undocumented)
+    admit(scope: BudgetScope, units: CostUnits): Promise<AdmissionResult>;
+    // (undocumented)
+    release(scope: BudgetScope, units: CostUnits): Promise<void>;
+}
+
+// @public
+export interface CostReservationDeps {
+    // (undocumented)
+    config: EconomicsConfig;
+    // (undocumented)
+    limiter: CostLimiterPort;
+}
+
+// @public
+export interface CostReservationLike {
+    // (undocumented)
+    admit(scope: BudgetScope, units: CostUnits): Promise<AdmissionResult>;
+}
+
+// @public
+export type CostUnits = number;
+
+// @public
+export function costValidator(reservation: CostReservationLike, scopeFor?: (ctx: GateContext) => BudgetScope): GateValidator;
+
+// @public
+export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
+
+// @public
+export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
+
+// @public
+export function detectSpendAnomaly(samples: number[], factor?: number): boolean;
+
+// @public (undocumented)
+export interface DispatchParams {
+    context?: string;
+    expectedOutput?: string;
+    inputs?: Record<string, unknown>;
+    instruction: string;
+}
+
+// @public
+export function dispatchToAgent(driver: Pick<IMessagingDriver, "publish">, agentId: string, params: DispatchParams): Promise<string>;
 
 // @public (undocumented)
 export interface DistributedAgentState {
@@ -174,12 +482,51 @@ export interface DistributedTask {
 // @public (undocumented)
 export const DLQ_CHANNEL = "kaiban-events-failed";
 
+// @public
+export const DLQ_POISON_REASONS: ReadonlySet<string>;
+
+// @public
+export interface DlqRecord {
+    payload: MessagePayload;
+}
+
+// @public (undocumented)
+export interface DlqReplayDeps {
+    driver: IMessagingDriver;
+    poisonReasons?: ReadonlySet<string>;
+    queueFor?: (agentId: string) => string;
+    records: DlqRecord[];
+}
+
+// @public (undocumented)
+export interface DlqReplayResult {
+    replayed: number;
+    skipped: number;
+    skippedReasons: Array<{
+        taskId: string;
+        reason: string;
+    }>;
+}
+
 // @public (undocumented)
 export abstract class DomainError extends Error {
     constructor(message: string);
     // (undocumented)
     abstract readonly code: string;
 }
+
+// @public
+export interface EconomicsConfig {
+    degradeThreshold: number;
+    enabled: boolean;
+    globalCostCeiling: CostUnits;
+    maxCostPerWindow: CostUnits;
+    maxRequestsPerWindow: number;
+    windowSeconds: number;
+}
+
+// @public
+export function effectiveCacheHitRate(usage: TokenUsage): number;
 
 // @public
 export class EnvTokenProvider implements ITokenProvider {
@@ -189,6 +536,9 @@ export class EnvTokenProvider implements ITokenProvider {
 
 // @public (undocumented)
 export function err<E>(error: E): Result<never, E>;
+
+// @public
+export function estimatedStepCost(candidate: ModelCandidate, estimatedTokens: number): CostUnits;
 
 // @public
 export interface EvaluationPayload {
@@ -203,6 +553,9 @@ export interface EvaluationPayload {
 // @public (undocumented)
 export function extractTraceContext(carrier: Record<string, string>): ReturnType<typeof propagation.extract>;
 
+// @public
+export function firewallValidator(firewall: ISemanticFirewall): GateValidator;
+
 // @public (undocumented)
 export interface FirewallVerdict {
     // (undocumented)
@@ -211,13 +564,97 @@ export interface FirewallVerdict {
     reason?: string;
 }
 
-// @public (undocumented)
+// @public
+export const GATE_ACTION_SEVERITY: Record<GateAction, number>;
+
+// @public
+export type GateAction = "allow" | "degrade" | "escalate" | "block" | "terminate";
+
+// @public
+export interface GateContext {
+    // (undocumented)
+    agentId: string;
+    estimatedCostUnits?: number;
+    // (undocumented)
+    operation: GateOperation;
+    payload: Record<string, unknown>;
+    // (undocumented)
+    tenantId?: string;
+}
+
+// @public
+export interface GateDecision {
+    // (undocumented)
+    action: GateAction;
+    // (undocumented)
+    context: GateContext;
+    verdicts: GateVerdict[];
+}
+
+// @public
+export type GateOperation = "tool-call" | "outbound-message" | "memory-write";
+
+// @public
+export interface GateValidator {
+    // (undocumented)
+    check(ctx: GateContext): GateVerdict | Promise<GateVerdict>;
+    // (undocumented)
+    readonly name: string;
+}
+
+// @public
+export interface GateVerdict {
+    // (undocumented)
+    action: GateAction;
+    // (undocumented)
+    reason: string;
+    validator: string;
+}
+
+// @public
 export class GatewayApp {
-    constructor(connector: A2AConnector, opts?: {
-        trustProxy?: boolean;
-    });
+    constructor(deps: GatewayAppDeps);
     // (undocumented)
     readonly app: Application;
+}
+
+// @public (undocumented)
+export interface GatewayAppDeps {
+    mcpHandler?: McpHttpHandler;
+    mcpPath?: string;
+    readinessProbe?: () => Promise<ProbeResult>;
+    requestHandler: A2ARequestHandler;
+    startupProbe?: () => Promise<ProbeResult>;
+    statusTracker: Pick<AgentStatusTracker, "getStatus" | "hasSeen">;
+    trustProxy?: boolean;
+}
+
+// @public
+export interface GetOptions {
+    // (undocumented)
+    minTrust?: TrustLevel;
+    // (undocumented)
+    now: number;
+    // (undocumented)
+    role?: MemoryRole;
+}
+
+// @public
+export interface GovernanceConfig {
+    // (undocumented)
+    enabled: boolean;
+    policiesPath?: string;
+}
+
+// Warning: (ae-forgotten-export) The symbol "GracefulShutdownResult" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function gracefulShutdown(opts: GracefulShutdownOptions): Promise<GracefulShutdownResult>;
+
+// @public (undocumented)
+export interface GracefulShutdownOptions {
+    deadlineMs: number;
+    steps: ShutdownStep[];
 }
 
 // @public
@@ -231,6 +668,11 @@ export const HITL_CHANNEL = "kaiban-hitl-decisions";
 
 // @public (undocumented)
 export const HITL_SOCKET_EVENT = "hitl:decision";
+
+// @public (undocumented)
+export interface IAdmissionGate {
+    evaluate(payload: EvaluationPayload): Promise<AdmissionVerdict>;
+}
 
 // @public (undocumented)
 export interface ICircuitBreaker {
@@ -259,6 +701,16 @@ export function initTelemetry(config: TelemetryConfig): void;
 
 // @public (undocumented)
 export function injectTraceContext(carrier: Record<string, string>): void;
+
+// @public
+export class InMemoryCheckpointStore implements CheckpointStore {
+    // (undocumented)
+    clear(workflowId: string): Promise<void>;
+    // (undocumented)
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    // (undocumented)
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
 
 // @public (undocumented)
 export function isDistributedAgentState(value: unknown): value is DistributedAgentState;
@@ -313,6 +765,23 @@ export class KafkaDriver implements IMessagingDriver {
 // @public (undocumented)
 export type KaibanAgentConfig = IAgentParams;
 
+// @public (undocumented)
+export class KaibanAgentExecutor implements AgentExecutor {
+    constructor(deps: KaibanExecutorDeps);
+    // (undocumented)
+    cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void>;
+    // (undocumented)
+    execute(ctx: RequestContext, eventBus: ExecutionEventBus): Promise<void>;
+}
+
+// @public (undocumented)
+export interface KaibanExecutorDeps {
+    driver: Pick<IMessagingDriver, "publish">;
+    router: Pick<CompletionRouter, "wait">;
+    taskStore: TaskStore;
+    timeoutMs: number;
+}
+
 // @public
 export type KaibanHandlerResult = {
     answer: string;
@@ -340,8 +809,92 @@ export class KaibanTeamBridge {
     subscribeToChanges(listener: (changes: Record<string, unknown>) => void, properties?: string[]): () => void;
 }
 
+// @public
+export interface LimiterReservation {
+    ok: boolean;
+    remaining: number;
+    utilization: number;
+}
+
 // @public (undocumented)
 export function loadConfig(): AppConfig;
+
+// @public
+export function loadPolicySet(yamlText: string): PolicySet;
+
+// @public (undocumented)
+export const MCP_PROMPT_DELEGATE = "delegate_task";
+
+// @public (undocumented)
+export const MCP_RESOURCE_AGENT_STATUS = "agent-status";
+
+// @public (undocumented)
+export const MCP_RESOURCE_AGENTS = "agents";
+
+// @public
+export const MCP_TOOL_DISPATCH = "dispatch_task";
+
+// @public
+export interface McpAgentStatusDetail {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    seen: boolean;
+    // (undocumented)
+    status: string;
+}
+
+// @public
+export interface McpAgentSummary {
+    // (undocumented)
+    id: string;
+    // (undocumented)
+    status: string;
+}
+
+// @public
+export interface McpAllowList {
+    // (undocumented)
+    prompts?: string[];
+    // (undocumented)
+    resources?: string[];
+    // (undocumented)
+    tools?: string[];
+}
+
+// @public
+export interface McpConfig {
+    // (undocumented)
+    allowedPrompts?: string[];
+    // (undocumented)
+    allowedResources?: string[];
+    // (undocumented)
+    allowedTools?: string[];
+    // (undocumented)
+    enabled: boolean;
+    // (undocumented)
+    path: string;
+    // (undocumented)
+    requireDispatchConsent: boolean;
+}
+
+// @public
+export interface McpDispatchInput {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    expectedOutput?: string;
+    // (undocumented)
+    instruction: string;
+}
+
+// @public
+export interface McpDispatchResult {
+    // (undocumented)
+    status: string;
+    // (undocumented)
+    taskId: string;
+}
 
 // @public (undocumented)
 export class MCPFederationClient {
@@ -355,6 +908,51 @@ export class MCPFederationClient {
     // (undocumented)
     listTools(): Promise<unknown>;
 }
+
+// @public (undocumented)
+export interface McpHttpHandler {
+    close(): Promise<void>;
+    handlePost(req: IncomingMessage, res: ServerResponse, parsedBody?: unknown): Promise<void>;
+    handleSession(req: IncomingMessage, res: ServerResponse): Promise<void>;
+    sessionCount(): number;
+}
+
+// @public (undocumented)
+export interface McpServerDeps {
+    allow?: McpAllowList;
+    dispatchTask(input: McpDispatchInput): Promise<McpDispatchResult>;
+    getAgentStatus(agentId: string): McpAgentStatusDetail | Promise<McpAgentStatusDetail>;
+    listAgents(): McpAgentSummary[] | Promise<McpAgentSummary[]>;
+    name?: string;
+    requireDispatchConsent?: boolean;
+    // (undocumented)
+    version?: string;
+}
+
+// @public
+export interface MemoryEntry {
+    // (undocumented)
+    classification: Classification;
+    // (undocumented)
+    provenance: MemoryProvenance;
+    // (undocumented)
+    storedAt: number;
+    // (undocumented)
+    ttlMs?: number;
+    // (undocumented)
+    value: unknown;
+}
+
+// @public
+export interface MemoryProvenance {
+    // (undocumented)
+    source: string;
+    // (undocumented)
+    trust: TrustLevel;
+}
+
+// @public
+export type MemoryRole = "viewer" | "operator" | "admin";
 
 // @public (undocumented)
 export interface MessagePayload {
@@ -371,7 +969,7 @@ export interface MessagePayload {
 }
 
 // @public (undocumented)
-export type MessagingDriver = "bullmq" | "kafka";
+export type MessagingDriver = "bullmq" | "kafka" | "amqp";
 
 // @public (undocumented)
 export class MessagingError extends DomainError {
@@ -380,8 +978,118 @@ export class MessagingError extends DomainError {
     readonly code = "MESSAGING_ERROR";
 }
 
+// @public
+export interface ModelCandidate {
+    capability: number;
+    contextWindow: number;
+    // (undocumented)
+    id: string;
+    // (undocumented)
+    pricing: ModelPricing;
+}
+
+// @public
+export interface ModelPricing {
+    cacheDiscount?: number;
+    inputPer1k: CostUnits;
+    outputPer1k: CostUnits;
+}
+
 // @public (undocumented)
 export function ok<T>(value: T): Result<T, never>;
+
+// @public
+export class PolicyEngine implements GateValidator {
+    constructor(policies: PolicySet);
+    check(ctx: GateContext): GateVerdict;
+    load(policies: PolicySet): void;
+    // (undocumented)
+    readonly name: "policy";
+}
+
+// @public
+export interface PolicyRule {
+    agentId?: string;
+    effect: GateAction;
+    // (undocumented)
+    id: string;
+    matchAny?: string[];
+    operation?: GateOperation;
+    // (undocumented)
+    reason?: string;
+}
+
+// @public
+export interface PolicySet {
+    default: GateAction;
+    // (undocumented)
+    rules: PolicyRule[];
+}
+
+// @public
+export function priceUsage(usage: TokenUsage, pricing: ModelPricing): CostBreakdown;
+
+// @public
+export interface ProbeCheck {
+    // (undocumented)
+    check: () => Promise<boolean>;
+    // (undocumented)
+    name: string;
+}
+
+// @public
+export interface ProbeResult {
+    // Warning: (ae-forgotten-export) The symbol "ProbeCheckResult" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    checks: ProbeCheckResult[];
+    // (undocumented)
+    ready: boolean;
+}
+
+// @public
+export interface PutOptions {
+    // (undocumented)
+    classification?: Classification;
+    // (undocumented)
+    now: number;
+    // (undocumented)
+    provenance: MemoryProvenance;
+    // (undocumented)
+    ttlMs?: number;
+}
+
+// @public (undocumented)
+export class RateCostLimiter implements CostLimiterPort {
+    constructor(deps: RateCostLimiterDeps);
+    // (undocumented)
+    consumeRequest(scope: BudgetScope): Promise<LimiterReservation>;
+    // (undocumented)
+    releaseCost(scope: BudgetScope, units: CostUnits): Promise<void>;
+    // (undocumented)
+    reserveCost(scope: BudgetScope, units: CostUnits): Promise<LimiterReservation>;
+}
+
+// @public (undocumented)
+export interface RateCostLimiterDeps {
+    // (undocumented)
+    config: EconomicsConfig;
+    // (undocumented)
+    factory: RateLimiterFactory;
+}
+
+// @public
+export type RateLimiterFactory = (opts: {
+    keyPrefix: string;
+    points: number;
+    durationSeconds: number;
+}) => RateLimiterAbstract;
+
+// @public
+export interface ReadinessDeps {
+    // (undocumented)
+    checks: ProbeCheck[];
+}
 
 // @public
 export function recordAnomalyEvent(eventName: string, attributes: Record<string, string | number | boolean>): void;
@@ -391,6 +1099,50 @@ export function recordMessageLatency(ms: number, status: string): void;
 
 // @public
 export function recordMessageProcessed(status: string): void;
+
+// @public
+export class RedisCheckpointStore implements CheckpointStore {
+    constructor(redisUrl: string, opts?: RedisCheckpointStoreOptions);
+    // (undocumented)
+    clear(workflowId: string): Promise<void>;
+    disconnect(): Promise<void>;
+    // (undocumented)
+    load(workflowId: string): Promise<WorkflowCheckpoint | null>;
+    // (undocumented)
+    save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
+}
+
+// @public (undocumented)
+export interface RedisCheckpointStoreOptions {
+    ttlSeconds?: number;
+}
+
+// @public (undocumented)
+export class RedisTaskStore implements TaskStore {
+    // Warning: (ae-forgotten-export) The symbol "RedisLike" needs to be exported by the entry point index.d.ts
+    constructor(redis: RedisLike | string, options?: RedisTaskStoreOptions);
+    close(): Promise<void>;
+    // (undocumented)
+    load(taskId: string): Promise<Task_2 | undefined>;
+    // (undocumented)
+    save(task: Task_2): Promise<void>;
+}
+
+// @public (undocumented)
+export interface RedisTaskStoreOptions {
+    ttlSeconds?: number;
+}
+
+// @public
+export interface RegistryStatus {
+    // (undocumented)
+    active: boolean;
+    // (undocumented)
+    reason: string;
+}
+
+// @public
+export function replayDlq(deps: DlqReplayDeps): Promise<DlqReplayResult>;
 
 // @public (undocumented)
 export type Result<T, E> = {
@@ -402,7 +1154,55 @@ export type Result<T, E> = {
 };
 
 // @public
+export function routeModel(req: RoutingRequest, candidates: ModelCandidate[]): RoutingDecision;
+
+// @public
+export interface RouterLike {
+    // (undocumented)
+    wait(taskId: string, timeoutMs: number, label: string, signal?: AbortSignal): Promise<string>;
+}
+
+// @public (undocumented)
+export interface RoutingDecision {
+    modelId: string | null;
+    // (undocumented)
+    reason: string;
+}
+
+// @public
+export interface RoutingRequest {
+    budgetPressure: number;
+    estimatedTokens: number;
+    minCapability: number;
+}
+
+// @public
+export interface RunStepOptions {
+    dispatch: () => Promise<string>;
+    label?: string;
+    signal?: AbortSignal;
+    timeoutMs: number;
+}
+
+// @public
 export function sanitizeTraceHeaders(raw: unknown): Record<string, string>;
+
+// @public
+export class SecureMemoryStore {
+    get(tenantId: string, key: string, opts: GetOptions): MemoryEntry | undefined;
+    put(tenantId: string, key: string, value: unknown, opts: PutOptions): void;
+    revoke(tenantId: string, key: string): boolean;
+    size(): number;
+    sweep(now: number): number;
+}
+
+// @public
+export interface ShutdownStep {
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    run: () => void | Promise<void>;
+}
 
 // @public
 export class SlidingWindowBreaker implements ICircuitBreaker {
@@ -413,6 +1213,13 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
     recordFailure(): void;
     // (undocumented)
     recordSuccess(): void;
+}
+
+// @public (undocumented)
+export class SlidingWindowRateLimiter {
+    constructor(windowMs?: number, maxRequests?: number);
+    // (undocumented)
+    isAllowed(key: string): boolean;
 }
 
 // @public (undocumented)
@@ -435,6 +1242,17 @@ export const STATE_EVENT_REQUEST = "state:request";
 
 // @public (undocumented)
 export const STATE_EVENT_UPDATE = "state:update";
+
+// @public
+export interface StepCheckpoint {
+    // (undocumented)
+    result: string;
+    // (undocumented)
+    taskId: string;
+}
+
+// @public
+export type TaskHandler = (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>;
 
 // @public (undocumented)
 export interface TaskLog {
@@ -489,7 +1307,36 @@ export interface TlsConfig {
 }
 
 // @public
+export interface TokenUsage {
+    cachedInputTokens?: number;
+    // (undocumented)
+    inputTokens: number;
+    // (undocumented)
+    outputTokens: number;
+}
+
+// @public
+export type TrustLevel = "untrusted" | "low" | "high";
+
+// @public
 export function unwrapVerified(raw: string): Record<string, unknown> | null;
+
+// @public
+export interface ValidatedTaskInput {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    context?: string;
+    // (undocumented)
+    expectedOutput?: string;
+    // (undocumented)
+    inputs?: Record<string, unknown>;
+    // (undocumented)
+    instruction?: string;
+}
+
+// @public
+export function validateTaskInput(params: Record<string, unknown> | undefined): ValidationResult;
 
 // @public (undocumented)
 export class ValidationError extends DomainError {
@@ -498,11 +1345,44 @@ export class ValidationError extends DomainError {
     readonly code = "VALIDATION_ERROR";
 }
 
+// @public (undocumented)
+export type ValidationResult = {
+    params: ValidatedTaskInput;
+} | {
+    error: A2AInputError;
+};
+
 // @public
 export function verifyA2AToken(authHeader: string | undefined): jwt.JwtPayload;
 
 // @public
 export function verifyBoardToken(token: string): jwt.JwtPayload;
+
+// @public (undocumented)
+export interface WorkerAdmissionGateDeps {
+    costLimiter?: CostLimiterPort;
+    economics?: EconomicsConfig;
+    options?: AdmissionGateOptions;
+}
+
+// @public
+export type WorkflowCheckpoint = Record<string, StepCheckpoint>;
+
+// @public (undocumented)
+export class WorkflowOrchestrator {
+    constructor(opts: WorkflowOrchestratorOptions);
+    clear(): Promise<void>;
+    isResuming(): Promise<boolean>;
+    memoize<T>(name: string, produce: () => Promise<T>): Promise<T>;
+    runStep(name: string, opts: RunStepOptions): Promise<string>;
+}
+
+// @public (undocumented)
+export interface WorkflowOrchestratorOptions {
+    router: RouterLike;
+    store: CheckpointStore;
+    workflowId: string;
+}
 
 // @public
 export function wrapSigned(payload: Record<string, unknown>): string;

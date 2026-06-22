@@ -59,5 +59,5 @@ C4Container
 - `src/application/actor/`
   - `AgentActor.ts`: Encapsulation of a single KaibanJS agent with local task queue processing.
 - `src/infrastructure/federation/`
-  - `a2a-connector.ts`: Generates AgentCards and handles JSON-RPC.
+  - `a2a-executor.ts` / `a2a-task-store.ts` / `a2a-agent-card.ts` / `agent-status-tracker.ts`: the official `@a2a-js/sdk` v0.3 server building blocks — builds the v0.3 AgentCard and bridges `message/send` onto the agent mailbox (replaced the removed `a2a-connector.ts`, ADR-015).
   - `mcp-client.ts`: Integrates existing MCP servers securely.

@@ -79,6 +79,12 @@ describe('boardStore', () => {
       expect(useBoardStore.getState().agents.get('a1')?.name).toBe('Researcher');
     });
 
+    it('skips a malformed agent delta with no agentId (never keys the map by "undefined")', () => {
+      useBoardStore.getState().applyDelta({ agents: [ag({ agentId: undefined })] });
+      expect(useBoardStore.getState().agents.has('undefined' as unknown as string)).toBe(false);
+      expect(useBoardStore.getState().agents.size).toBe(0);
+    });
+
     it('shallow-merges existing agent fields', () => {
       useBoardStore.getState().applyDelta({ agents: [ag({ status: 'IDLE' as const })] });
       useBoardStore.getState().applyDelta({ agents: [ag({ status: 'EXECUTING' as const })] });
@@ -113,6 +119,12 @@ describe('boardStore', () => {
     it('adds new tasks', () => {
       useBoardStore.getState().applyDelta({ tasks: [tk({ title: 'Write intro' })] });
       expect(useBoardStore.getState().tasks.get('t1')?.title).toBe('Write intro');
+    });
+
+    it('skips a malformed task delta with no taskId (never keys the map by "undefined")', () => {
+      useBoardStore.getState().applyDelta({ tasks: [tk({ taskId: undefined })] });
+      expect(useBoardStore.getState().tasks.has('undefined' as unknown as string)).toBe(false);
+      expect(useBoardStore.getState().tasks.size).toBe(0);
     });
 
     it('shallow-merges existing task fields', () => {
