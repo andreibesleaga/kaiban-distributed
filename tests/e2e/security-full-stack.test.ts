@@ -72,7 +72,6 @@ async function waitFor(
   }
 }
 
-
 // ─── 1. Semantic Firewall ─────────────────────────────────────────────────────
 
 describe("1. Semantic Firewall (real BullMQ + Redis)", () => {
@@ -92,9 +91,15 @@ describe("1. Semantic Firewall (real BullMQ + Redis)", () => {
     drivers.push(pub, sub);
 
     const firewall = new HeuristicFirewall();
-    const actor = new AgentActor(queueId, sub, `sec-fw-${queueId}`, undefined, {
-      firewall,
-    });
+    const actor = new AgentActor(
+      queueId,
+      sub,
+      `sec-fw-${queueId}`,
+      async () => "ok",
+      {
+        firewall,
+      },
+    );
     await actor.start();
     await new Promise((r) => setTimeout(r, 200));
     return { pub, queueName: `sec-fw-${queueId}` };
@@ -255,7 +260,7 @@ describe("2. Circuit Breaker (real BullMQ + Redis)", () => {
     drivers.push(pub, sub);
 
     const breaker = new SlidingWindowBreaker(3, 5000);
-    const actor = new AgentActor(id, sub, `sec-cb-ok-${id}`, undefined, {
+    const actor = new AgentActor(id, sub, `sec-cb-ok-${id}`, async () => "ok", {
       circuitBreaker: breaker,
     });
     await actor.start();
@@ -424,7 +429,7 @@ describe("3. Firewall + Circuit Breaker Combined", () => {
     const breaker = new SlidingWindowBreaker(3, 5000);
     const firewall = new HeuristicFirewall();
 
-    const actor = new AgentActor(id, sub, `sec-combo-${id}`, undefined, {
+    const actor = new AgentActor(id, sub, `sec-combo-${id}`, async () => "ok", {
       firewall,
       circuitBreaker: breaker,
     });
@@ -757,7 +762,7 @@ describe("5. Redis Password Auth", () => {
     const agentId = randomUUID().slice(0, 8);
 
     let completed = false;
-    const actor = new AgentActor(agentId, sub, queueName);
+    const actor = new AgentActor(agentId, sub, queueName, async () => "ok");
     await actor.start();
     await new Promise((r) => setTimeout(r, 200));
 
