@@ -19,7 +19,7 @@
 
 - The systems allows creation of Teams of Agents for various Tasks, Systems Integrations, and Data handling/analytics, with scalable AI workflows, from local usage to customizable Enterprise Grade Systems.
 
-- Integrates with existing KaibanJS agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
+- Integrates with existing [KaibanJS](https://github.com/kaiban-ai/KaibanJS) system and agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
 
 [![CI](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/ci.yml/badge.svg)](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/ci.yml)
