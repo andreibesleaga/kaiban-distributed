@@ -15,7 +15,8 @@
 > *(For integrating **KaibanJS** system base, follow documents in [docs/KAIBANJS_INTEGRATION.md](docs/KAIBANJS_INTEGRATION.md)).*
 >
 > Some short articles can be read on [Medium](https://medium.com/towards-artificial-intelligence/kaiban-distributed-a-scaling-actor-model-agentic-workflow-system-8b5288e7bc17) and [Substack](https://andreibesleaga.substack.com/p/distributed-multi-agent-systems-with).
->
+
+Examples dedicated repository: [kaiban-distributed-examples](https://github.com/andreibesleaga/kaiban-distributed-examples)
 
 - While most frameworks treat agents as scripts, Kaiban Distributed treats them as Stateful Actors. By using async Node.js, each agent operates in its own space, communicating via a pluggable Messaging Abstraction Layer (Kafka or BullMQ/Redis), horizontally scaling AI workforce.
 
