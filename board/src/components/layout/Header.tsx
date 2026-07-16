@@ -18,7 +18,7 @@ export default function Header() {
   const pillClass = STATUS_PILL[workflowStatus] ?? 'bg-slate-700 text-slate-300';
 
   return (
-    <header className="sticky top-0 z-10 border-b border-slate-800 bg-[#0f172a]/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-10 border-b border-slate-800 bg-[#0f172a]/95 backdrop-blur-xs">
       <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-4">
         {/* Logo */}
         <div className="flex items-center gap-2 shrink-0">
