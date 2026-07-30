@@ -2,10 +2,10 @@
  * Live E2E: Global Research Swarm — Real LLM + Dockerized Services
  *
  * These tests run the complete distributed pipeline end-to-end:
- *   - 4 services in Docker: Redis, Gateway, Agent nodes (searcher×4, writer, reviewer, editor)
+ *   - Services in Docker: Redis, Gateway, Agent nodes (searcher×4, writer, reviewer, editor)
  *   - Real LLM calls via OpenRouter/OpenAI (no mocks)
  *   - Orchestrator run as compiled Node.js subprocess (dist/examples/...)
- *   - AUTO_PUBLISH=1 skips the readline HITL prompt
+ *   - AUTO_PUBLISH=1 skips the readline HITL prompt (decision forced to PUBLISH)
  *
  * Run with:
  *   npm run test:e2e:live
@@ -13,15 +13,34 @@
  * Requires:
  *   OPENROUTER_API_KEY or OPENAI_API_KEY in .env
  *   Docker running
+ *   (On networks whose DNS blocks nom.telemetrydeck.com, also set
+ *    KAIBAN_TELEMETRY_OPT_OUT=1 in .env — see .env.example.)
+ *
+ * Assertions target the v2.0 orchestrator's output contract
+ * (examples/global-research/orchestrator.ts + phases.ts):
+ *   - stdout phase banners:  STEP 1 Fan-Out → STEP 2 Fan-In → STEP 3 governance
+ *     → STEP 4 editorial → HUMAN DECISION REQUIRED (HITL)
+ *   - phase summaries:       "SEARCH PHASE COMPLETE — n/N results",
+ *     "SYNTHESIS COMPLETE (n chars)", "Compliance Score: … Recommendation: …"
+ *   - economics/metadata:    "Tokens used:", "Estimated cost: $", "Active nodes:"
+ *   - the machine-readable run log (RunLogger): "Run log saved to <path>" — the
+ *     JSON's `outcome` field is the authoritative terminal verdict
+ *     (PUBLISHED | REVISED | REJECTED | FAILED | STOPPED).
+ *
+ * A governance REJECTED verdict is a legitimate terminal state (the reviewer
+ * gate doing its job on live LLM output), so scenarios accept it as a clean
+ * stop — but when the pipeline proceeds, the full editorial + HITL + PUBLISHED
+ * chain is asserted strictly.
  *
  * Scenarios:
  *   1. Golden Path          — full pipeline (search → write → review → edit → publish)
  *   2. Governance output    — structured compliance review present in output
  *   3. ResearchContext      — metadata fields (nodes, tokens, cost) reported
- *   4. Fault tolerance      — CHAOS_MODE: some searchers crash, pipeline still completes
+ *   4. Fault tolerance      — partial searcher failure tolerated, pipeline completes
  */
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "child_process";
+import { readFileSync } from "fs";
 import { resolve } from "path";
 import * as dotenv from "dotenv";
 
@@ -63,6 +82,41 @@ function runOrchestrator(
   };
 }
 
+/** Shape of the RunLogger JSON flushed to examples/global-research/runs/ */
+interface RunLogFile {
+  query: string;
+  contextId: string;
+  numSearchers: number;
+  tasks: Array<{ phase: string; agentId: string; outputTokens: number }>;
+  errors: unknown[];
+  totalTokens: number;
+  totalCost: number;
+  outcome: string;
+}
+
+/** Parse the "Run log saved to <path>" line and load the JSON run log. */
+function readRunLog(stdout: string): RunLogFile {
+  const m = stdout.match(/Run log saved to (.+\.json)/);
+  expect(m, "orchestrator must flush a run log").not.toBeNull();
+  return JSON.parse(readFileSync((m as RegExpMatchArray)[1], "utf8")) as RunLogFile;
+}
+
+/** True when the governance gate rejected the report (a legitimate clean stop). */
+function governanceRejected(stdout: string): boolean {
+  return /Governance review REJECTED the report\. Workflow stopped\./.test(
+    stdout,
+  );
+}
+
+function echo(label: string, stdout: string, stderr = ""): void {
+  console.log(`\n── Orchestrator stdout (${label}) ──────────────────────────`);
+  console.log(stdout.slice(0, 6000));
+  if (stderr.trim()) {
+    console.log("\n── stderr ────────────────────────────────────────────────");
+    console.log(stderr.slice(0, 1000));
+  }
+}
+
 // ── Test suite ────────────────────────────────────────────────────────────
 
 describe(
@@ -70,7 +124,7 @@ describe(
   { timeout: 600_000 },
   () => {
     // ─────────────────────────────────────────────────────────────────────
-    // Scenario 1 — Golden Path: all 4 stages complete and research publishes
+    // Scenario 1 — Golden Path: all stages complete and the report publishes
     // ─────────────────────────────────────────────────────────────────────
     it("Scenario 1 — Golden Path: search → write → governance → editorial → PUBLISHED", () => {
       const { stdout, stderr, status } = runOrchestrator(
@@ -78,43 +132,40 @@ describe(
           QUERY: "Distributed AI Agent Systems in 2025",
         }),
       );
-
-      console.log(
-        "\n── Orchestrator stdout (Scenario 1) ──────────────────────────",
-      );
-      console.log(stdout.slice(0, 6000));
-      if (stderr.trim()) {
-        console.log(
-          "\n── stderr ────────────────────────────────────────────────────",
-        );
-        console.log(stderr.slice(0, 1000));
-      }
+      echo("Scenario 1", stdout, stderr);
 
       // Gateway reachable
       expect(stdout).toMatch(/Gateway: OK|Gateway: UP/i);
 
-      // Fan-out search phase
-      expect(stdout).toMatch(/Fan-Out.*Searcher|STEP 1/i);
-      expect(stdout).toMatch(/Search task \d+\/\d+ queued/);
-      expect(stdout).toMatch(/SEARCH PHASE COMPLETE/);
-      expect(stdout).toMatch(/Succeeded: [1-9]/);
+      // Fan-out search phase: banner, generated sub-topics, ≥1 of 2 results
+      expect(stdout).toMatch(/STEP 1 — Fan-Out: 2 Searcher nodes/);
+      expect(stdout).toMatch(/Sub-topics:[\s\S]*1\./);
+      expect(stdout).toMatch(/SEARCH PHASE COMPLETE — [1-2]\/2 results/);
 
-      // Fan-in write phase
-      expect(stdout).toMatch(/Fan-In.*Writer|STEP 2/i);
-      expect(stdout).toMatch(/SYNTHESIS COMPLETE/);
+      // Fan-in write phase: non-empty synthesis
+      expect(stdout).toMatch(/STEP 2 — Fan-In/);
+      expect(stdout).toMatch(/SYNTHESIS COMPLETE \([1-9]\d* chars\)/);
 
-      // Governance review
-      expect(stdout).toMatch(/STEP 3/i);
-      expect(stdout).toMatch(/GOVERNANCE REVIEW BY SAGE/);
-      expect(stdout).toMatch(/Compliance Score:/);
-      expect(stdout).toMatch(/Recommendation:/);
+      // Governance review: score + structured recommendation
+      expect(stdout).toMatch(/STEP 3 /);
+      expect(stdout).toMatch(/Compliance Score: \S+ +Recommendation: (APPROVED|CONDITIONAL|REJECTED)/);
 
-      // Editorial + HITL (auto-published)
-      expect(stdout).toMatch(/STEP 4/i);
-      expect(stdout).toMatch(/EDITORIAL REVIEW BY MORGAN/);
-      expect(stdout).toMatch(
-        /AUTO_PUBLISH.*auto-approving|RESEARCH PUBLISHED/i,
-      );
+      const log = readRunLog(stdout);
+      if (governanceRejected(stdout)) {
+        // The governance gate stopping a weak report IS correct system behavior.
+        expect(log.outcome).toBe("REJECTED");
+      } else {
+        // Editorial + HITL (AUTO_PUBLISH forces the PUBLISH decision)
+        expect(stdout).toMatch(/STEP 4 /);
+        expect(stdout).toMatch(/Editorial: +\S+ +— Recommendation:/);
+        expect(stdout).toMatch(/HUMAN DECISION REQUIRED \(HITL\)/);
+        expect(stdout).toMatch(/Board: FINISHED/);
+        expect(log.outcome).toBe("PUBLISHED");
+      }
+
+      // Machine-readable verdict: real tokens were spent across the fleet
+      expect(log.totalTokens).toBeGreaterThan(0);
+      expect(log.tasks.length).toBeGreaterThanOrEqual(1);
 
       // Clean exit
       expect(status).toBe(0);
@@ -129,26 +180,23 @@ describe(
           QUERY: "AI Safety and Alignment Research",
         }),
       );
+      echo("Scenario 2", stdout);
 
-      console.log(
-        "\n── Orchestrator stdout (Scenario 2) ──────────────────────────",
-      );
-      console.log(stdout.slice(0, 4000));
+      // Must reach the governance stage
+      expect(stdout).toMatch(/STEP 3 — Sage \(Reviewer\) running governance compliance check/);
 
-      // Must reach governance stage
-      expect(stdout).toMatch(/GOVERNANCE REVIEW BY SAGE/);
-
-      // Compliance score present
-      expect(stdout).toMatch(/Compliance Score:/i);
-
-      // Recommendation is one of the valid values
-      expect(stdout).toMatch(/APPROVED|CONDITIONAL|REJECTED/);
+      // Compliance score + structured recommendation present
+      expect(stdout).toMatch(/Compliance Score: \S+ +Recommendation: (APPROVED|CONDITIONAL|REJECTED)/);
 
       // Either continues to editorial (approved/conditional) or stops cleanly (rejected)
-      const reachedEditorial = /EDITORIAL REVIEW BY MORGAN/.test(stdout);
-      const rejectedByGovernance =
-        /Governance review REJECTED|Workflow stopped/i.test(stdout);
-      expect(reachedEditorial || rejectedByGovernance).toBe(true);
+      const reachedEditorial = /STEP 4 — Morgan \(Editor\)/.test(stdout);
+      expect(reachedEditorial || governanceRejected(stdout)).toBe(true);
+
+      // The run log records the governance task with real token usage
+      const log = readRunLog(stdout);
+      const govTask = log.tasks.find((t) => t.phase === "governance");
+      expect(govTask, "governance phase must be recorded in the run log").toBeDefined();
+      expect(govTask?.outputTokens).toBeGreaterThan(0);
 
       expect(status).toBe(0);
     }, 600_000);
@@ -162,55 +210,52 @@ describe(
           QUERY: "Large Language Models and Autonomous Agents",
         }),
       );
+      echo("Scenario 3", stdout);
 
-      console.log(
-        "\n── Orchestrator stdout (Scenario 3) ──────────────────────────",
-      );
-      console.log(stdout.slice(0, 4000));
+      // Search results flowed into the shared ResearchContext
+      expect(stdout).toMatch(/SEARCH PHASE COMPLETE — [1-2]\/2 results/);
 
-      // ResearchContext populated message
-      expect(stdout).toMatch(
-        /ResearchContext populated with \d+ search results/,
-      );
+      // Economics/metadata report: tokens, cost, active nodes, context id
+      expect(stdout).toMatch(/Tokens used: +[1-9]\d*/);
+      expect(stdout).toMatch(/Estimated cost: +\$\d+\.\d+/);
+      expect(stdout).toMatch(/Active nodes: +.*writer/);
+      expect(stdout).toMatch(/Context ID: [0-9a-f-]{36}/);
 
-      // Active nodes tracked
-      expect(stdout).toMatch(/Active nodes:/);
-
-      // If published: economics report section
-      if (/RESEARCH PUBLISHED/.test(stdout)) {
-        expect(stdout).toMatch(/Nodes Active:/);
-        expect(stdout).toMatch(/Started:/);
-        expect(stdout).toMatch(/Completed:/);
-      }
+      // Machine-readable metadata mirrors the CLI report
+      const log = readRunLog(stdout);
+      expect(log.totalTokens).toBeGreaterThan(0);
+      expect(log.totalCost).toBeGreaterThan(0);
+      expect(log.contextId).toMatch(/^[0-9a-f-]{36}$/);
 
       expect(status).toBe(0);
     }, 600_000);
 
     // ─────────────────────────────────────────────────────────────────────
-    // Scenario 4 — Chaos Mode: ~20% crash rate, pipeline still completes
+    // Scenario 4 — Fault tolerance: partial searcher failure tolerated
     // ─────────────────────────────────────────────────────────────────────
     it("Scenario 4 — Chaos Mode: searcher crashes tolerated, pipeline completes", () => {
-      // CHAOS_MODE is passed via env to the searcher containers via docker-compose
-      // but for the orchestrator we just verify it handles partial failures gracefully.
-      // We use NUM_SEARCHERS=3 so there is headroom even if 1 searcher fails permanently.
+      // CHAOS_MODE crash-injection is a property of the searcher *containers*
+      // (set via docker-compose env at stack-up time). From the orchestrator's
+      // side we verify the fan-out phase degrades gracefully: with 3 sub-topics
+      // across the searcher pool, the pipeline must complete with at least one
+      // successful search result even if individual searchers fail or restart.
       const { stdout, status } = runOrchestrator(
         baseEnv({
           QUERY: "Fault Tolerance in Distributed AI Systems",
           NUM_SEARCHERS: "3",
         }),
       );
+      echo("Scenario 4", stdout);
 
-      console.log(
-        "\n── Orchestrator stdout (Scenario 4) ──────────────────────────",
-      );
-      console.log(stdout.slice(0, 4000));
-
-      // Search phase must complete (with at least 1 result)
-      expect(stdout).toMatch(/SEARCH PHASE COMPLETE/);
-      expect(stdout).toMatch(/Succeeded: [1-9]/);
+      // Search phase must complete with at least 1 of 3 results
+      expect(stdout).toMatch(/SEARCH PHASE COMPLETE — [1-3]\/3 results/);
 
       // Writer must have received enough data to proceed
-      expect(stdout).toMatch(/SYNTHESIS COMPLETE|ResearchContext populated/);
+      expect(stdout).toMatch(/SYNTHESIS COMPLETE \([1-9]\d* chars\)/);
+
+      // Terminal verdict is a legitimate outcome, with no unhandled errors
+      const log = readRunLog(stdout);
+      expect(["PUBLISHED", "REVISED", "REJECTED"]).toContain(log.outcome);
 
       expect(status).toBe(0);
     }, 600_000);

@@ -38,19 +38,32 @@ provenance and a Sigstore (cosign keyless) signature.
 Several transitive advisories reach the tree via `@langchain/*` (used by
 `kaibanjs`) and the OpenTelemetry/gRPC stack. `package.json` `overrides` pin
 patched versions: `@langchain/core`, `@langchain/community`, `langchain`,
-`langsmith`, `axios`, `protobufjs`, `@grpc/grpc-js`, `ws`, `hono`, `fast-uri`,
-`fast-xml-parser`, `qs`, `uuid`, `ip-address`, `expr-eval`, `file-type`, `glob`,
-`@opentelemetry/exporter-prometheus`, `form-data` (>=4.0.6), `vite` (>=8.0.16).
+`langsmith`, `axios`, `protobufjs` (>=8.6.6), `@grpc/grpc-js`, `ws`, `hono`
+(>=4.12.32), `fast-uri` (>=4.1.1), `fast-xml-parser`, `qs`, `uuid`, `ip-address`,
+`expr-eval`, `file-type`, `glob`, `brace-expansion` (>=5.0.8), `js-yaml`
+(>=4.3.0 <5), `postcss` (>=8.5.25), `@opentelemetry/exporter-prometheus`,
+`form-data` (>=4.0.6), `vite` (>=8.0.16).
 
-### Residual advisories (moderate only)
+An override is a **security floor, not a version bump** — each one is the lowest
+patched release for the advisory, so the pinned tree stays semver-compatible with
+what the dependents declare. `js-yaml` is deliberately capped below `5` because
+`@langchain/classic` targets the 4.x API.
 
-`npm audit` reports **0 high/critical** (CI fails the build on HIGH+). A number of
-**moderate** advisories remain — these fluctuate as the npm advisory database is
-updated against existing dependency versions, and are predominantly **dev/build
-tooling and transitive** packages (e.g. `brace-expansion`, `postcss`, and various
-test/build transitives) that **do not ship in the deployed worker/gateway image or
-the published `dist/src` library**. They are tracked and cleared as upstream fixes
-land; CI intentionally does not block on moderates.
+### Residual advisories
+
+`npm audit` currently reports **0 vulnerabilities** (0 critical / 0 high /
+0 moderate / 0 low) for both the root package and `board/`. CI fails the build on
+HIGH+ and intentionally does not block on moderates, since moderate findings
+fluctuate as the npm advisory database is updated against existing dependency
+versions and are predominantly **dev/build tooling and transitive** packages that
+**do not ship in the deployed worker/gateway image or the published `dist/src`
+library**. Any that reappear are tracked and cleared as upstream fixes land.
+
+Note that the Trivy image scan reads `/app/package-lock.json` inside the runtime
+image, so it reports **dev-only** locked packages too even though the runner stage
+installs with `npm ci --omit=dev`. A dev-tooling HIGH therefore still fails the
+image gate, and the fix is to raise the floor in the lockfile rather than to
+exclude the finding.
 
 ## Sensitive-data handling (operator responsibility)
 
