@@ -24,6 +24,9 @@ Examples dedicated repository: [kaiban-distributed-examples](https://github.com/
 
 - Integrates with existing [KaibanJS](https://github.com/kaiban-ai/KaibanJS) system and agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
+- Any Agentic AI Patterns (Loops & Harnesses), Team Archetypes, Workflows, and Human-in-The-Loop (BudgetCheckings) interruptions could be implemented programmatically at ay point of the workflow/tasks, given the Actor-Model Isolation, Distributed Node Agents, Custom Orchestrators/Coreography, Messaging Layer - in JS/TS, or via other A2A/MCP comms and agents, or by any other programs and connectors into the messaging layer (visually connected kanban boards and any other display methods connecting directly to the published workflows messages on Redis/Kafka, such as CLI I/O, Enterprise Programs, etc.
+
+
 
 [![CI](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/ci.yml/badge.svg)](https://github.com/andreibesleaga/kaiban-distributed/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25%20of%20src-brightgreen)](#testing)
