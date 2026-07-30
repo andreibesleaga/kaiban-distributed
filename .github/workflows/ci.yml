@@ -107,7 +107,12 @@ jobs:
             --format=sarif
             --output=osv.sarif
       - name: Upload OSV SARIF
-        if: always()
+        # `always()` so the SARIF still reaches the Security tab when an earlier
+        # gate (e.g. the audit) fails — but guarded on the file actually existing:
+        # if the audit fails, OSV-Scanner never runs and an unguarded upload adds
+        # a bogus second failure ("Path does not exist: osv.sarif") that masks the
+        # real one.
+        if: always() && hashFiles('osv.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: osv.sarif

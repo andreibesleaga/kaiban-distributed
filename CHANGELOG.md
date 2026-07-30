@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+- Raised the transitive `overrides` security floors to clear every open HIGH advisory
+  in the locked tree: `brace-expansion` >=5.0.8 (GHSA-3jxr-9vmj-r5cp,
+  GHSA-mh99-v99m-4gvg), `fast-uri` >=4.1.1 (GHSA-v2hh-gcrm-f6hx,
+  GHSA-4c8g-83qw-93j6), `js-yaml` >=4.3.0 <5 (GHSA-52cp-r559-cp3m) and `postcss`
+  >=8.5.25 (GHSA-r28c-9q8g-f849). Also cleared the remaining moderates:
+  `hono` >=4.12.32, `protobufjs` >=8.6.6, and `@modelcontextprotocol/sdk` 1.30.0 with
+  `@hono/node-server` 2.0.12 (GHSA-frvp-7c67-39w9). `npm audit` now reports
+  **0 vulnerabilities** at the root and in `board/`, and the Trivy image gate passes
+  with no fixable CRITICAL/HIGH.
+
+### Changed
+- `ossf/scorecard-action` 2.4.3 → 2.4.4.
+
+### Fixed
+- CI: the `Upload OSV SARIF` step no longer fails with "Path does not exist:
+  osv.sarif" when an earlier gate fails — it is now guarded on the file existing,
+  so a failing audit reports one real error instead of two.
+
 ## [2.0.0] - in progress (`feat/v2.0`)
 
 Major release — breaking changes are documented in `MIGRATION.md`. Authoritative plan:
