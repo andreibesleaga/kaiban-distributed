@@ -68,6 +68,10 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      # Opt out of KaibanJS anonymous telemetry (default: on). Set to 1 on networks
+      # that block nom.telemetrydeck.com at DNS level — the blocked fetch otherwise
+      # crashes the agent process (unhandled rejection inside kaibanjs).
+      KAIBAN_TELEMETRY_OPT_OUT: ${KAIBAN_TELEMETRY_OPT_OUT:-}
       SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
       CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
       JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
@@ -98,6 +102,10 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      # Opt out of KaibanJS anonymous telemetry (default: on). Set to 1 on networks
+      # that block nom.telemetrydeck.com at DNS level — the blocked fetch otherwise
+      # crashes the agent process (unhandled rejection inside kaibanjs).
+      KAIBAN_TELEMETRY_OPT_OUT: ${KAIBAN_TELEMETRY_OPT_OUT:-}
       SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
       CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
       JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
@@ -127,6 +135,10 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      # Opt out of KaibanJS anonymous telemetry (default: on). Set to 1 on networks
+      # that block nom.telemetrydeck.com at DNS level — the blocked fetch otherwise
+      # crashes the agent process (unhandled rejection inside kaibanjs).
+      KAIBAN_TELEMETRY_OPT_OUT: ${KAIBAN_TELEMETRY_OPT_OUT:-}
       SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
       CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
       JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
