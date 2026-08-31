@@ -97,8 +97,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@microsoft/api-extractor": "^7.58.9",
-    "@stryker-mutator/core": "^9.6.1",
-    "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
     "@types/supertest": "^7.2.0",
@@ -110,7 +110,7 @@
     "prettier": "^3.9.5",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.10"
   },
