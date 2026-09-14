@@ -64,3 +64,18 @@ control (self-assessment, not certification).
 - **Deferred hot-path wiring** (E + G): `CostReservation.admit()` and `ActionGate.evaluate()` are
   shipped + 100%-tested as capabilities; intercepting them in the deployed `AgentActor` loop /
   federation egress is a separate reviewed step.
+
+## GitHub Packages mirror (2026-09-14)
+
+Only GitHub-hosted registries (ghcr.io, npm.pkg.github.com) appear in the repository's "Packages"
+sidebar; npmjs.com packages never do. [`.github/workflows/publish-github-packages.yml`](../.github/workflows/publish-github-packages.yml)
+therefore publishes a second copy of the library tarball to GitHub Packages as
+`@andreibesleaga/kaiban-distributed` (the owner scope GitHub Packages requires) on every `v*` tag and
+on manual dispatch. It reuses `scripts/pack-staging.sh` (pack mode) so the mirrored tarball is the same
+license-correct Apache-2.0 artifact as the npm one, renames it inside `dist-staging/` only, authenticates
+with the job's `GITHUB_TOKEN` (`packages: write`, no secret), turns provenance off (npmjs-only feature),
+and skips a version that is already on GitHub Packages. **npmjs.com remains canonical**; the Phase 4b
+`pack-staging.sh --publish` flow above is unchanged (it is already wired into `publish-npm.yml`).
+
+Backfill of an existing version: `gh workflow run publish-github-packages.yml --ref v2.0.0`.
+

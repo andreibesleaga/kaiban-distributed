@@ -1,0 +1,65 @@
+name: Publish to GitHub Packages (npm mirror)
+
+# Mirrors the Apache-2.0 library core to GitHub Packages so it is listed in the
+# repository's "Packages" sidebar (only GitHub-hosted registries appear there;
+# npmjs.com packages never do). npmjs.com stays the CANONICAL registry — this is
+# an additional copy, published under the owner scope that GitHub Packages
+# requires: `@andreibesleaga/kaiban-distributed`.
+#
+# The tarball is assembled by scripts/pack-staging.sh exactly as for npm (no GPL
+# LICENSE leak, ADR-011), then renamed in the staging dir only; the repository's
+# package.json is never modified. Authentication is the job's GITHUB_TOKEN with
+# `packages: write` — no extra secret. Provenance is npmjs-only, so it is turned
+# off here (the npm publish in publish-npm.yml keeps it).
+#
+# Triggers: every version tag (alongside release.yml) and manual dispatch, which
+# backfills whatever version the checked-out ref carries. Re-runs are safe: a
+# version already on GitHub Packages is skipped, never overwritten.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish-github-packages:
+    name: npm publish → npm.pkg.github.com (@andreibesleaga scope)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@andreibesleaga"
+      - run: npm ci
+      - name: Build + assemble the license-correct staging dir
+        run: bash scripts/pack-staging.sh
+      - name: Rename to the owner scope (staging copy only)
+        working-directory: dist-staging
+        run: |
+          npm pkg delete publishConfig.provenance publishConfig.access
+          npm pkg set name="@andreibesleaga/kaiban-distributed" publishConfig.registry="https://npm.pkg.github.com"
+          node -p "require('./package.json').name + '@' + require('./package.json').version"
+      - name: Publish (skipped when this version is already on GitHub Packages)
+        working-directory: dist-staging
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "$NAME@$VERSION is already on GitHub Packages — nothing to do."
+            echo "Skipped: \`$NAME@$VERSION\` already published." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          TAG=latest; case "$VERSION" in *-*) TAG=next ;; esac
+          npm publish --provenance=false --tag "$TAG"
+          echo "Published \`$NAME@$VERSION\` (dist-tag \`$TAG\`) → https://github.com/${GITHUB_REPOSITORY}/pkgs/npm/kaiban-distributed" >> "$GITHUB_STEP_SUMMARY"

@@ -36,6 +36,8 @@ Examples dedicated repository: [kaiban-distributed-examples](https://github.com/
 [![Node](https://img.shields.io/badge/node-%3E%3D22-green)](package.json)
 [![License](https://img.shields.io/badge/license-Apache--2.0%20lib%20%2F%20GPL--3.0%20app-blue)](LICENSING.md)
 
+Published on npm as [`kaiban-distributed`](https://www.npmjs.com/package/kaiban-distributed) (canonical) and mirrored on GitHub Packages as [`@andreibesleaga/kaiban-distributed`](https://github.com/andreibesleaga/kaiban-distributed/pkgs/npm/kaiban-distributed); the container image is [`ghcr.io/andreibesleaga/kaiban-distributed`](https://github.com/andreibesleaga/kaiban-distributed/pkgs/container/kaiban-distributed).
+
 ---
 
 ## Summary

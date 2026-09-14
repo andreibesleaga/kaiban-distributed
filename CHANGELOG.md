@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `publish-github-packages.yml`: mirrors the Apache-2.0 library tarball (built by
+  `scripts/pack-staging.sh`, no GPL text) to GitHub Packages as
+  `@andreibesleaga/kaiban-distributed` on every version tag or by manual dispatch, so
+  the npm package is listed in the repository "Packages" sidebar next to the ghcr.io
+  image. npmjs.com stays the canonical registry; the committed `package.json` is
+  untouched (the rename happens in the staging dir); already-published versions are
+  skipped, never overwritten.
+
 ### Security
 - Raised the transitive `overrides` security floors to clear every open HIGH advisory
   in the locked tree: `brace-expansion` >=5.0.8 (GHSA-3jxr-9vmj-r5cp,
