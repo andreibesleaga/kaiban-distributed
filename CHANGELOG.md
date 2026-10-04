@@ -7,6 +7,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `docs/roadmap/V2.1-ROADMAP.md` §7: the defects and gaps found by a code audit of `main`, each
+  checked a second time against the code, ranked into a 2.0.1 patch release (work that cannot be
+  stopped or is paid for twice, lost completions, dead-letter records without the task, insecure
+  defaults, false documentation) and additions to the §6 control plane (node and fleet stop).
 - `publish-github-packages.yml`: mirrors the Apache-2.0 library tarball (built by
   `scripts/pack-staging.sh`, no GPL text) to GitHub Packages as
   `@andreibesleaga/kaiban-distributed` on every version tag or by manual dispatch, so
