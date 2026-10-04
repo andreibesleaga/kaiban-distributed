@@ -21,6 +21,11 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+      # npm 11.17.0, the npm Dependabot writes lockfiles with: a lockfile written by npm 11
+      # can omit optional nested entries that npm 10 (bundled with Node 22) then reports
+      # as "Missing ... from lock file". Keep in step with packageManager in package.json.
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       - name: E2E (BullMQ/Redis)
         run: npm run test:e2e
@@ -42,6 +47,8 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       - name: E2E (Kafka)
         run: npm run test:e2e:kafka
@@ -58,6 +65,8 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       - name: Broker resilience (pause Redis mid-flight, assert zero dropped)
         run: npm run test:e2e:chaos
@@ -74,6 +83,8 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       - name: Stryker mutation (break < 85% domain score)
         run: npm run test:mutation
@@ -93,5 +104,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       - run: npm run bench

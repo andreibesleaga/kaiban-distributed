@@ -13,7 +13,11 @@ COPY package*.json ./
 # `npm ci` (not `npm install`): install the EXACT, audited lockfile versions so the
 # image can't silently re-resolve a transitive to a vulnerable version (which is
 # what the Trivy gate caught — glob/minimatch/tar drifting above the clean lock).
-RUN npm ci --include=dev
+# npm 11.17.0 (not the image's npm 10): the lockfile is written by npm 11 (Dependabot), and
+# npm 10 rejects some of its entries. Keep in step with packageManager in package.json.
+ARG NPM_VERSION=11.17.0
+RUN npm install -g npm@${NPM_VERSION} \
+  && npm ci --include=dev
 
 COPY tsconfig.json tsconfig.build.json ./
 COPY src/ ./src/
@@ -41,7 +45,9 @@ COPY package*.json ./
 # image's vendored npm ships transitive deps (glob/minimatch/tar) with HIGH CVEs
 # that would otherwise fail the image scan despite never being reachable at
 # runtime. Removing it also shrinks the image and reduces attack surface.
-RUN npm ci --omit=dev \
+ARG NPM_VERSION=11.17.0
+RUN npm install -g npm@${NPM_VERSION} \
+  && npm ci --omit=dev \
   && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 

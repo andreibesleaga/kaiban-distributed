@@ -32,6 +32,8 @@
     "dev:gateway": "ROLE=gateway node dist/src/main/index.js",
     "dev:worker": "ROLE=worker node dist/src/main/index.js",
     "lint": "eslint src tests examples --max-warnings 0",
+    "lockfile:fix": "sh scripts/fix-lockfile.sh",
+    "lockfile:check": "sh scripts/fix-lockfile.sh --check",
     "format": "prettier --write src tests",
     "test": "vitest run --config vitest.config.mts",
     "test:coverage": "vitest run --coverage --config vitest.config.mts",
@@ -55,6 +57,7 @@
   "author": "Andrei Besleaga",
   "license": "Apache-2.0",
   "type": "commonjs",
+  "packageManager": "npm@11.17.0",
   "engines": {
     "node": ">=22"
   },

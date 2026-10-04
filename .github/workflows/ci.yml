@@ -27,6 +27,11 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+      # npm 11.17.0, the npm Dependabot writes lockfiles with: a lockfile written by npm 11
+      # can omit optional nested entries that npm 10 (bundled with Node 22) then reports
+      # as "Missing ... from lock file". Keep in step with packageManager in package.json.
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       - name: Lint (zero errors)
         run: npm run lint
@@ -58,6 +63,8 @@ jobs:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: board/package-lock.json
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       # Gate the board on HIGH+ advisories too (root has this; the board
       # previously had no audit step, which let an esbuild HIGH go uncaught).
@@ -81,6 +88,8 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+      - name: Use npm 11.17.0
+        run: npm install -g npm@11.17.0
       - run: npm ci
       - name: Dependency audit (fail on HIGH+; moderates triaged in SECURITY.md)
         run: npm audit --audit-level=high

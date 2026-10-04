@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- CI: `npm ci` failed in the Quality, Security and Docker jobs (and would have in the nightly,
+  release and publish lanes) after the Dependabot updates of 2026-10-04: Dependabot writes the
+  lockfile with npm 11, which omits optional nested entries (`typescript@5.9.3` under
+  `filing-cabinet`, `ignore@7.0.12` under `@kaibanjs/workflow` and `kaibanjs`) that npm 10, bundled
+  with Node 22, requires. The lockfile is rewritten with npm 10.9.8 (accepted by npm 10 and 11), and
+  every workflow job and both Dockerfile stages now run `npm ci` with npm 11.17.0, the npm Dependabot
+  uses, declared as `packageManager` in `package.json` and `board/package.json`. New
+  `scripts/fix-lockfile.sh` (`npm run lockfile:check`, `npm run lockfile:fix`) proves or repairs both
+  lockfiles for npm 10 and 11.
+
 ### Added
 - `docs/roadmap/V2.1-ROADMAP.md` §7: the defects and gaps found by a code audit of `main`, each
   checked a second time against the code, ranked into a 2.0.1 patch release (work that cannot be
