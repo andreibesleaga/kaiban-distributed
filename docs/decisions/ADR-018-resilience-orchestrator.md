@@ -21,7 +21,8 @@ traced **and** revived — not just per-node/per-task DLQ. The example orchestra
   `/health`); **graceful shutdown** runs ordered, best-effort, deadline-bounded steps (stop intake →
   drain → finish acks → flush → close) so a hung dependency cannot wedge shutdown.
 - **DLQ replay (`src/resilience/dlq-replay.ts`):** respects the §B3 DLQ taxonomy — **skips
-  non-retryable poison** (firewall-block / breaker-open); only replays the retries-exhausted class.
+  non-retryable poison** (firewall-block / breaker-open; since 2.0.1 also the per-task and workflow
+  budget breaches); replays the retries-exhausted class and the per-agent budget breach.
 
 ## Invariants preserved (kaiban-actor-invariants)
 I4 (workers never set `teamWorkflowStatus` — only the orchestrator owns lifecycle), I5

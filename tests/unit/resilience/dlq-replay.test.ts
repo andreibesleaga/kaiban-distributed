@@ -151,6 +151,35 @@ describe("replayDlq", () => {
     expect(DLQ_POISON_REASONS.has("retries_exhausted")).toBe(false);
   });
 
+  it("budget breaches: run and task caps are poison, the per-agent cap is replayed", async () => {
+    const driver = makeDriver();
+    const breach = (taskId: string, code: string): DlqRecord =>
+      dlqRecord(taskId, "writer", {
+        status: "failed",
+        error: code,
+        reason: `${code}: details`,
+        instruction: "write",
+      });
+    const result = await replayDlq({
+      driver,
+      records: [
+        breach("t-run", "budget_exceeded"),
+        breach("t-task", "task_token_budget_exceeded"),
+        breach("t-agent", "token_budget_exceeded"),
+      ],
+    });
+    expect(result.skippedReasons).toEqual([
+      { taskId: "t-run", reason: "budget_exceeded" },
+      { taskId: "t-task", reason: "task_token_budget_exceeded" },
+    ]);
+    expect(result.replayed).toBe(1);
+    const [queue, payload] = driver.published[0]!;
+    expect(queue).toBe("kaiban-agents-writer");
+    expect(payload.taskId).toBe("t-agent");
+    expect(payload.data).toEqual({ instruction: "write" });
+    expect(DLQ_POISON_REASONS.has("token_budget_exceeded")).toBe(false);
+  });
+
   it("returns a zero result for an empty batch", async () => {
     const driver = makeDriver();
     const result = await replayDlq({ driver, records: [] });

@@ -1,18 +1,29 @@
 /**
  * DLQ replay (master plan §B3 / Phase R, ADR-018).
  *
- * Re-dispatches **retries-exhausted** dead-letter records back onto their agent
+ * Re-dispatches **retries-exhausted** and per-agent budget-breach dead-letter records back onto their agent
  * mailbox so a transient failure (LLM 5xx, timeout, rate-limit) can be retried
  * after the cause clears — while **skipping non-retryable poison**.
  *
  * ## DLQ taxonomy (§B3)
- * The `AgentActor` publishes three kinds of failure to `kaiban-events-failed`:
+ * The `AgentActor` publishes these kinds of failure to `kaiban-events-failed`:
  *   - **retries-exhausted** — the real handler error after 3× linear retry. The
  *     `error` is the underlying message (e.g. `"LLM 503 …"`). **Retryable.**
  *   - **firewall-block** — `error === "blocked_by_semantic_firewall"` (+`reason`).
  *     **Poison** — replaying would just be blocked again.
  *   - **breaker-open** — `error === "circuit_breaker_open"`. **Poison** —
  *     replaying punches through a tripped breaker.
+ *   - **budget breach** — `error` is the `BudgetExceededError.reasonCode`. A
+ *     workflow cap (`budget_exceeded`) or a per-task cap
+ *     (`task_token_budget_exceeded`) is **poison**: the run or the task itself
+ *     used up its budget, so a replay would pay for it again past that cap. A
+ *     per-agent cap (`token_budget_exceeded`) is **retryable**: it belongs to
+ *     the worker process (an in-memory tally that resets on restart), not to
+ *     the task, so the task can run once that worker has restarted or another
+ *     worker of the agent takes it (replayed earlier, the pre-flight check
+ *     refuses it again without a paid call). If the breach happened after a
+ *     successful paid call (the result was discarded at the cap), a replay pays
+ *     for the task again — the operator decides whether to replay those.
  *
  * Replay is a **manual / operator** action (not automatic): you read records off
  * the DLQ (out of band), hand them to `replayDlq`, and it republishes only the
@@ -35,10 +46,12 @@ const log = createLogger("DlqReplay");
 export const DLQ_POISON_REASONS: ReadonlySet<string> = new Set([
   "blocked_by_semantic_firewall",
   "circuit_breaker_open",
-  // Non-retryable budget breaches (`BudgetExceededError.reasonCode`): the same
-  // cap refuses the task again until the operator raises or removes it.
+  // Budget breaches of the run or the task itself
+  // (`BudgetExceededError.reasonCode`): a replay would pay for the task again
+  // past the cap it already reached. The per-agent breach
+  // (`token_budget_exceeded`) is NOT here — it is a property of the worker
+  // process, whose in-memory tally resets on restart, so it can be replayed.
   "budget_exceeded",
-  "token_budget_exceeded",
   "task_token_budget_exceeded",
 ]);
 

@@ -11,6 +11,16 @@ import { Redis } from 'ioredis';
 // @public
 export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
 
+// @public
+export interface AgentInfo {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    role: string;
+}
+
 // @public (undocumented)
 export interface AgentNodeConfig {
     // Warning: (ae-forgotten-export) The symbol "KaibanAgentConfig" needs to be exported by the entry point index.d.ts
@@ -24,15 +34,28 @@ export interface AgentNodeConfig {
 }
 
 // @public
+export class AgentStatePublisher {
+    constructor(redisUrl: string, agentInfo: AgentInfo, opts?: AgentStatePublisherOpts);
+    // (undocumented)
+    disconnect(): Promise<void>;
+    getTotalTokensUsed(): number;
+    publishIdle(heartbeatIntervalMs?: number): void;
+    wrapHandler(handler: TaskHandler): TaskHandler;
+}
+
+// @public (undocumented)
+export interface AgentStatePublisherOpts {
+    maxTaskTokenBudget?: number;
+    maxTokenBudget?: number;
+}
+
+// @public
 export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
 
 // @public
 export interface AttemptUsage {
-    // (undocumented)
     estimatedCost: number;
-    // (undocumented)
     inputTokens: number;
-    // (undocumented)
     outputTokens: number;
 }
 
@@ -77,9 +100,6 @@ export class CompletionRouter {
     }>>;
 }
 
-// Warning: (ae-forgotten-export) The symbol "AgentInfo" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "AgentStatePublisher" needs to be exported by the entry point index.d.ts
-//
 // @public
 export function createAgentStatePublisher(redisUrl: string, agentInfo: AgentInfo, env?: NodeJS.ProcessEnv): AgentStatePublisher;
 
@@ -125,9 +145,7 @@ export type DriverType = "bullmq" | "kafka" | "amqp";
 // @public
 export class FailedAttemptError extends DomainError {
     constructor(message: string, usage: AttemptUsage);
-    // (undocumented)
     readonly code = "ATTEMPT_FAILED";
-    // (undocumented)
     readonly usage: AttemptUsage;
 }
 
@@ -183,6 +201,20 @@ export interface Logger {
     separator(char?: string, len?: number): void;
     // (undocumented)
     warn(msg: string): void;
+}
+
+// @public (undocumented)
+export interface MessagePayload {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    data: Record<string, unknown>;
+    // (undocumented)
+    taskId: string;
+    // (undocumented)
+    timestamp: number;
+    // (undocumented)
+    traceHeaders?: Record<string, string>;
 }
 
 // @public
@@ -300,6 +332,9 @@ export interface StepCheckpoint {
     // (undocumented)
     taskId: string;
 }
+
+// @public
+export type TaskHandler = (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>;
 
 // @public
 export const UNLIMITED: number;

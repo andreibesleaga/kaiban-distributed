@@ -235,6 +235,26 @@ describe("failed attempts count against the caps (FailedAttemptError usage)", ()
     expect((third as BudgetExceededError).reasonCode).toBe("task_token_budget_exceeded");
   });
 
+  it("invalid usage numbers (non-finite, negative, missing) count as 0 and cannot switch the caps off", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTokenBudget: 100 });
+    const failWith = (usage: unknown): ((p: MessagePayload) => Promise<unknown>) =>
+      pub.wrapHandler(async () => {
+        throw new FailedAttemptError("KaibanJS workflow errored: boom", usage as never);
+      });
+    await failWith(undefined)(payload("t0")).catch(() => undefined); // no usage object at all
+    await failWith({ inputTokens: 5 })(payload("t1")).catch(() => undefined); // outputTokens missing
+    await failWith({ inputTokens: Number.NaN, outputTokens: 7 })(payload("t2")).catch(() => undefined);
+    await failWith({ inputTokens: Infinity, outputTokens: -50 })(payload("t3")).catch(() => undefined);
+    await failWith({ inputTokens: "3", outputTokens: "x" })(payload("t4")).catch(() => undefined);
+    expect(pub.getTotalTokensUsed()).toBe(15); // 5 + 7 + 0 + 3
+
+    // The tally stayed a finite number, so a large success still breaches the cap.
+    const err = await pub
+      .wrapHandler(makeProvider(1000).handler)(payload("t5"))
+      .catch((e: unknown) => e);
+    expect((err as BudgetExceededError).reasonCode).toBe("token_budget_exceeded");
+  });
+
   it("a plain Error carries no usage and is not counted", async () => {
     const pub = new AgentStatePublisher("redis://x", info, { maxTaskTokenBudget: 1 });
     const err = await pub
@@ -244,5 +264,128 @@ describe("failed attempts count against the caps (FailedAttemptError usage)", ()
       .catch((e: unknown) => e);
     expect((err as Error).message).toBe("network down");
     expect(pub.getTotalTokensUsed()).toBe(0);
+  });
+});
+
+describe("success-path usage is cleaned like failed-attempt usage", () => {
+  it("a non-numeric or negative usage field counts as 0 and cannot switch the agent cap off", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTokenBudget: 100 });
+    const succeedWith = (usage: Record<string, unknown>): ((p: MessagePayload) => Promise<unknown>) =>
+      pub.wrapHandler(async () => ({ answer: "ok", estimatedCost: 0, ...usage }));
+    await succeedWith({ inputTokens: "n/a", outputTokens: 1 })(payload("t1"));
+    await succeedWith({ inputTokens: 4, outputTokens: -1 })(payload("t2")); // a -1 "unknown" sentinel
+    await succeedWith({ inputTokens: Number.NaN, outputTokens: Infinity })(payload("t3"));
+    expect(pub.getTotalTokensUsed()).toBe(5); // 0 + 1 + 4 + 0 + 0 + 0
+
+    const err = await pub
+      .wrapHandler(makeProvider(1000).handler)(payload("t4"))
+      .catch((e: unknown) => e);
+    expect((err as BudgetExceededError).reasonCode).toBe("token_budget_exceeded");
+  });
+});
+
+describe("one sanitiser for every spend number (success path, failed attempts, the board)", () => {
+  /** Every task delta published to the board, parsed. */
+  function publishedTasks(): Array<Record<string, unknown>> {
+    return (mockPublish.mock.calls as Array<[string, string]>).flatMap(([, raw]) => {
+      const parsed = JSON.parse(raw) as { tasks?: Array<Record<string, unknown>> };
+      return parsed.tasks ?? [];
+    });
+  }
+
+  it("-1 counts and a negative estimatedCost cannot lower the spend, and nothing negative reaches the board", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTokenBudget: 100 });
+    await pub.wrapHandler(makeProvider(40).handler)(payload("t1")); // 40
+    await pub.wrapHandler(async () => ({
+      answer: "ok",
+      inputTokens: -1,
+      outputTokens: -1,
+      estimatedCost: -1, // KaibanJS's cost for a model missing from its price table
+    }))(payload("t2"));
+    await pub.wrapHandler(async () => ({
+      answer: "ok",
+      inputTokens: -1_000,
+      outputTokens: 5,
+      estimatedCost: Number.NaN,
+    }))(payload("t3"));
+    expect(pub.getTotalTokensUsed()).toBe(45); // 40 + 0 + 5
+
+    const done = publishedTasks().filter((t) => t["status"] === "DONE");
+    expect(done.map((t) => [t["taskId"], t["tokens"], t["cost"]])).toEqual([
+      ["t1", 40, 0.001],
+      ["t2", 0, 0],
+      ["t3", 5, 0],
+    ]);
+    for (const [, raw] of mockPublish.mock.calls as Array<[string, string]>) {
+      // A negative number, or NaN (which JSON renders as null), never appears.
+      expect(raw).not.toMatch(/"(tokens|cost|totalTokens|estimatedCost)":(-|null)/);
+    }
+
+    // The cap still binds on real usage.
+    const err = await pub
+      .wrapHandler(makeProvider(60).handler)(payload("t4"))
+      .catch((e: unknown) => e);
+    expect((err as BudgetExceededError).reasonCode).toBe("token_budget_exceeded");
+  });
+
+  it("a failed attempt with negative usage cannot lower the tally", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTaskTokenBudget: 100 });
+    await pub.wrapHandler(makeProvider(60).handler)(payload("t1")); // 60
+    await pub
+      .wrapHandler(async () => {
+        throw new FailedAttemptError("KaibanJS workflow blocked: x", {
+          inputTokens: -1,
+          outputTokens: -500,
+          estimatedCost: -1,
+        });
+      })(payload("t1"))
+      .catch(() => undefined);
+    expect(pub.getTotalTokensUsed()).toBe(60);
+    const err = await pub
+      .wrapHandler(makeProvider(40).handler)(payload("t1"))
+      .catch((e: unknown) => e); // 100 >= 100
+    expect((err as BudgetExceededError).reasonCode).toBe("task_token_budget_exceeded");
+  });
+});
+
+describe("a failed attempt that reaches a cap keeps the original failure", () => {
+  const failing = (tokens: number): (() => Promise<unknown>) => async () => {
+    throw new FailedAttemptError("KaibanJS workflow blocked: tool quota exhausted", {
+      inputTokens: tokens,
+      outputTokens: 0,
+      estimatedCost: 0.001,
+    });
+  };
+
+  it("task cap: the breach message ends with the failure text and its cause is the original error", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTaskTokenBudget: 50 });
+    const err = await pub.wrapHandler(failing(60))(payload("t1")).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BudgetExceededError);
+    expect((err as BudgetExceededError).code).toBe("BUDGET_EXCEEDED");
+    expect((err as BudgetExceededError).reasonCode).toBe("task_token_budget_exceeded");
+    expect((err as Error).message).toBe(
+      "Task token budget exceeded: 60 >= 50 (failed attempt: KaibanJS workflow blocked: tool quota exhausted)",
+    );
+    expect((err as Error).cause).toBeInstanceOf(FailedAttemptError);
+    expect(((err as Error).cause as Error).message).toBe(
+      "KaibanJS workflow blocked: tool quota exhausted",
+    );
+  });
+
+  it("agent cap: same, with reasonCode token_budget_exceeded", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTokenBudget: 50 });
+    const err = await pub.wrapHandler(failing(50))(payload("t1")).catch((e: unknown) => e);
+    expect((err as BudgetExceededError).reasonCode).toBe("token_budget_exceeded");
+    expect((err as Error).message).toBe(
+      "Token budget exceeded: 50 >= 50 (failed attempt: KaibanJS workflow blocked: tool quota exhausted)",
+    );
+    expect((err as Error).cause).toBeInstanceOf(FailedAttemptError);
+  });
+
+  it("a success-path breach carries no failure detail and no cause", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTaskTokenBudget: 50 });
+    const err = await pub.wrapHandler(makeProvider(60).handler)(payload("t1")).catch((e: unknown) => e);
+    expect((err as Error).message).toBe("Task token budget exceeded: 60 >= 50");
+    expect((err as Error).cause).toBeUndefined();
   });
 });

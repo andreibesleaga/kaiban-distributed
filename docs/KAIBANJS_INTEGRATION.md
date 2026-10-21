@@ -107,7 +107,7 @@ The two systems are complementary:
 | `AgentActor` | Subscribes to a queue; runs task handler with retry + DLQ |
 | `createKaibanTaskHandler()` | Wraps a KaibanJS Agent into an AgentActor-compatible function |
 | `KaibanTeamBridge` | Wraps a full KaibanJS Team and syncs its Zustand state to the board |
-| `AgentStatePublisher` | Publishes IDLE/EXECUTING/DONE state to Redis Pub/Sub per worker |
+| `AgentStatePublisher` | Publishes IDLE/EXECUTING/DONE state to Redis Pub/Sub per worker; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
 | `DistributedStateMiddleware` | Intercepts Zustand `setState()` and publishes diffs |
 | `GatewayApp` | HTTP gateway: health, agent-card, A2A RPC |
 | `SocketGateway` | Socket.io server + Redis Pub/Sub subscriber |
@@ -222,21 +222,30 @@ export function createKaibanTaskHandler(
     const inputs = (payload.data['inputs'] as Record<string, unknown>) ?? {};
     const result = await team.start(inputs);
 
-    if (result.status === 'ERRORED') {
-      throw new Error(`KaibanJS workflow error: ${String(result.result ?? 'unknown')}`);
-    }
-
     const inputTokens  = result.stats?.llmUsageStats.inputTokens  ?? 0;
     const outputTokens = result.stats?.llmUsageStats.outputTokens ?? 0;
-    return {
+    const handlerResult = {
       answer:        String(result.result ?? ''),
       inputTokens,
       outputTokens,
       estimatedCost: estimateCost(agentConfig.llmConfig?.model ?? 'default', inputTokens, outputTokens),
     } satisfies KaibanHandlerResult;
+
+    if (!isSuccessfulWorkflowStatus(result.status)) {   // e.g. BLOCKED (ERRORED rejects start())
+      // The failed attempt was paid for: carry its usage so the state
+      // publisher counts it against the token caps before any retry.
+      throw new FailedAttemptError(
+        `KaibanJS workflow ${String(result.status).toLowerCase()}: ${extractWorkflowFailureReason(team, result) ?? 'unknown'}`,
+        { inputTokens, outputTokens, estimatedCost: handlerResult.estimatedCost },
+      );
+    }
+
+    return handlerResult;
   };
 }
 ```
+
+(Simplified: the real bridge also builds an abort-aware LLM when the actor passes a signal, and logs the cost of every attempt.) An attempt whose workflow ends BLOCKED (KaibanJS reports an LLM/provider error during a task this way) counts against the token caps through `FailedAttemptError`; once that reaches a cap the state publisher raises a non-retryable `BudgetExceededError` and the task is dead-lettered without a further retry. An ERRORED workflow makes `team.start()` reject; like any other thrown attempt it carries no usage and is not counted. A timed-out or aborted attempt still counts when its handler finishes later, with a result or a BLOCKED failure, which can be after the actor has retried. A custom `TaskHandler` must throw `FailedAttemptError` for its failed paid attempts to count.
 
 **MessagePayload schema** (what the orchestrator sends, what the handler receives):
 
@@ -528,111 +537,60 @@ export function buildSecurityDeps(): { actorDeps: AgentActorDeps; tokenProvider?
 
 ```typescript
 // examples/blog-team/researcher-node.ts
+// startAgentNode builds the driver and security deps, a capped AgentStatePublisher
+// (createAgentStatePublisher: MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET, defaults
+// 200000 / 50000), the KaibanJS handler and the AgentActor, publishes IDLE to the
+// board (heartbeat every 15s) and drains gracefully on SIGTERM.
 import 'dotenv/config';
-import { AgentActor } from '../../src/application/actor/AgentActor';
-import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
-import { createDriver } from './driver-factory';
+import { startAgentNode } from '../../src/shared';
 import { researcherConfig, RESEARCHER_QUEUE } from './team-config';
-import { buildSecurityDeps } from './build-security-deps';
 
-const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = createDriver('researcher');
-const { actorDeps, tokenProvider } = buildSecurityDeps();
-
-// AgentStatePublisher streams IDLE/EXECUTING/DONE to the board via Redis Pub/Sub
-const statePublisher = new AgentStatePublisher(REDIS_URL, {
-  agentId: 'researcher', name: 'Ava', role: 'News Researcher',
-});
-
-// Wrap handler to emit state transitions before/after execution
-const handler = statePublisher.wrapHandler(
-  createKaibanTaskHandler(researcherConfig, driver, tokenProvider)
-);
-
-const actor = new AgentActor('researcher', driver, RESEARCHER_QUEUE, handler, actorDeps);
-
-actor.start()
-  .then(() => {
-    console.log('[Researcher] Ava started →', RESEARCHER_QUEUE);
-    statePublisher.publishIdle();  // Board shows IDLE immediately; heartbeat every 15s
-  })
-  .catch((err: unknown) => { console.error('[Researcher] Startup failed:', err); process.exit(1); });
-
-process.on('SIGTERM', async () => {
-  await actor.stop();
-  await driver.disconnect();
-  await statePublisher.disconnect();
-  process.exit(0);
-});
+startAgentNode({
+  agentId:     process.env['AGENT_ID'] ?? 'researcher',
+  queue:       RESEARCHER_QUEUE,
+  agentConfig: researcherConfig,
+  displayName: 'Ava',
+  role:        'News Researcher',
+  label:       '[Researcher]',
+}).catch((err: unknown) => { console.error('[Researcher] Startup failed:', err); process.exit(1); });
 ```
 
 ### File 5: `writer-node.ts` — Worker Node
 
 ```typescript
 // examples/blog-team/writer-node.ts
+// Same pattern as researcher-node.ts (startAgentNode, capped state publisher).
 import 'dotenv/config';
-import { AgentActor } from '../../src/application/actor/AgentActor';
-import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
-import { createDriver } from './driver-factory';
+import { startAgentNode } from '../../src/shared';
 import { writerConfig, WRITER_QUEUE } from './team-config';
-import { buildSecurityDeps } from './build-security-deps';
 
-const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = createDriver('writer');
-const { actorDeps, tokenProvider } = buildSecurityDeps();
-
-const statePublisher = new AgentStatePublisher(REDIS_URL, {
-  agentId: 'writer', name: 'Kai', role: 'Content Creator',
-});
-
-const handler = statePublisher.wrapHandler(
-  createKaibanTaskHandler(writerConfig, driver, tokenProvider)
-);
-const actor = new AgentActor('writer', driver, WRITER_QUEUE, handler, actorDeps);
-
-actor.start()
-  .then(() => { console.log('[Writer] Kai started →', WRITER_QUEUE); statePublisher.publishIdle(); })
-  .catch((err: unknown) => { console.error('[Writer] Startup failed:', err); process.exit(1); });
-
-process.on('SIGTERM', async () => {
-  await actor.stop(); await driver.disconnect(); await statePublisher.disconnect(); process.exit(0);
-});
+startAgentNode({
+  agentId:     process.env['AGENT_ID'] ?? 'writer',
+  queue:       WRITER_QUEUE,
+  agentConfig: writerConfig,
+  displayName: 'Kai',
+  role:        'Content Creator',
+  label:       '[Writer]',
+}).catch((err: unknown) => { console.error('[Writer] Startup failed:', err); process.exit(1); });
 ```
 
 ### File 6: `editor-node.ts` — Worker Node
 
 ```typescript
 // examples/blog-team/editor-node.ts
+// Same pattern as researcher-node.ts (startAgentNode, capped state publisher).
 import 'dotenv/config';
-import { AgentActor } from '../../src/application/actor/AgentActor';
-import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
-import { createDriver } from './driver-factory';
+import { startAgentNode } from '../../src/shared';
 import { editorConfig, EDITOR_QUEUE } from './team-config';
-import { buildSecurityDeps } from './build-security-deps';
 
-const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = createDriver('editor');
-const { actorDeps, tokenProvider } = buildSecurityDeps();
-
-const statePublisher = new AgentStatePublisher(REDIS_URL, {
-  agentId: 'editor', name: 'Morgan', role: 'Editorial Fact-Checker',
-});
-
-const handler = statePublisher.wrapHandler(
-  createKaibanTaskHandler(editorConfig, driver, tokenProvider)
-);
-const actor = new AgentActor('editor', driver, EDITOR_QUEUE, handler, actorDeps);
-
-actor.start()
-  .then(() => { console.log('[Editor] Morgan started →', EDITOR_QUEUE); statePublisher.publishIdle(); })
-  .catch((err: unknown) => { console.error('[Editor] Startup failed:', err); process.exit(1); });
-
-process.on('SIGTERM', async () => {
-  await actor.stop(); await driver.disconnect(); await statePublisher.disconnect(); process.exit(0);
-});
+startAgentNode({
+  agentId:     process.env['AGENT_ID'] ?? 'editor',
+  queue:       EDITOR_QUEUE,
+  agentConfig: editorConfig,
+  displayName: 'Morgan',
+  role:        'Editorial Fact-Checker',
+  label:       '[Editor]',
+}).catch((err: unknown) => { console.error('[Editor] Startup failed:', err); process.exit(1); });
 ```
 
 ### File 7: `orchestrator.ts` — Full Orchestration with HITL
@@ -943,7 +901,7 @@ const result = await team.start({ destination: 'Tokyo' });
 import 'dotenv/config';
 import { AgentActor } from '../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { AgentStatePublisher } from '../src/adapters/state/agent-state-publisher';
+import { createAgentStatePublisher } from '../src/shared';
 import { BullMQDriver } from '../src/infrastructure/messaging/bullmq-driver';
 
 const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
@@ -957,7 +915,8 @@ const handler = createKaibanTaskHandler({
   llmConfig: { provider: 'openai', model: 'gpt-4o-mini', apiKey: process.env.OPENAI_API_KEY! },
 }, driver);
 
-const statePublisher = new AgentStatePublisher('redis://localhost:6379', {
+// Applies MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET (defaults 200000 / 50000)
+const statePublisher = createAgentStatePublisher('redis://localhost:6379', {
   agentId: 'trip-planner', name: 'TravelPlanner', role: 'Travel Planning Specialist',
 });
 
@@ -1602,14 +1561,14 @@ const result = await executeDag([
 
 ### 8.5 Retry and Error Handling
 
-`AgentActor` automatically retries up to 3 times with linear backoff (100ms × attempt → 100/200ms between attempts). After all retries, the task is sent to `kaiban-events-failed` (DLQ).
+`AgentActor` automatically retries up to 3 times with linear backoff (100ms × attempt → 100/200ms between attempts). After all retries, the task is sent to `kaiban-events-failed` (DLQ). A `NonRetryableError` (e.g. `BudgetExceededError` from a token cap) goes to the DLQ after that one attempt.
 
 ```typescript
 // AgentActor retry logic (from src/application/actor/AgentActor.ts)
 const RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 100;
 
-// On failure: 100ms → 200ms → 300ms → DLQ
+// On failure: attempt 1 → 100ms → attempt 2 → 200ms → attempt 3 → DLQ (no delay after the last)
 // Each retry re-calls the handler → KaibanJS Team.start() (fresh Team per task)
 // On success: publishes to kaiban-events-completed
 ```
@@ -1729,7 +1688,7 @@ import { ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate, H
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { AgentActor } from '../src/application/actor/AgentActor';
-import { AgentStatePublisher } from '../src/adapters/state/agent-state-publisher';
+import { createAgentStatePublisher } from '../src/shared';
 import { BullMQDriver } from '../src/infrastructure/messaging/bullmq-driver';
 import type { MessagePayload } from '../src/infrastructure/messaging/interfaces';
 
@@ -1812,7 +1771,8 @@ const researchTaskHandler = createKaibanTaskHandler(
   driver,
 );
 
-const statePublisher = new AgentStatePublisher(REDIS_URL, {
+// Applies MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET (defaults 200000 / 50000)
+const statePublisher = createAgentStatePublisher(REDIS_URL, {
   agentId: 'research-workflow', name: 'ResearchAgent', role: 'AI Research Workflow',
 });
 

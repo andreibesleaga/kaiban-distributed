@@ -6,7 +6,8 @@
 
 ## Context
 The runtime already does **per-task** token accounting (`AgentStatePublisher.maxTokenBudget`) and shows
-it on the board economics panel. v2.0 adds **fleet-wide** cost control: a global/per-tenant/per-agent
+it on the board economics panel. *(Correction, 2026-10: `maxTokenBudget` is the per-agent cap; the
+per-task cap is `maxTaskTokenBudget`.)* v2.0 adds **fleet-wide** cost control: a global/per-tenant/per-agent
 rate + cost limiter, pre-exec admission control, prompt-cache accounting, and model right-sizing — to
 discharge the on-record ASVS "global cross-agent rate limit" and keep spend bounded across the whole
 deployment. The §B1.3 **COST guard** is hard: this layer must **not** change the existing per-task
@@ -41,7 +42,7 @@ gates everything; when false, admission is always `allow` and no limiter is cons
   `ECONOMICS_WINDOW_SECONDS`, `ECONOMICS_DEGRADE_THRESHOLD`).
 
 ## Invariants preserved
-- **§B1.3 COST guard:** per-task accounting (`maxTokenBudget`) and the board economics panel are
+- **§B1.3 COST guard:** per-agent / per-task token accounting (`maxTokenBudget` / `maxTaskTokenBudget`) and the board economics panel are
   untouched; this is an additive *fleet* layer.
 - **Default-off / fail-open-when-disabled (invariant #8):** `enabled:false` ⇒ admission always allows,
   the limiter is never constructed/consulted.

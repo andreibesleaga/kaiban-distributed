@@ -96,7 +96,8 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   const { actorDeps, tokenProvider } = buildSecurityDeps();
 
   // Per-agent and per-task token caps, enforced by the publisher's wrapHandler
-  // before and after every task (failed paid attempts included).
+  // before and after every task attempt (attempts whose KaibanJS workflow ends
+  // BLOCKED included).
   const statePublisher = createAgentStatePublisher(redisUrl, {
     agentId,
     name: displayName,

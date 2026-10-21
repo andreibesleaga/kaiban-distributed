@@ -252,7 +252,11 @@ describe("createAgentStatePublisher — the shared, capped publisher for custom 
   it("passes both resolved token caps (defaults 200 000 / 50 000 when unset)", async () => {
     const { AgentStatePublisher } =
       await import("../../../src/adapters/state/agent-state-publisher");
-    const info = { agentId: "searcher-2", name: "Zara-2", role: "Web Research Specialist" };
+    const info = {
+      agentId: "searcher-2",
+      name: "Zara-2",
+      role: "Web Research Specialist",
+    };
     const publisher = createAgentStatePublisher("redis://r:6379", info, {});
     expect(publisher).toBe(mockStatePublisherInstance);
     expect(AgentStatePublisher).toHaveBeenCalledWith("redis://r:6379", info, {
@@ -279,4 +283,3 @@ describe("createAgentStatePublisher — the shared, capped publisher for custom 
     });
   });
 });
-

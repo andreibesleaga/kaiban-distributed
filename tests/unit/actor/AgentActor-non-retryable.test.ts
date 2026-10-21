@@ -114,10 +114,13 @@ describe("AgentActor — non-retryable errors", () => {
     );
   });
 
-  it("the DLQ reason codes of a budget breach are poison for replayDlq", () => {
-    for (const code of ["budget_exceeded", "token_budget_exceeded", "task_token_budget_exceeded"]) {
+  it("the DLQ reason codes of a run or task budget breach are poison for replayDlq; the per-agent one is not", () => {
+    for (const code of ["budget_exceeded", "task_token_budget_exceeded"]) {
       expect(DLQ_POISON_REASONS.has(code)).toBe(true);
     }
+    // The per-agent tally is held in memory by the worker and resets on restart:
+    // it is not a property of the task, so the record stays replayable.
+    expect(DLQ_POISON_REASONS.has("token_budget_exceeded")).toBe(false);
   });
 
   it("an ordinary Error still gets the three attempts (unchanged behaviour)", async () => {
@@ -188,6 +191,10 @@ describe("AgentActor — non-retryable errors", () => {
     const dlq = published("kaiban-events-failed");
     expect(dlq).toHaveLength(1);
     expect(dlq[0]?.data["error"]).toBe("task_token_budget_exceeded");
+    // The DLQ record keeps the original failure text next to the stable code.
+    expect(dlq[0]?.data["reason"]).toBe(
+      "Task token budget exceeded: 60 >= 50 (failed attempt: KaibanJS workflow errored: boom)",
+    );
 
     // 30 per failed attempt: attempt 1 (30) is retried, attempt 2 (60) stops —
     // two paid requests instead of the three a plain failure gets.

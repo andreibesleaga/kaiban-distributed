@@ -54,27 +54,37 @@ export abstract class NonRetryableError extends DomainError {
 
 /** Token usage of one paid LLM attempt (the handler-result usage fields). */
 export interface AttemptUsage {
+  /** Tokens sent to the model in this attempt. */
   inputTokens: number;
+  /** Tokens received from the model in this attempt. */
   outputTokens: number;
+  /** Estimated USD cost of this attempt (not counted by the token caps). */
   estimatedCost: number;
 }
 
 /**
  * A task attempt that failed AFTER it spent tokens (e.g. a KaibanJS workflow
- * that ended ERRORED or BLOCKED). It stays retryable — it is not a
- * `NonRetryableError` — but carries the attempt's `usage`, so
+ * that ended BLOCKED; an ERRORED one makes `team.start()` reject). It stays
+ * retryable — it is not a `NonRetryableError` — but carries the attempt's
+ * `usage`, so
  * `AgentStatePublisher.wrapHandler` counts it against the per-agent and
  * per-task token caps before the actor retries. When that reaches a cap the
  * publisher raises a non-retryable `BudgetExceededError` instead, and no
- * further paid attempt is made.
+ * further paid attempt is made. Only this error carries usage: a custom
+ * `TaskHandler` must throw it for its failed paid attempts to count, and any
+ * other thrown error is not counted. A timed-out attempt still counts when its
+ * handler finishes later — by returning a result or by throwing this error —
+ * which can be after the retry has started.
  */
 export class FailedAttemptError extends DomainError {
+  /** Stable, machine-readable error code. */
   readonly code = "ATTEMPT_FAILED";
 
-  constructor(
-    message: string,
-    public readonly usage: AttemptUsage,
-  ) {
+  /** Usage of the failed attempt (the publisher counts a non-finite or negative value as 0). */
+  readonly usage: AttemptUsage;
+
+  constructor(message: string, usage: AttemptUsage) {
     super(message);
+    this.usage = usage;
   }
 }

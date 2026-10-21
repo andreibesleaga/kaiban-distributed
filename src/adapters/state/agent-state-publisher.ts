@@ -14,11 +14,19 @@ import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import { sanitizeDelta } from "./distributedMiddleware";
 import { createStructuredLogger } from "../../shared/structured-logger";
-import { BudgetExceededError, formatCap } from "../../shared/budget";
-import { FailedAttemptError } from "../../domain/errors/DomainError";
+import {
+  BudgetExceededError,
+  cleanSpendAmount,
+  formatCap,
+} from "../../shared/budget";
+import {
+  FailedAttemptError,
+  type AttemptUsage,
+} from "../../domain/errors/DomainError";
 
 const log = createStructuredLogger({ component: "AgentStatePublisher" });
 
+/** Identity of an agent as the board shows it. */
 export interface AgentInfo {
   agentId: string;
   name: string;
@@ -67,15 +75,17 @@ const MAX_TRACKED_TASKS = 1_000;
 
 export interface AgentStatePublisherOpts {
   /**
-   * Max cumulative tokens for this agent process (all tasks). Checked BEFORE a
-   * task runs (a task that finds the cap already met is refused without an LLM
-   * call) and after each result or usage-carrying failed attempt. `Infinity`,
-   * `undefined` or `0` = unlimited
-   * (the env path, `resolveSpendCaps`, never yields `0`).
+   * Max cumulative tokens for this agent — this publisher instance, all tasks;
+   * the tally is in memory and resets on restart. Checked BEFORE a task runs
+   * (a task that finds the cap already met is refused without an LLM call) and
+   * after each result or usage-carrying failed attempt. `Infinity`,
+   * `undefined` or `0` = unlimited (the env path, `resolveSpendCaps`, never
+   * yields `0`).
    */
   maxTokenBudget?: number;
   /**
-   * Max tokens one task may consume across all its deliveries/attempts. Checked
+   * Max tokens one task may consume across all its deliveries/attempts that
+   * reach this publisher (the last 1 000 taskIds are tracked). Checked
    * before the task runs and after each result — including a failed attempt
    * whose `FailedAttemptError` carries its usage. `Infinity`/`undefined`/`0` =
    * unlimited.
@@ -88,6 +98,12 @@ function cappedAt(cap: number | undefined): number | null {
   return cap !== undefined && Number.isFinite(cap) && cap > 0 ? cap : null;
 }
 
+/**
+ * Publishes an agent's state to the board and enforces its token caps.
+ * `new AgentStatePublisher(url, info)` with no `opts` applies NO caps; a worker
+ * should use `createAgentStatePublisher()` (from `kaiban-distributed/shared`
+ * or the root entry), which reads `MAX_TOKEN_BUDGET` / `MAX_TASK_TOKEN_BUDGET`.
+ */
 export class AgentStatePublisher {
   private redis: Redis;
   private agentInfo: AgentInfo;
@@ -108,7 +124,7 @@ export class AgentStatePublisher {
     this.maxTaskTokenBudget = cappedAt(opts?.maxTaskTokenBudget);
   }
 
-  /** Cumulative tokens this agent process has consumed. */
+  /** Cumulative tokens this agent (this publisher instance) has consumed. */
   getTotalTokensUsed(): number {
     return this.totalTokensUsed;
   }
@@ -141,11 +157,14 @@ export class AgentStatePublisher {
   /**
    * Account a finished task's tokens against the agent and task tallies and
    * return the breach (if any) to raise — task cap first, then agent cap.
+   * `detail`, when given, is appended to the breach message in parentheses.
    */
   private accountTokens(
     taskId: string,
     totalTokens: number,
+    detail?: string,
   ): BudgetExceededError | null {
+    const suffix = detail === undefined ? "" : ` (${detail})`;
     this.totalTokensUsed += totalTokens;
     const taskUsed = (this.taskTokensUsed.get(taskId) ?? 0) + totalTokens;
     this.taskTokensUsed.delete(taskId);
@@ -156,7 +175,7 @@ export class AgentStatePublisher {
     }
     if (this.maxTaskTokenBudget !== null && taskUsed >= this.maxTaskTokenBudget) {
       return new BudgetExceededError(
-        `Task token budget exceeded: ${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}`,
+        `Task token budget exceeded: ${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}${suffix}`,
         "task_token_budget_exceeded",
       );
     }
@@ -165,7 +184,7 @@ export class AgentStatePublisher {
       this.totalTokensUsed >= this.maxTokenBudget
     ) {
       return new BudgetExceededError(
-        `Token budget exceeded: ${this.totalTokensUsed} >= ${formatCap(this.maxTokenBudget)}`,
+        `Token budget exceeded: ${this.totalTokensUsed} >= ${formatCap(this.maxTokenBudget)}${suffix}`,
         "token_budget_exceeded",
       );
     }
@@ -244,10 +263,15 @@ export class AgentStatePublisher {
       const kaibanResult = result as Record<string, unknown>;
       if ("inputTokens" in kaibanResult && "outputTokens" in kaibanResult) {
         return {
+          // Cleaned like failed-attempt usage: a handler result can carry any
+          // value (a custom handler, or a cost copied from KaibanJS, which
+          // reports -1 as the cost of a model missing from its price table),
+          // and a NaN or negative number must neither switch the caps off nor
+          // lower the tally, nor reach the board.
           totalTokens:
-            Number(kaibanResult["inputTokens"] ?? 0) +
-            Number(kaibanResult["outputTokens"] ?? 0),
-          estimatedCost: Number(kaibanResult["estimatedCost"] ?? 0),
+            cleanSpendAmount(kaibanResult["inputTokens"]) +
+            cleanSpendAmount(kaibanResult["outputTokens"]),
+          estimatedCost: cleanSpendAmount(kaibanResult["estimatedCost"]),
         };
       }
     }
@@ -405,16 +429,24 @@ export class AgentStatePublisher {
   }
 
   /**
-   * Count the usage a `FailedAttemptError` carries. Returns the cap breach to
-   * raise instead of the failure (non-retryable), else the original error.
+   * Count the usage a `FailedAttemptError` carries (a non-finite, negative or
+   * missing count is taken as 0, so a bad value cannot switch the caps off).
+   * Returns the cap breach to raise instead of the failure (non-retryable),
+   * else the original error. The breach keeps the failure: its message ends
+   * with `(failed attempt: <original message>)` — the DLQ record's `reason` —
+   * and its `cause` is the original error; the `reasonCode` is unchanged.
    */
   private accountFailedAttempt(taskId: string, err: unknown): unknown {
     if (!(err instanceof FailedAttemptError)) return err;
+    // A JS caller (or a cast) can pass a partial or missing usage object.
+    const usage: Partial<AttemptUsage> | undefined = err.usage;
     const breach = this.accountTokens(
       taskId,
-      err.usage.inputTokens + err.usage.outputTokens,
+      cleanSpendAmount(usage?.inputTokens) + cleanSpendAmount(usage?.outputTokens),
+      `failed attempt: ${err.message}`,
     );
     if (!breach) return err;
+    breach.cause = err;
     log.warn(
       { taskId, reasonCode: breach.reasonCode, failure: err.message },
       "Failed attempt reached a token cap — not retrying",

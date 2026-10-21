@@ -8,7 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - **Spend caps are on by default with low ceilings** (roadmap §7.2 item 2 groundwork). When nothing
-  is set: `MAX_WORKFLOW_COST_USD=0.50`, `MAX_TOKEN_BUDGET=200000` (per agent process) and the new
+  is set: `MAX_WORKFLOW_COST_USD=0.50`, `MAX_TOKEN_BUDGET=200000` (per agent, i.e. per
+  `AgentStatePublisher` in its worker process) and the new
   `MAX_TASK_TOKEN_BUDGET=50000` (per task, all attempts). One resolver (`resolveSpendCaps` in
   `src/shared/budget.ts`, also used by `loadConfig()` and `startAgentNode`) parses all four caps:
   the literal value `unlimited` (case-insensitive) is the **only** way to remove a cap; `0`,
@@ -33,19 +34,54 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that is still at its cap stays stopped (no second `onStopped`); a larger cap lets it continue.
   Spend is now accounted **before** `store.save` in `runStep` and `memoize`, so a failed save can
   neither drop it nor let a retry pass the cap. Previously totals restarted from zero on resume.
-  (The example orchestrators still keep their own per-run totals and clear the checkpoint on a
-  budget stop — roadmap §7.4.)
-- Failed attempts count against the token caps: the KaibanJS bridge throws the new
-  `FailedAttemptError` (still retryable) with the attempt's token usage when a workflow ends
-  ERRORED/BLOCKED, and `AgentStatePublisher.wrapHandler` adds that usage to the agent and task
-  tallies before the failure propagates. When that reaches `MAX_TOKEN_BUDGET` or
-  `MAX_TASK_TOKEN_BUDGET` it raises `BudgetExceededError` instead, so the actor makes no further
-  paid retry. Previously a failed attempt's tokens were not counted.
+  The persisted spend comes only from step results that carry usage (`inputTokens` /
+  `outputTokens` / `estimatedCost`, or a custom `spendOf`) and from `recordSpend()`. The example
+  orchestrators do neither (their memoized phase values carry no top-level `inputTokens` /
+  `outputTokens` / `estimatedCost`; blog-team: `tokens` / `cost`; global-research: a context
+  snapshot), so their persisted spend is zero: they enforce the budget with their own totals
+  (`assertWithinBudget`; blog-team's reset on resume, global-research's restored from its
+  snapshot) and clear the checkpoint on a budget stop — roadmap §7.4. A restored stop record carries the detail computed
+  from the restored totals and the current budget. `clear()` now also resets the in-memory totals
+  and the stop record, and the instance saves nothing more until a new step completes, so a late
+  `recordSpend()` (or a step that was in flight) cannot re-create the deleted record; a
+  checkpoint load still in flight is discarded (whether it succeeds or fails: a failure neither
+  triggers a reload nor adds the saved spend a second time), and the delete runs in order with the
+  saves. The reset happens when the saves queued before `clear()` have finished, so spend recorded
+  between calling `clear()` and that point is reset too. A
+  throwing `onStopped` callback is logged and ignored, so it cannot keep a paid step from being
+  saved. Checkpoints
+  written by this version contain the `__workflow_spend__` entry; an older 2.0.x reading one sees
+  it as a completed step (`isResuming()` true, an extra row in a custom `CheckpointStore`), so
+  clear the checkpoint before downgrading.
+- Failed KaibanJS attempts (workflow ended BLOCKED) count against the token caps: the KaibanJS
+  bridge throws the new `FailedAttemptError` (still retryable) with the attempt's token usage when
+  `team.start()` resolves with a non-success status (KaibanJS 0.24.2 resolves BLOCKED when an
+  LLM/provider error blocks the task), and `AgentStatePublisher.wrapHandler` adds that usage (a
+  non-finite or negative count as 0, on the success path too) to the agent and task tallies before
+  the failure propagates. When that reaches `MAX_TOKEN_BUDGET` or `MAX_TASK_TOKEN_BUDGET` it raises
+  `BudgetExceededError` instead, so the actor makes no further paid retry (and, being
+  non-retryable, records no circuit-breaker failure). Previously a failed attempt's tokens were not
+  counted. Thrown attempts are still not counted: an ERRORED workflow makes `team.start()` reject
+  with no usage. A timed-out or aborted attempt still counts when its handler finishes later, with
+  a result or a BLOCKED failure, which can be after the retry has started, and a custom
+  `TaskHandler` must throw `FailedAttemptError` for its failed paid attempts to count. When failed
+  attempts reach a token cap, the `BudgetExceededError` keeps the original failure: its message
+  (the DLQ record's `reason`) ends with `(failed attempt: <original message>)` and its `cause` is
+  the `FailedAttemptError`; the DLQ `error` code is unchanged.
+- One sanitiser (`cleanSpendAmount` in `src/shared/budget.ts`) cleans every spend number before it
+  is counted or published: the publisher's token counts and success-path `estimatedCost` (the
+  board's `tokens` / `cost`), `WorkflowOrchestrator` spend from `recordSpend()` and from any
+  `spendOf` (custom or default `spendOfHandlerResult`), and the restored checkpoint spend. A
+  non-finite or negative value counts as 0, so `NaN` can no longer switch the workflow cap off and
+  a `-1` (or other negative) value can no longer lower the spend or reach the board.
 - `BudgetExceededError` now extends the new `NonRetryableError` (`src/domain/errors`), carries a
   `reasonCode`, and `AgentActor.executeWithRetries` re-throws any `NonRetryableError` on the first
   attempt: one handler call, no breaker failure, one DLQ record with `error` = the reason code
-  (`token_budget_exceeded`, `task_token_budget_exceeded`, `budget_exceeded` — poison for
-  `replayDlq`) and `reason` = the message. Previously a budget breach was retried twice more.
+  (`token_budget_exceeded`, `task_token_budget_exceeded`, `budget_exceeded`) and `reason` = the
+  message. `replayDlq` skips the workflow (`budget_exceeded`) and per-task
+  (`task_token_budget_exceeded`) breaches as poison; the per-agent breach
+  (`token_budget_exceeded`) is replayable, because that tally is held in the worker process and
+  resets on restart — it is not a property of the task. Previously a budget breach was retried twice more.
 - `buildSecurityDeps()` logs a warning when `ECONOMICS_ENABLED=true`, because the deployed worker
   wires no fleet cost limiter (roadmap §2 / ADR-023).
 - Example compose files default `MAX_WORKFLOW_TOKENS` to `unlimited` (was `0`).
@@ -66,7 +102,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `0 = unlimited`.
 - The global-research searcher runs with the token caps: it builds its publisher with the new
   `createAgentStatePublisher()` (exported from `kaiban-distributed/shared`, also used by
-  `startAgentNode`) instead of an uncapped `new AgentStatePublisher(...)`.
+  `startAgentNode`) instead of an uncapped `new AgentStatePublisher(...)`. The
+  `kaiban-distributed/shared` entry also exports the types `AgentInfo`, `AgentStatePublisher`,
+  `AgentStatePublisherOpts`, `TaskHandler` and `MessagePayload` (additive). The root entry still
+  exports `AgentStatePublisher`, whose `new AgentStatePublisher(url, info)` without opts applies
+  no caps; workers should use `createAgentStatePublisher()`, which the root entry now exports too,
+  with the types `AgentInfo` and `AgentStatePublisherOpts` (additive). The README and
+  `docs/KAIBANJS_INTEGRATION.md` worker samples now use `startAgentNode` or
+  `createAgentStatePublisher()`.
+- Downstream note: `kaiban-distributed-examples` has its lockfile at 2.0.0, but its `^2.0.0`
+  range accepts the next 2.x on a fresh install or a Dependabot bump; with that bump its worker
+  services must forward `MAX_TOKEN_BUDGET` and `MAX_TASK_TOKEN_BUDGET`
+  in their compose files (and its `MAX_WORKFLOW_TOKENS` defaults / `0 = unlimited` text change to
+  `unlimited`), or its workers run at the 200000 / 50000 defaults.
 - CI: `npm ci` failed in the Quality, Security and Docker jobs (and would have in the nightly,
   release and publish lanes) after the Dependabot updates of 2026-10-04: Dependabot writes the
   lockfile with npm 11, which omits optional nested entries (`typescript@5.9.3` under

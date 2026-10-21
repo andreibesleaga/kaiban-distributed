@@ -15,9 +15,9 @@
  *     second reuses the first result instead of waiting twice (at-least-once
  *     delivery → idempotent consumer).
  *   - Workflow spend (running totals + stop record) is saved with every
- *     checkpoint, in one reserved entry of the same record, and restored once
- *     when a fresh instance first loads it — so a restart neither resets the
- *     cost cap nor charges replayed steps again.
+ *     checkpoint, in one reserved entry (`__workflow_spend__`) of the same
+ *     record, and restored once when a fresh instance first loads it — so a
+ *     restart neither resets the cost cap nor charges replayed steps again.
  *
  * ## Caveat — single-active, NOT highly-available
  * This is a **single-active** orchestrator: there is **no leader election** in
@@ -36,6 +36,8 @@
 import { Redis } from "ioredis";
 import {
   BudgetExceededError,
+  cleanSpendAmount,
+  cleanSpendTotals,
   overBudgetReason,
   workflowBudgetFromEnv,
   type SpendTotals,
@@ -48,7 +50,8 @@ const log = createStructuredLogger({ component: "WorkflowOrchestrator" });
 /**
  * Reserved checkpoint entry that carries the workflow spend. It lives in the
  * same record as the steps (one atomic save, same TTL, wiped by `clear()`),
- * is stripped from the step map on load, and cannot be used as a step name.
+ * is stripped from the step map on load, and cannot be used as a step name
+ * (`runStep` / `memoize` throw for `__workflow_spend__`).
  */
 const SPEND_ENTRY = "__workflow_spend__";
 
@@ -78,9 +81,12 @@ export type WorkflowCheckpoint = Record<string, StepCheckpoint>;
 
 /**
  * Pluggable checkpoint persistence. The orchestrator reads the checkpoint once
- * at construction-time of a step run and writes after each completed step.
- * The record it saves also holds one reserved entry (`__workflow_spend__`)
- * with the workflow spend; a store persists it like any other entry.
+ * per instance (on the first step, `isResuming()` or `recordSpend()`) and
+ * writes after each completed step and after each `recordSpend()` (in the
+ * background). The record it saves also holds one reserved entry
+ * (`__workflow_spend__`) with the workflow spend; a store persists it like any
+ * other entry. An older 2.0.x reading such a record sees that entry as one more
+ * completed step, so clear the checkpoint before downgrading.
  */
 export interface CheckpointStore {
   /** Load the full checkpoint for a workflow, or null if none exists. */
@@ -136,7 +142,10 @@ export interface WorkflowOrchestratorOptions {
    * Extract the spend of a step result (the raw completion string of `runStep`,
    * or the value a `memoize` producer returned). Default: the structured
    * handler-result shape (`inputTokens` + `outputTokens`, `estimatedCost`), as
-   * a JSON string or an object; anything else counts as zero spend.
+   * a JSON string or an object; anything else counts as zero spend. Whatever
+   * it returns is cleaned before it is added: a non-finite or negative number
+   * counts as 0, so a custom extractor cannot switch the caps off or lower the
+   * spend.
    */
   spendOf?: (result: unknown) => SpendTotals | undefined;
   /**
@@ -146,7 +155,10 @@ export interface WorkflowOrchestratorOptions {
   onStopped?: (stop: WorkflowStop) => void;
 }
 
-/** Default spend extractor — understands the KaibanJS handler-result shape. */
+/**
+ * Default spend extractor — understands the KaibanJS handler-result shape. A
+ * non-finite, negative or missing field counts as 0.
+ */
 export function spendOfHandlerResult(result: unknown): SpendTotals | undefined {
   let value: unknown = result;
   if (typeof value === "string") {
@@ -161,13 +173,10 @@ export function spendOfHandlerResult(result: unknown): SpendTotals | undefined {
   if (!("inputTokens" in r) && !("outputTokens" in r) && !("estimatedCost" in r)) {
     return undefined;
   }
-  const num = (x: unknown): number => {
-    const n = Number(x ?? 0);
-    return Number.isFinite(n) ? n : 0;
-  };
   return {
-    totalTokens: num(r["inputTokens"]) + num(r["outputTokens"]),
-    estimatedCost: num(r["estimatedCost"]),
+    totalTokens:
+      cleanSpendAmount(r["inputTokens"]) + cleanSpendAmount(r["outputTokens"]),
+    estimatedCost: cleanSpendAmount(r["estimatedCost"]),
   };
 }
 
@@ -190,6 +199,10 @@ export class WorkflowOrchestrator {
   private loading: Promise<void> | null = null;
   /** Saves run one at a time, in call order (each writes the full record). */
   private saveChain: Promise<void> = Promise.resolve();
+  /** Set by `clear()`: nothing is saved again until a new step completes. */
+  private cleared = false;
+  /** Bumped by `clear()`: a load that started before it discards what it read. */
+  private generation = 0;
 
   constructor(opts: WorkflowOrchestratorOptions) {
     this.workflowId = opts.workflowId;
@@ -202,13 +215,14 @@ export class WorkflowOrchestrator {
 
   /**
    * Running spend totals of the workflow (restored spend included once the
-   * checkpoint has been loaded by a step, `isResuming()` or `recordSpend`).
+   * checkpoint has been loaded by a step, `isResuming()` or `recordSpend`;
+   * reset to zero by `clear()`).
    */
   getSpend(): SpendTotals {
     return { ...this.totals };
   }
 
-  /** The stop record once a ceiling has been reached, else `null`. */
+  /** The stop record once a ceiling has been reached, else `null` (reset by `clear()`). */
   getStop(): WorkflowStop | null {
     return this.stop;
   }
@@ -216,8 +230,10 @@ export class WorkflowOrchestrator {
   /**
    * Add spend to the running totals (callers that aggregate outside the
    * orchestrator feed it here) and stop dispatching once a ceiling is reached.
-   * The new totals are saved with the checkpoint in the background (a failed
-   * save is logged; the next step's save carries them again).
+   * A non-finite or negative field counts as 0 (it can neither switch the caps
+   * off nor lower the spend). The new totals are saved with the checkpoint in the background (a failed
+   * save is logged; the next step's save carries them again). After `clear()`
+   * they stay in memory until a new step is saved with them.
    */
   recordSpend(delta: SpendTotals): void {
     this.addSpend(delta);
@@ -229,10 +245,11 @@ export class WorkflowOrchestrator {
     );
   }
 
-  /** Add to the totals and stop once a ceiling is reached (no save). */
+  /** Add to the totals (cleaned) and stop once a ceiling is reached (no save). */
   private addSpend(delta: SpendTotals): void {
-    this.totals.totalTokens += delta.totalTokens;
-    this.totals.estimatedCost += delta.estimatedCost;
+    const clean = cleanSpendTotals(delta);
+    this.totals.totalTokens += clean.totalTokens;
+    this.totals.estimatedCost += clean.estimatedCost;
     this.checkStop();
   }
 
@@ -241,7 +258,16 @@ export class WorkflowOrchestrator {
     const detail = overBudgetReason(this.totals, this.budget);
     if (detail) {
       this.stop = { reason: "budget_exceeded", detail, totals: this.getSpend() };
-      this.onStopped?.(this.stop);
+      // A throwing callback must not abort the step that was just paid for
+      // (it is saved after this) or a load (which would then run twice).
+      try {
+        this.onStopped?.(this.stop);
+      } catch (err: unknown) {
+        log.warn(
+          { err, workflowId: this.workflowId },
+          "onStopped callback threw — ignored, the workflow stays stopped",
+        );
+      }
     }
   }
 
@@ -268,18 +294,27 @@ export class WorkflowOrchestrator {
   }
 
   private async ensureLoaded(): Promise<WorkflowCheckpoint> {
-    this.loading ??= this.load().catch((err: unknown) => {
-      this.loading = null;
-      throw err;
-    });
+    if (!this.loading) {
+      const loading: Promise<void> = this.load().catch((err: unknown) => {
+        // `clear()` replaced this load (and reset the instance) while it was in
+        // flight: its failure is discarded like its result would be, so it
+        // neither re-arms a reload nor undoes the reset.
+        if (this.loading !== loading) return;
+        this.loading = null; // a failed load is retried by the next call
+        throw err;
+      });
+      this.loading = loading;
+    }
     await this.loading;
     return this.checkpoint;
   }
 
   /** Load the steps and restore the saved spend — runs once per instance. */
   private async load(): Promise<void> {
-    const { [SPEND_ENTRY]: spendEntry, ...steps } =
-      (await this.store.load(this.workflowId)) ?? {};
+    const generation = this.generation;
+    const record = await this.store.load(this.workflowId);
+    if (generation !== this.generation) return; // `clear()` ran meanwhile
+    const { [SPEND_ENTRY]: spendEntry, ...steps } = record ?? {};
     this.checkpoint = steps;
     const saved = parsePersistedSpend(spendEntry);
     this.totals.totalTokens += saved.totalTokens;
@@ -288,7 +323,7 @@ export class WorkflowOrchestrator {
     // budget (reported already, so no second onStopped); a larger cap lifts it.
     const detail = overBudgetReason(this.totals, this.budget);
     if (!this.stop && saved.stop && detail) {
-      this.stop = { ...saved.stop, totals: this.getSpend() };
+      this.stop = { reason: saved.stop.reason, detail, totals: this.getSpend() };
     }
     this.checkStop();
   }
@@ -305,10 +340,16 @@ export class WorkflowOrchestrator {
     };
   }
 
-  /** Save steps + spend after any save already in flight (call order kept). */
+  /**
+   * Save steps + spend after any save already in flight (call order kept).
+   * After `clear()` a save is skipped while no new step has completed, so a
+   * late `recordSpend()` or a step that was in flight cannot bring the record
+   * back.
+   */
   private persist(): Promise<void> {
     const save = async (): Promise<void> => {
       await this.ensureLoaded();
+      if (this.cleared && Object.keys(this.checkpoint).length === 0) return;
       await this.store.save(this.workflowId, this.snapshot());
     };
     const next = this.saveChain.then(save); // saveChain itself never rejects
@@ -316,7 +357,12 @@ export class WorkflowOrchestrator {
     return next;
   }
 
-  /** True if a prior checkpoint exists (i.e. this run is resuming after a crash). */
+  /**
+   * True if a prior checkpoint holds at least one completed step (i.e. this run
+   * is resuming after a crash). A record that holds only the spend entry (a
+   * `recordSpend()` before any step) does not count, though its spend and stop
+   * are still restored.
+   */
   async isResuming(): Promise<boolean> {
     const cp = await this.ensureLoaded();
     return Object.keys(cp).length > 0;
@@ -330,6 +376,9 @@ export class WorkflowOrchestrator {
    * - If another step already resolved the same `taskId` → reuse that result
    *   (taskId idempotency / dedup, I3).
    * - Otherwise dispatch, await, checkpoint, and return.
+   *
+   * The step name `__workflow_spend__` is reserved for the workflow spend
+   * entry and throws (in `memoize` too).
    */
   async runStep(name: string, opts: RunStepOptions): Promise<string> {
     this.assertStepName(name);
@@ -404,14 +453,35 @@ export class WorkflowOrchestrator {
 
   /**
    * Wipe the checkpoint (steps and saved spend) — call once the workflow
-   * reaches a terminal state. Waits for a save in flight so it cannot re-create
-   * the record. The in-memory totals stay readable through `getSpend()`.
+   * reaches a terminal state. Waits for the saves already queued so they
+   * cannot re-create the record, then resets this instance to an empty run:
+   * no steps, zero totals, no stop record. A checkpoint load still in flight
+   * is discarded, whether it succeeds or fails (no reload, no second count).
+   *
+   * Timing: the reset happens when those queued saves have finished, not when
+   * `clear()` is called, and before `store.clear` runs. Spend recorded between
+   * calling `clear()` and that reset is wiped with the rest; spend recorded
+   * after it (while `clear()` has not yet resolved) stays in memory. Read
+   * `getSpend()` / `getStop()` BEFORE calling `clear()` if you need them.
+   * Afterwards nothing is saved until a new step completes: a `recordSpend()`,
+   * or a step that was already in flight, only updates memory; a new step
+   * starts a fresh record.
    */
   async clear(): Promise<void> {
-    await this.saveChain;
-    this.checkpoint = {};
-    this.loading = Promise.resolve();
-    await this.store.clear(this.workflowId);
+    // Runs in the save chain: saves queued before it finish first, saves
+    // queued after it (a new step) land after the delete.
+    const wipe = this.saveChain.then(async () => {
+      this.generation += 1; // a load still in flight discards what it read
+      this.cleared = true;
+      this.checkpoint = {};
+      this.totals.totalTokens = 0;
+      this.totals.estimatedCost = 0;
+      this.stop = null;
+      this.loading = Promise.resolve();
+      await this.store.clear(this.workflowId);
+    });
+    this.saveChain = wipe.catch(() => undefined);
+    await wipe;
   }
 }
 
@@ -426,14 +496,10 @@ function parsePersistedSpend(entry: StepCheckpoint | undefined): PersistedSpend 
   } catch {
     // Corrupt entry → no restored spend (same policy as a corrupt checkpoint).
   }
-  const num = (x: unknown): number => {
-    const n = Number(x ?? 0);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  };
   const stop = raw?.["stop"] as Record<string, unknown> | null | undefined;
   return {
-    totalTokens: num(raw?.["totalTokens"]),
-    estimatedCost: num(raw?.["estimatedCost"]),
+    totalTokens: cleanSpendAmount(raw?.["totalTokens"]),
+    estimatedCost: cleanSpendAmount(raw?.["estimatedCost"]),
     stop:
       stop?.["reason"] === "budget_exceeded"
         ? { reason: "budget_exceeded", detail: String(stop["detail"] ?? "") }

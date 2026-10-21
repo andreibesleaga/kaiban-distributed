@@ -66,6 +66,15 @@ export type {
 
 export { startAgentNode, createAgentStatePublisher } from "./agent-node";
 export type { AgentNodeConfig } from "./agent-node";
+// Types only, so `createAgentStatePublisher`'s parameter and return types (and
+// the payload a custom `TaskHandler` receives) are nameable from this entry point.
+export type {
+  AgentInfo,
+  AgentStatePublisher,
+  AgentStatePublisherOpts,
+} from "../adapters/state/agent-state-publisher";
+export type { TaskHandler } from "../application/actor/AgentActor";
+export type { MessagePayload } from "../infrastructure/messaging/interfaces";
 
 export { dispatchToAgent, AGENT_CHANNEL_PREFIX } from "./dispatch";
 export type { DispatchParams } from "./dispatch";

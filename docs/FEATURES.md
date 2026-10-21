@@ -200,22 +200,32 @@ And the design stance that distinguishes it from most JS agent frameworks:
   |---|---|---|---|
   | `MAX_WORKFLOW_COST_USD` | one workflow's cumulative estimated USD | `0.50` | `WorkflowOrchestrator` — stops dispatching when the total reaches it; `getStop()` reports `budget_exceeded` |
   | `MAX_WORKFLOW_TOKENS` | one workflow's cumulative tokens | unlimited | `WorkflowOrchestrator` |
-  | `MAX_TOKEN_BUDGET` | one agent process, all tasks | `200000` | `AgentStatePublisher` — refused **before** the LLM call once met |
-  | `MAX_TASK_TOKEN_BUDGET` | one task, all attempts/deliveries | `50000` | `AgentStatePublisher` — refused before the call once met |
+  | `MAX_TOKEN_BUDGET` | one agent, all tasks (its tally lives in that worker process; resets on restart) | `200000` | `AgentStatePublisher` — refused **before** the next task attempt once met |
+  | `MAX_TASK_TOKEN_BUDGET` | one task, all attempts/deliveries seen by the same agent process (last 1 000 taskIds) | `50000` | `AgentStatePublisher` — refused before the next attempt once met |
 
   The **only** way to remove a cap is the literal value `unlimited` (case-insensitive). `0`,
   negative or non-numeric values are a misconfiguration: the default applies and one warning is
   logged. A breach is a `BudgetExceededError`, a `NonRetryableError`: the actor dead-letters the
   task after that single attempt (DLQ `error` = `token_budget_exceeded` /
-  `task_token_budget_exceeded` / `budget_exceeded`, poison for replay). The example orchestrators
+  `task_token_budget_exceeded` / `budget_exceeded`; replay skips the per-task and workflow ones as
+  poison and replays the per-agent one, whose tally resets with the worker). The example orchestrators
   additionally check the same budget between phases and publish a graceful **STOPPED**.
   `WorkflowOrchestrator` saves its spend totals and stop with every checkpoint, so a resumed run
   (same `workflowId`) keeps its spend: replayed steps are not charged again, and a run at its cap
-  stays stopped unless the cap is raised (the example orchestrators still clear the checkpoint on a
-  budget stop). A failed paid attempt counts too: the KaibanJS bridge throws a `FailedAttemptError`
-  with the attempt's usage, and once that reaches `MAX_TOKEN_BUDGET` or `MAX_TASK_TOKEN_BUDGET` the
-  task is dead-lettered without a further retry. The example compose files pass all four caps to
-  the containers that read them.
+  stays stopped unless the cap is raised. That spend comes from step results that carry usage
+  (`inputTokens` / `outputTokens` / `estimatedCost`, or a custom `spendOf`) and from `recordSpend()`.
+  The example orchestrators feed it neither (their memoized phase values carry no top-level
+  `inputTokens` / `outputTokens` / `estimatedCost`), so their persisted spend is zero: they enforce
+  the workflow budget with their own totals between phases (`assertWithinBudget`; global-research
+  restores its totals from its checkpointed snapshot) and clear the checkpoint on a budget stop. An
+  attempt whose KaibanJS workflow ends BLOCKED (how KaibanJS reports an LLM/provider error during a
+  task) counts too: the bridge throws a `FailedAttemptError` with the attempt's usage, and once that
+  reaches `MAX_TOKEN_BUDGET` or `MAX_TASK_TOKEN_BUDGET` the task is dead-lettered without a further
+  retry. An ERRORED workflow makes `team.start()` reject and, like any thrown attempt, is not
+  counted; a timed-out or aborted attempt still counts when its handler finishes later, with a
+  result or a BLOCKED failure (possibly after the actor has retried), and failed-attempt usage does not reach the workflow caps. A custom `TaskHandler` must throw
+  `FailedAttemptError` for its failed paid attempts to count. The example compose files pass all
+  four caps to the containers that read them.
   **Value:** a fresh deployment cannot overspend by accident, and a breach costs one call, not three.
 - **Prompt-cache accounting & model right-sizing.** `priceUsage`/`effectiveCacheHitRate` bill cached
   input tokens at the provider's discount and surface the saving; `routeModel`/`estimatedStepCost` pick
@@ -229,10 +239,10 @@ And the design stance that distinguishes it from most JS agent frameworks:
 
 - **Retry → DLQ with a typed taxonomy.** Tasks retry 3× (linear backoff) then land in
   `kaiban-events-failed`; the DLQ distinguishes retries-exhausted from non-retryable poison
-  (firewall-block, breaker-open). **Value:** transient failures self-heal, and genuinely bad messages
+  (firewall-block, breaker-open, and the per-task and workflow budget breaches). **Value:** transient failures self-heal, and genuinely bad messages
   are quarantined instead of crash-looping the consumer.
-- **Safe DLQ replay.** `src/resilience/dlq-replay.ts` replays only the retries-exhausted class and
-  **skips non-retryable poison**. **Value:** an operator can recover from an outage without re-injecting
+- **Safe DLQ replay.** `src/resilience/dlq-replay.ts` replays the retries-exhausted class and the
+  per-agent budget breach (`token_budget_exceeded`), and **skips non-retryable poison**. **Value:** an operator can recover from an outage without re-injecting
   prompt-injection or breaker-tripping messages.
 - **Health & lifecycle probes.** `/health`, plus `/ready` (Redis + broker reachable) and `/startup`
   probes, and a deadline-bounded **graceful shutdown** (stop intake → drain → finish acks → flush →
@@ -362,8 +372,12 @@ custom A2A connector, an MCP *client*, env-gated security controls, and a full C
   may do, with no token spend on blocked actions.
 - **Spend caps, on by default.** `MAX_WORKFLOW_COST_USD` (0.50), `MAX_TOKEN_BUDGET` (200 000) and
   `MAX_TASK_TOKEN_BUDGET` (50 000) apply when unset; `unlimited` is the only opt-out; a breach is
-  non-retryable; the runtime orchestrator stops dispatching at the workflow cap. **Value:** a hard,
-  end-to-end ceiling on a whole workflow, from the first deployment.
+  non-retryable; the runtime orchestrator stops dispatching at the workflow cap. **Value:** spend
+  ceilings from the first deployment, within the limits detailed in §2.6: a cap is checked before
+  each dispatch or attempt and after each result (so the call that reaches it is paid for), the
+  per-agent and per-task tallies live in each worker process and reset on restart, and the workflow
+  cap counts only the spend its orchestrator is fed (the examples enforce it with their own per-run
+  totals; failed-attempt usage does not reach it).
 - **AbortSignal cancellation (ADR-014).** In-flight LLM calls are aborted on timeout and worker
   shutdown; A2A `tasks/cancel` stops the gateway wait only (the worker runs to its timeout).
   **Value:** stuck inferences stop billing.
