@@ -51,7 +51,9 @@ processTask(payload)
   └── executeWithRetries(payload)
       ├── attempt 1..3: taskHandler(payload)
       │   ├── success → driver.publish(COMPLETED_CHANNEL, result)
-      │   └── failure → delay(100ms × attempt) → retry
+      │   ├── NonRetryableError (e.g. BudgetExceededError) → driver.publish(DLQ_CHANNEL, reasonCode)
+      │   │                                                   (no further attempt, no breaker failure)
+      │   └── failure → delay(100ms × attempt) → retry (after attempts 1 and 2 only)
       └── all retries failed → circuitBreaker.recordFailure()
                              → driver.publish(DLQ_CHANNEL, error)
 
@@ -63,7 +65,7 @@ actor.stop()
 
 - **64 KB data cap** (`capDataSize`): results are truncated before publishing to prevent oversized messages from overwhelming the messaging layer.
 - **SHA-256 ID hashing** (`sanitizeId`): actor IDs are hashed in logs — 8-char prefix preserves debuggability while preventing PII leakage.
-- **Linear backoff**: retry delay = `100ms × attempt` (attempt 1 = 100ms, attempt 2 = 200ms, attempt 3 = 300ms).
+- **Linear backoff**: retry delay = `100ms × attempt`, only between attempts (100ms after attempt 1, 200ms after attempt 2); a failed attempt 3 goes to the DLQ without a delay.
 
 ---
 
@@ -229,7 +231,8 @@ Process crash (e.g. writer-node.ts OOM):
 ```
 
 **Within an actor**:
-- Any exception from `taskHandler` → retry up to 3×
+- Any retryable exception from `taskHandler` → retry up to 3×
+- A `NonRetryableError` (a budget breach) → DLQ after that one attempt
 - All retries failed → `circuitBreaker.recordFailure()` + DLQ publish
 - Circuit breaker open (default 10 failures, `CIRCUIT_BREAKER_THRESHOLD`) → subsequent messages routed to DLQ immediately
 
@@ -309,7 +312,7 @@ See the E2E horizontal scaling tests:
 |---------|-----------|---------|
 | `kaiban-agents-{agentId}` | BullMQ queue / Kafka topic | Actor mailbox — task messages |
 | `kaiban-events-completed` | BullMQ queue / Kafka topic | Completion results → CompletionRouter |
-| `kaiban-events-failed` | BullMQ queue / Kafka topic | DLQ — failed after 3 retries |
+| `kaiban-events-failed` | BullMQ queue / Kafka topic | DLQ — failed after 3 retries, or after one attempt on a non-retryable error |
 | `kaiban-state-events` | Redis Pub/Sub | Observability — actor state → board |
 | `kaiban-hitl-decisions` | Redis Pub/Sub | HITL — board decision → orchestrator |
 
@@ -325,9 +328,9 @@ See the E2E horizontal scaling tests:
 AgentActor receives MessagePayload
   └── TaskHandler = createKaibanTaskHandler(agentConfig, driver, tokenProvider)
       ├── Creates a fresh Team per task (stateless execution)
-      ├── team.start({ task: payload.data.instruction })
-      ├── status ERRORED → throw (triggers AgentActor retry)
-      └── returns result string (token counts available from WorkflowResult.stats)
+      ├── team.start(payload.data.inputs ?? {})  (the task is built from payload.data.instruction)
+      ├── status BLOCKED → throw FailedAttemptError (usage attached; retried unless it reaches a token cap); ERRORED → start() rejects (not counted)
+      └── returns a KaibanHandlerResult { answer, inputTokens, outputTokens, estimatedCost } (token counts from WorkflowResult.stats)
 ```
 
 ADR: [ADR-003](../decisions/ADR-003-kaiban-team-bridge-pattern.md)

@@ -2,8 +2,8 @@
 
 > Authoritative spec: `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase E · decision: `docs/decisions/ADR-019`.
 
-A **fleet-wide** cost-control layer on top of the existing **per-task** token accounting
-(`AgentStatePublisher.maxTokenBudget`, board economics panel) — which it does **not** change
+A **fleet-wide** cost-control layer on top of the existing **per-agent and per-task** token accounting
+(`AgentStatePublisher` `maxTokenBudget` / `maxTaskTokenBudget`, board economics panel) — which it does **not** change
 (§B1.3 COST guard). Everything is **default-OFF**: with `ECONOMICS_ENABLED` unset, admission always
 allows and no limiter is constructed.
 

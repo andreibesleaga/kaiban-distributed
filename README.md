@@ -77,11 +77,13 @@ To wire your own agent into a distributed worker node:
 import { BullMQDriver } from './src/infrastructure/messaging/bullmq-driver';
 import { AgentActor } from './src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from './src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { AgentStatePublisher } from './src/adapters/state/agent-state-publisher';
+import { createAgentStatePublisher } from './src/shared';
 
 const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
 
-const statePublisher = new AgentStatePublisher('redis://localhost:6379', {
+// Applies MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET from the environment
+// (defaults 200000 / 50000; the literal 'unlimited' removes a cap).
+const statePublisher = createAgentStatePublisher('redis://localhost:6379', {
   agentId: 'my-agent', name: 'Ada', role: 'Analyst',
 });
 
@@ -305,7 +307,7 @@ stateDiagram-v2
 | `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker; outbound message data capped at 64 KB |
 | `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS agent in a per-task `Team`; calls `team.start()`; returns token-tracked `KaibanHandlerResult`; optional JIT token provider |
 | `KaibanTeamBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync |
-| `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat |
+| `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
 | `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); optional TLS; no colon queue names |
 | `KafkaDriver` | `src/infrastructure/messaging/` | Kafka-backed messaging; optional SSL/mTLS; unique consumer group per worker role |
 | `DistributedStateMiddleware` | `src/adapters/state/` | Intercepts Zustand store `setState()` and publishes deltas to messaging layer |
@@ -424,7 +426,7 @@ import 'dotenv/config';
 import { BullMQDriver } from './src/infrastructure/messaging/bullmq-driver';
 import { AgentActor } from './src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from './src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { AgentStatePublisher } from './src/adapters/state/agent-state-publisher';
+import { createAgentStatePublisher } from './src/shared';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const redisUrl = new URL(REDIS_URL);
@@ -433,7 +435,8 @@ const driver = new BullMQDriver({
   connection: { host: redisUrl.hostname, port: parseInt(redisUrl.port || '6379', 10) },
 });
 
-const statePublisher = new AgentStatePublisher(REDIS_URL, {
+// Applies MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET (defaults 200000 / 50000).
+const statePublisher = createAgentStatePublisher(REDIS_URL, {
   agentId: 'researcher', name: 'Ava', role: 'News Researcher',
 });
 
@@ -669,7 +672,7 @@ curl http://localhost:3000/.well-known/agent-card.json
 | `message/send` | Dispatch a task; await terminal result | Target agent in `message.metadata.agentId`; optional `instruction`/`expectedOutput`/`context`/`inputs` in `metadata` (or plain text parts). Input caps (`A2A_INPUT_CAPS`, 64 KB); oversized/wrong-typed → `-32602`. |
 | `message/stream` | Same, streamed over SSE | `submitted → working → completed/failed/canceled` |
 | `tasks/get` | Fetch a persisted task by id | Real data from `RedisTaskStore` |
-| `tasks/cancel` | Cancel an in-flight task | Aborts the wait; emits terminal `canceled` |
+| `tasks/cancel` | Cancel an in-flight task | Stops the gateway wait only; emits terminal `canceled`. The worker is not told and keeps running to its own timeout |
 
 Live agent status is `GET /a2a/agents/:agentId/status` (not a JSON-RPC method).
 
@@ -788,6 +791,8 @@ import { createDriver, getDriverType } from './src/shared';
 const driver = createDriver('researcher');   // BullMQ or Kafka based on MESSAGING_DRIVER env
 ```
 
+The same shared barrel (`kaiban-distributed/shared` in the published package) exports `startAgentNode` and `createAgentStatePublisher`, the factory that builds an `AgentStatePublisher` with `MAX_TOKEN_BUDGET` / `MAX_TASK_TOKEN_BUDGET` applied; the root `kaiban-distributed` entry exports `createAgentStatePublisher` too.
+
 ### Switching at runtime
 
 Set `MESSAGING_DRIVER=kafka` (or `bullmq`) — the `IMessagingDriver` interface is the abstraction. Worker code is identical for both drivers.
@@ -820,7 +825,7 @@ All responses: `{ data, meta, errors }` envelope.
 |---------|--------|---------|
 | `kaiban-agents-{agentId}` | BullMQ / Kafka | Task inbox per agent |
 | `kaiban-events-completed` | BullMQ / Kafka | Successful task results |
-| `kaiban-events-failed` | BullMQ / Kafka | DLQ after 3 retry failures |
+| `kaiban-events-failed` | BullMQ / Kafka | DLQ after 3 retry failures, or after one non-retryable failure (budget breach) |
 | `kaiban-state-events` | Redis Pub/Sub | Agent/workflow state → board |
 | `kaiban-hitl-decisions` | Redis Pub/Sub | Board HITL decisions → orchestrator |
 
@@ -843,6 +848,12 @@ All responses: `{ data, meta, errors }` envelope.
 | `OPENAI_BASE_URL` | — | Optional | Custom OpenAI-compatible endpoint |
 | `LLM_MODEL` | `gpt-4o-mini` | No | Model (for OpenRouter: `meta-llama/llama-3.1-8b-instruct:free`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | No | OpenTelemetry OTLP endpoint (else console) |
+| `MAX_TOKEN_BUDGET` | `200000` | No | Token cap per agent (one `AgentStatePublisher`, in its worker process; resets on restart) |
+| `MAX_TASK_TOKEN_BUDGET` | `50000` | No | Token cap per task, all attempts seen by the same agent process (attempts whose KaibanJS workflow ends BLOCKED included; an ERRORED workflow makes `team.start()` reject and is not counted) |
+| `MAX_WORKFLOW_COST_USD` | `0.50` | No | Cost cap per workflow (orchestrator) |
+| `MAX_WORKFLOW_TOKENS` | `unlimited` | No | Token cap per workflow (orchestrator) |
+
+Only the literal `unlimited` removes a spend cap; `0`, a negative number or text gives the default and logs one warning.
 
 #### Board app (`board/.env`)
 
@@ -1056,7 +1067,7 @@ kaiban-distributed/
 | 15-second heartbeat in `AgentStatePublisher` | Redis pub/sub is fire-and-forget; late-connecting boards see state within 15s |
 | Two KafkaDriver instances in `CompletionRouter` | KafkaJS `consumer.run()` cannot subscribe to new topics after start |
 | `Team` per task in agent bridge | `Team.start()` initializes LLM automatically from `env`; `WorkflowResult.stats` provides token counts without internal hacks |
-| KaibanJS ERRORED status throws | `team.start()` returns `{ status: 'ERRORED' }`; bridge throws so AgentActor retries (3×), then DLQs |
+| KaibanJS ERRORED status throws | `team.start()` rejects on ERRORED (no usage, not counted) and resolves `{ status: 'BLOCKED' }` when an LLM/provider error blocks the task; on BLOCKED the bridge throws `FailedAttemptError` with the attempt's token usage, which the state publisher counts against the token caps; either way AgentActor retries (3×), then DLQs; once the counted usage reaches a cap, a non-retryable `BudgetExceededError` is dead-lettered without a further retry (and records no circuit-breaker failure) |
 | `forceFinalAnswer: true` on editor | Free 8B models reach max iterations without structured output |
 | SHA-256 hash prefix for agent IDs | 8-char prefix preserves debuggability while preventing PII leakage |
 | 64 KB cap on published message data | `AgentActor` truncates `result` before publishing to prevent oversized frames from overloading messaging layer |

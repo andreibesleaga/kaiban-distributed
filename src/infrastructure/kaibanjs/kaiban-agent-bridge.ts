@@ -3,6 +3,7 @@ import type { IAgentParams } from "kaibanjs";
 import type { MessagePayload, IMessagingDriver } from "../messaging/interfaces";
 import type { ITokenProvider } from "../../domain/security/token-provider";
 import type { TaskHandler } from "../../application/actor/AgentActor";
+import { FailedAttemptError } from "../../domain/errors/DomainError";
 import { buildOwnedLlm } from "./owned-llm";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
@@ -379,7 +380,11 @@ function findWorkflowFallbackMessage(
  * WorkflowResult.stats provides real token counts and cost — no extraction hacks.
  *
  * Maps MessagePayload → KaibanJS Task → Team.start() → returns KaibanHandlerResult.
- * Throws on ERRORED status so AgentActor retries (max 3 times), then DLQs.
+ * Throws a `FailedAttemptError` (with the attempt's token usage) on a
+ * non-success status that `team.start()` resolves with (BLOCKED in KaibanJS
+ * 0.24.2; ERRORED makes it reject, with no usage) so AgentActor retries (max 3
+ * times), then DLQs — unless the state publisher finds that the failed attempts
+ * reached a token cap.
  * The result is included in kaiban-events-completed data.result for downstream chaining.
  */
 export function createKaibanTaskHandler(
@@ -415,7 +420,7 @@ export function createKaibanTaskHandler(
     const inputs = (payload.data["inputs"] as Record<string, unknown>) ?? {};
     const result = await team.start(inputs);
 
-    // Compute cost before the ERRORED check so we can log it regardless.
+    // Compute cost before the status check so we can log it regardless.
     // KaibanJS's own summary box shows $-1 when the model isn't in its private
     // pricing table — this line prints the correct value from our MODEL_PRICING.
     const model = agentConfig.llmConfig?.model ?? "default";
@@ -433,9 +438,16 @@ export function createKaibanTaskHandler(
     if (!isSuccessfulWorkflowStatus(result.status)) {
       const failureReason =
         extractWorkflowFailureReason(team, result) ?? "unknown";
-      throw new Error(
+      // The failed attempt was paid for: carry its usage so the state
+      // publisher counts it against the token caps before any retry.
+      throw new FailedAttemptError(
         /* v8 ignore next — null/undefined status returns true from isSuccessfulWorkflowStatus so "failed" fallback is unreachable */
         `KaibanJS workflow ${String(result.status ?? "failed").toLowerCase()}: ${failureReason}`,
+        {
+          inputTokens: handlerResult.inputTokens,
+          outputTokens: handlerResult.outputTokens,
+          estimatedCost: handlerResult.estimatedCost,
+        },
       );
     }
 

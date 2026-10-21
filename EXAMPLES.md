@@ -443,8 +443,11 @@ npm run lint && npm run typecheck && npm run test:coverage
 > search/write/governance/editorial) and before each revision, via
 > `MAX_WORKFLOW_COST_USD` (default `0.50` when unset) and `MAX_WORKFLOW_TOKENS`
 > (unlimited when unset; the literal `unlimited` is the only opt-out, `0` is a
-> misconfiguration). The runtime `WorkflowOrchestrator` also refuses any further
-> dispatch once a ceiling is reached. On breach the workflow stops gracefully
+> misconfiguration). The runtime `WorkflowOrchestrator` refuses further dispatch
+> once its own recorded spend reaches a ceiling; the examples record none in it
+> (their phase values carry no top-level `inputTokens` / `outputTokens` /
+> `estimatedCost`), so here the between-phase check
+> is the guard. On breach the workflow stops gracefully
 > (STOPPED) instead of draining the budget. This is separate from the per-agent
 > `MAX_TOKEN_BUDGET` (200 000) and per-task `MAX_TASK_TOKEN_BUDGET` (50 000).
 

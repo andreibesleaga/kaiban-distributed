@@ -134,6 +134,9 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       CHAOS_MODE: ${CHAOS_MODE:-false}
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     healthcheck:
       disable: true
@@ -164,6 +167,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     healthcheck:
       disable: true
@@ -193,6 +199,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     healthcheck:
       disable: true
@@ -222,6 +231,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     healthcheck:
       disable: true
@@ -256,7 +268,7 @@ services:
       WRITE_WAIT_MS: ${WRITE_WAIT_MS:-240000}
       REVIEW_WAIT_MS: ${REVIEW_WAIT_MS:-180000}
       EDIT_WAIT_MS: ${EDIT_WAIT_MS:-300000}
-      # Workflow-level spend guard (0 = unlimited). Stops a runaway before it drains the budget.
+      # Workflow-level spend guard (the literal `unlimited` removes a cap; 0 does not). Stops a runaway before it drains the budget.
       MAX_WORKFLOW_COST_USD: ${MAX_WORKFLOW_COST_USD:-0.50}
       MAX_WORKFLOW_TOKENS: ${MAX_WORKFLOW_TOKENS:-unlimited}
     stdin_open: true

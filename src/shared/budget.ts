@@ -43,6 +43,27 @@ export interface SpendTotals {
   estimatedCost: number;
 }
 
+/**
+ * Clean one spend number (a token count or a USD cost) before it is added to a
+ * running total or published: a non-finite, negative or missing value counts
+ * as 0, so a bad value can neither switch a cap off (`NaN` never reaches a
+ * ceiling) nor lower the spend already counted. Used by every spend path
+ * (`AgentStatePublisher`, `WorkflowOrchestrator`, `spendOfHandlerResult`, the
+ * restored checkpoint spend).
+ */
+export function cleanSpendAmount(x: unknown): number {
+  const n = Number(x ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** {@link cleanSpendAmount} applied to both fields of a spend delta. */
+export function cleanSpendTotals(delta: Partial<SpendTotals>): SpendTotals {
+  return {
+    totalTokens: cleanSpendAmount(delta.totalTokens),
+    estimatedCost: cleanSpendAmount(delta.estimatedCost),
+  };
+}
+
 /** Configured workflow ceilings. `Infinity` = no ceiling. */
 export interface WorkflowBudget {
   maxTokens: number;

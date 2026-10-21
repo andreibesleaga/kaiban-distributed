@@ -161,6 +161,16 @@ export interface AgentCardInput {
     version: string;
 }
 
+// @public
+export interface AgentInfo {
+    // (undocumented)
+    agentId: string;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    role: string;
+}
+
 // @public (undocumented)
 export class AgentNotFoundError extends DomainError {
     constructor(agentId: string);
@@ -194,16 +204,20 @@ export class AgentRegistry {
     }): RegistryStatus;
 }
 
-// @public (undocumented)
+// @public
 export class AgentStatePublisher {
-    // Warning: (ae-forgotten-export) The symbol "AgentInfo" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "AgentStatePublisherOpts" needs to be exported by the entry point index.d.ts
     constructor(redisUrl: string, agentInfo: AgentInfo, opts?: AgentStatePublisherOpts);
     // (undocumented)
     disconnect(): Promise<void>;
     getTotalTokensUsed(): number;
     publishIdle(heartbeatIntervalMs?: number): void;
     wrapHandler(handler: TaskHandler): TaskHandler;
+}
+
+// @public (undocumented)
+export interface AgentStatePublisherOpts {
+    maxTaskTokenBudget?: number;
+    maxTokenBudget?: number;
 }
 
 // @public (undocumented)
@@ -287,6 +301,13 @@ export interface AppConfig {
 
 // @public
 export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
+
+// @public
+export interface AttemptUsage {
+    estimatedCost: number;
+    inputTokens: number;
+    outputTokens: number;
+}
 
 // @public
 export class AuditLog implements AuditSink {
@@ -430,6 +451,9 @@ export type CostUnits = number;
 
 // @public
 export function costValidator(reservation: CostReservationLike, scopeFor?: (ctx: GateContext) => BudgetScope): GateValidator;
+
+// @public
+export function createAgentStatePublisher(redisUrl: string, agentInfo: AgentInfo, env?: NodeJS.ProcessEnv): AgentStatePublisher;
 
 // @public
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
@@ -576,6 +600,13 @@ export interface EvaluationPayload {
 
 // @public (undocumented)
 export function extractTraceContext(carrier: Record<string, string>): ReturnType<typeof propagation.extract>;
+
+// @public
+export class FailedAttemptError extends DomainError {
+    constructor(message: string, usage: AttemptUsage);
+    readonly code = "ATTEMPT_FAILED";
+    readonly usage: AttemptUsage;
+}
 
 // @public
 export function firewallValidator(firewall: ISemanticFirewall): GateValidator;

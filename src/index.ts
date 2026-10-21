@@ -211,6 +211,13 @@ export { GatewayApp, SlidingWindowRateLimiter } from "./adapters/gateway/Gateway
 export type { GatewayAppDeps } from "./adapters/gateway/GatewayApp";
 export { SocketGateway } from "./adapters/gateway/SocketGateway";
 export { AgentStatePublisher } from "./adapters/state/agent-state-publisher";
+export type {
+  AgentInfo,
+  AgentStatePublisherOpts,
+} from "./adapters/state/agent-state-publisher";
+// The capped factory (MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET from the
+// environment) — the same function `kaiban-distributed/shared` exports.
+export { createAgentStatePublisher } from "./shared/agent-node";
 export { DistributedStateMiddleware } from "./adapters/state/distributedMiddleware";
 
 // ── Security ─────────────────────────────────────────────────────────────────

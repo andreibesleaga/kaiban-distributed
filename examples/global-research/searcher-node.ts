@@ -2,9 +2,8 @@ import 'dotenv/config';
 import { Redis } from 'ioredis';
 import { AgentActor, type TaskHandler } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { AgentStatePublisher } from '../../src/adapters/state/agent-state-publisher';
 import type { MessagePayload } from '../../src/infrastructure/messaging/interfaces';
-import { createDriver } from '../../src/shared';
+import { createDriver, createAgentStatePublisher } from '../../src/shared';
 import { searcherConfig, SEARCHER_QUEUE } from './team-config';
 import { buildSecurityDeps } from '../../src/shared';
 
@@ -41,7 +40,8 @@ async function main(): Promise<void> {
     ? `Zara-${SEARCHER_ID.slice('searcher-'.length)}`
     : `Zara-${SEARCHER_ID}`;
 
-  const statePublisher = new AgentStatePublisher(REDIS_URL, {
+  // Same capped publisher as startAgentNode (MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET).
+  const statePublisher = createAgentStatePublisher(REDIS_URL, {
     agentId: SEARCHER_ID, name: displayName, role: 'Web Research Specialist',
   });
 
