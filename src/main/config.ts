@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import type { EconomicsConfig } from "../economics/types";
 import type { GovernanceConfig } from "../governance/types";
+import { resolveSpendCaps } from "../shared/budget";
 
 export type MessagingDriver = "bullmq" | "kafka" | "amqp";
 
@@ -45,7 +46,10 @@ export interface AppConfig {
   agentIds: string[];
   validHitlDecisions: string[];
   agentTimeoutMs: number;
+  /** Per-agent token cap (`MAX_TOKEN_BUDGET`; default 200 000; `Infinity` = unlimited). */
   maxTokenBudget: number;
+  /** Per-task token cap (`MAX_TASK_TOKEN_BUDGET`; default 50 000; `Infinity` = unlimited). */
+  maxTaskTokenBudget: number;
   mcp: McpConfig;
   economics: EconomicsConfig;
   governance: GovernanceConfig;
@@ -135,6 +139,7 @@ export function loadConfig(): AppConfig {
   const mcpAllowedTools = parseCsvEnv("MCP_ALLOWED_TOOLS");
   const mcpAllowedResources = parseCsvEnv("MCP_ALLOWED_RESOURCES");
   const mcpAllowedPrompts = parseCsvEnv("MCP_ALLOWED_PROMPTS");
+  const caps = resolveSpendCaps();
 
   return {
     port: parseIntEnv("PORT", 3000),
@@ -170,7 +175,8 @@ export function loadConfig(): AppConfig {
       .map((s) => s.trim())
       .filter(Boolean),
     agentTimeoutMs: parseIntEnv("AGENT_TIMEOUT_MS", 300000),
-    maxTokenBudget: parseIntEnv("MAX_TOKEN_BUDGET", 0),
+    maxTokenBudget: caps.maxTokenBudget,
+    maxTaskTokenBudget: caps.maxTaskTokenBudget,
     mcp: {
       enabled: getBoolEnv("MCP_SERVER_ENABLED", false),
       path: getEnv("MCP_SERVER_PATH", "/mcp"),

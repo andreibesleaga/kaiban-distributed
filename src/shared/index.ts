@@ -50,8 +50,11 @@ export {
   WorkflowOrchestrator,
   InMemoryCheckpointStore,
   RedisCheckpointStore,
+  spendOfHandlerResult,
 } from "./orchestrator";
 export type {
+  WorkflowStop,
+  WorkflowStopReason,
   RouterLike,
   StepCheckpoint,
   WorkflowCheckpoint,
@@ -70,7 +73,18 @@ export type { DispatchParams } from "./dispatch";
 export {
   BudgetExceededError,
   workflowBudgetFromEnv,
+  resolveSpendCaps,
+  parseCapEnv,
+  resetCapWarnings,
+  formatCap,
   overBudgetReason,
   assertWithinBudget,
+  DEFAULT_MAX_WORKFLOW_COST_USD,
+  DEFAULT_MAX_TOKEN_BUDGET,
+  DEFAULT_MAX_TASK_TOKEN_BUDGET,
+  UNLIMITED,
+  UNLIMITED_SENTINEL,
 } from "./budget";
-export type { SpendTotals, WorkflowBudget } from "./budget";
+export type { SpendTotals, WorkflowBudget, SpendCaps } from "./budget";
+// Base class of every error the actor does not retry (BudgetExceededError extends it).
+export { DomainError, NonRetryableError } from "../domain/errors/DomainError";

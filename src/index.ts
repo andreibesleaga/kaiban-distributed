@@ -96,6 +96,7 @@ export {
   WorkflowOrchestrator,
   InMemoryCheckpointStore,
   RedisCheckpointStore,
+  spendOfHandlerResult,
 } from "./shared/orchestrator";
 export type {
   RouterLike,
@@ -105,7 +106,27 @@ export type {
   RunStepOptions,
   WorkflowOrchestratorOptions,
   RedisCheckpointStoreOptions,
+  WorkflowStop,
+  WorkflowStopReason,
 } from "./shared/orchestrator";
+// Spend caps (MAX_WORKFLOW_COST_USD / MAX_WORKFLOW_TOKENS / MAX_TOKEN_BUDGET /
+// MAX_TASK_TOKEN_BUDGET): one resolver, low defaults, `unlimited` opt-out.
+export {
+  BudgetExceededError,
+  workflowBudgetFromEnv,
+  resolveSpendCaps,
+  parseCapEnv,
+  resetCapWarnings,
+  formatCap,
+  overBudgetReason,
+  assertWithinBudget,
+  DEFAULT_MAX_WORKFLOW_COST_USD,
+  DEFAULT_MAX_TOKEN_BUDGET,
+  DEFAULT_MAX_TASK_TOKEN_BUDGET,
+  UNLIMITED,
+  UNLIMITED_SENTINEL,
+} from "./shared/budget";
+export type { SpendTotals, WorkflowBudget, SpendCaps } from "./shared/budget";
 export { dispatchToAgent, AGENT_CHANNEL_PREFIX } from "./shared/dispatch";
 export type { DispatchParams } from "./shared/dispatch";
 export { replayDlq, DLQ_POISON_REASONS } from "./resilience/dlq-replay";

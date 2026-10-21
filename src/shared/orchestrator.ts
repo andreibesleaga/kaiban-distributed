@@ -30,6 +30,13 @@
  */
 
 import { Redis } from "ioredis";
+import {
+  BudgetExceededError,
+  overBudgetReason,
+  workflowBudgetFromEnv,
+  type SpendTotals,
+  type WorkflowBudget,
+} from "./budget";
 
 /** Minimal slice of `CompletionRouter` the orchestrator depends on (testability). */
 export interface RouterLike {
@@ -78,6 +85,17 @@ export interface RunStepOptions {
   signal?: AbortSignal;
 }
 
+/** Why the orchestrator stopped dispatching (the only reason today). */
+export type WorkflowStopReason = "budget_exceeded";
+
+/** The orchestrator's stop record, once a cap has been reached. */
+export interface WorkflowStop {
+  reason: WorkflowStopReason;
+  /** Human-readable detail, e.g. `cost budget exceeded ($0.5120 >= $0.50)`. */
+  detail: string;
+  totals: SpendTotals;
+}
+
 export interface WorkflowOrchestratorOptions {
   /** Stable identifier for this workflow run (the checkpoint namespace key). */
   workflowId: string;
@@ -85,12 +103,58 @@ export interface WorkflowOrchestratorOptions {
   router: RouterLike;
   /** Where checkpoints are persisted (Redis in production). */
   store: CheckpointStore;
+  /**
+   * Workflow spend ceilings. Default: `workflowBudgetFromEnv()` —
+   * `MAX_WORKFLOW_COST_USD` (0.50 USD when unset) and `MAX_WORKFLOW_TOKENS`
+   * (unlimited when unset); the literal env value `unlimited` removes a ceiling.
+   */
+  budget?: WorkflowBudget;
+  /**
+   * Extract the spend of a step result (the raw completion string of `runStep`,
+   * or the value a `memoize` producer returned). Default: the structured
+   * handler-result shape (`inputTokens` + `outputTokens`, `estimatedCost`), as
+   * a JSON string or an object; anything else counts as zero spend.
+   */
+  spendOf?: (result: unknown) => SpendTotals | undefined;
+  /** Called once when a ceiling is reached and dispatching stops. */
+  onStopped?: (stop: WorkflowStop) => void;
+}
+
+/** Default spend extractor — understands the KaibanJS handler-result shape. */
+export function spendOfHandlerResult(result: unknown): SpendTotals | undefined {
+  let value: unknown = result;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (value === null || typeof value !== "object") return undefined;
+  const r = value as Record<string, unknown>;
+  if (!("inputTokens" in r) && !("outputTokens" in r) && !("estimatedCost" in r)) {
+    return undefined;
+  }
+  const num = (x: unknown): number => {
+    const n = Number(x ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  };
+  return {
+    totalTokens: num(r["inputTokens"]) + num(r["outputTokens"]),
+    estimatedCost: num(r["estimatedCost"]),
+  };
 }
 
 export class WorkflowOrchestrator {
   private readonly workflowId: string;
   private readonly router: RouterLike;
   private readonly store: CheckpointStore;
+  private readonly budget: WorkflowBudget;
+  private readonly spendOf: (result: unknown) => SpendTotals | undefined;
+  private readonly onStopped?: (stop: WorkflowStop) => void;
+  /** Running spend across the steps this instance has run (not persisted). */
+  private readonly totals: SpendTotals = { totalTokens: 0, estimatedCost: 0 };
+  private stop: WorkflowStop | null = null;
   /** In-memory mirror of persisted checkpoints, loaded lazily. */
   private checkpoint: WorkflowCheckpoint | null = null;
   private loaded = false;
@@ -99,6 +163,49 @@ export class WorkflowOrchestrator {
     this.workflowId = opts.workflowId;
     this.router = opts.router;
     this.store = opts.store;
+    this.budget = opts.budget ?? workflowBudgetFromEnv();
+    this.spendOf = opts.spendOf ?? spendOfHandlerResult;
+    this.onStopped = opts.onStopped;
+  }
+
+  /** Running spend totals of the steps this instance has run. */
+  getSpend(): SpendTotals {
+    return { ...this.totals };
+  }
+
+  /** The stop record once a ceiling has been reached, else `null`. */
+  getStop(): WorkflowStop | null {
+    return this.stop;
+  }
+
+  /**
+   * Add spend to the running totals (callers that aggregate outside the
+   * orchestrator feed it here) and stop dispatching once a ceiling is reached.
+   */
+  recordSpend(delta: SpendTotals): void {
+    this.totals.totalTokens += delta.totalTokens;
+    this.totals.estimatedCost += delta.estimatedCost;
+    if (this.stop) return;
+    const detail = overBudgetReason(this.totals, this.budget);
+    if (detail) {
+      this.stop = { reason: "budget_exceeded", detail, totals: this.getSpend() };
+      this.onStopped?.(this.stop);
+    }
+  }
+
+  /** Refuse to dispatch (or produce) once the workflow is stopped. */
+  private assertDispatchAllowed(): void {
+    if (this.stop) {
+      throw new BudgetExceededError(
+        `workflow ${this.workflowId} stopped: ${this.stop.detail}`,
+        this.stop.reason,
+      );
+    }
+  }
+
+  private account(result: unknown): void {
+    const spend = this.spendOf(result);
+    if (spend) this.recordSpend(spend);
   }
 
   private async ensureLoaded(): Promise<WorkflowCheckpoint> {
@@ -130,6 +237,9 @@ export class WorkflowOrchestrator {
     const existing = cp[name];
     if (existing) return existing.result;
 
+    // Workflow cap: once a ceiling is reached nothing more is dispatched
+    // (checkpointed steps above cost nothing and are still replayed).
+    this.assertDispatchAllowed();
     const taskId = await opts.dispatch();
 
     // Idempotency: if any prior step already resolved this taskId, reuse it
@@ -147,6 +257,7 @@ export class WorkflowOrchestrator {
     cp[name] = { taskId, result };
     this.checkpoint = cp;
     await this.store.save(this.workflowId, cp);
+    if (deduped === undefined) this.account(result);
     return result;
   }
 
@@ -168,11 +279,13 @@ export class WorkflowOrchestrator {
     const existing = cp[name];
     if (existing) return JSON.parse(existing.result) as T;
 
+    this.assertDispatchAllowed();
     const value = await produce();
 
     cp[name] = { taskId: `memoize:${name}`, result: JSON.stringify(value) };
     this.checkpoint = cp;
     await this.store.save(this.workflowId, cp);
+    this.account(value);
     return value;
   }
 

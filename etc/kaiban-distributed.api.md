@@ -201,6 +201,7 @@ export class AgentStatePublisher {
     constructor(redisUrl: string, agentInfo: AgentInfo, opts?: AgentStatePublisherOpts);
     // (undocumented)
     disconnect(): Promise<void>;
+    getTotalTokensUsed(): number;
     publishIdle(heartbeatIntervalMs?: number): void;
     wrapHandler(handler: TaskHandler): TaskHandler;
 }
@@ -247,7 +248,7 @@ export interface AppConfig {
         groupId: string;
         ssl?: TlsConfig;
     };
-    // (undocumented)
+    maxTaskTokenBudget: number;
     maxTokenBudget: number;
     // (undocumented)
     mcp: McpConfig;
@@ -285,6 +286,9 @@ export interface AppConfig {
 }
 
 // @public
+export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
+
+// @public
 export class AuditLog implements AuditSink {
     append(decision: GateDecision, timestamp: string): AuditRecord;
     records(): readonly AuditRecord[];
@@ -315,6 +319,17 @@ export interface AuditVerification {
 
 // @public
 export function breakerValidator(breaker: ICircuitBreaker): GateValidator;
+
+// @public
+export class BudgetExceededError extends NonRetryableError {
+    constructor(reason: string, reasonCode?: string);
+    // (undocumented)
+    readonly code = "BUDGET_EXCEEDED";
+    // (undocumented)
+    readonly reason: string;
+    // (undocumented)
+    readonly reasonCode: string;
+}
 
 // @public
 export interface BudgetScope {
@@ -421,6 +436,15 @@ export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver:
 
 // @public
 export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
+
+// @public
+export const DEFAULT_MAX_TASK_TOKEN_BUDGET = 50000;
+
+// @public
+export const DEFAULT_MAX_TOKEN_BUDGET = 200000;
+
+// @public
+export const DEFAULT_MAX_WORKFLOW_COST_USD = 0.5;
 
 // @public
 export function detectSpendAnomaly(samples: number[], factor?: number): boolean;
@@ -563,6 +587,9 @@ export interface FirewallVerdict {
     // (undocumented)
     reason?: string;
 }
+
+// @public
+export function formatCap(cap: number): string;
 
 // @public
 export const GATE_ACTION_SEVERITY: Record<GateAction, number>;
@@ -995,8 +1022,19 @@ export interface ModelPricing {
     outputPer1k: CostUnits;
 }
 
+// @public
+export abstract class NonRetryableError extends DomainError {
+    abstract readonly reasonCode: string;
+}
+
 // @public (undocumented)
 export function ok<T>(value: T): Result<T, never>;
+
+// @public
+export function overBudgetReason(totals: SpendTotals, budget: WorkflowBudget): string | null;
+
+// @public
+export function parseCapEnv(name: string, raw: string | undefined, fallback: number): number;
 
 // @public
 export class PolicyEngine implements GateValidator {
@@ -1144,6 +1182,12 @@ export interface RegistryStatus {
 // @public
 export function replayDlq(deps: DlqReplayDeps): Promise<DlqReplayResult>;
 
+// @public
+export function resetCapWarnings(): void;
+
+// @public
+export function resolveSpendCaps(env?: NodeJS.ProcessEnv): SpendCaps;
+
 // @public (undocumented)
 export type Result<T, E> = {
     ok: true;
@@ -1235,6 +1279,29 @@ export class SocketGateway {
 }
 
 // @public
+export interface SpendCaps {
+    // (undocumented)
+    maxTaskTokenBudget: number;
+    // (undocumented)
+    maxTokenBudget: number;
+    // (undocumented)
+    maxWorkflowCostUsd: number;
+    // (undocumented)
+    maxWorkflowTokens: number;
+}
+
+// @public
+export function spendOfHandlerResult(result: unknown): SpendTotals | undefined;
+
+// @public
+export interface SpendTotals {
+    // (undocumented)
+    estimatedCost: number;
+    // (undocumented)
+    totalTokens: number;
+}
+
+// @public
 export const STATE_CHANNEL = "kaiban-state-events";
 
 // @public (undocumented)
@@ -1319,6 +1386,12 @@ export interface TokenUsage {
 export type TrustLevel = "untrusted" | "low" | "high";
 
 // @public
+export const UNLIMITED: number;
+
+// @public
+export const UNLIMITED_SENTINEL = "unlimited";
+
+// @public
 export function unwrapVerified(raw: string): Record<string, unknown> | null;
 
 // @public
@@ -1366,23 +1439,52 @@ export interface WorkerAdmissionGateDeps {
 }
 
 // @public
+export interface WorkflowBudget {
+    // (undocumented)
+    maxCostUsd: number;
+    // (undocumented)
+    maxTokens: number;
+}
+
+// @public
+export function workflowBudgetFromEnv(env?: NodeJS.ProcessEnv): WorkflowBudget;
+
+// @public
 export type WorkflowCheckpoint = Record<string, StepCheckpoint>;
 
 // @public (undocumented)
 export class WorkflowOrchestrator {
     constructor(opts: WorkflowOrchestratorOptions);
     clear(): Promise<void>;
+    getSpend(): SpendTotals;
+    getStop(): WorkflowStop | null;
     isResuming(): Promise<boolean>;
     memoize<T>(name: string, produce: () => Promise<T>): Promise<T>;
+    recordSpend(delta: SpendTotals): void;
     runStep(name: string, opts: RunStepOptions): Promise<string>;
 }
 
 // @public (undocumented)
 export interface WorkflowOrchestratorOptions {
+    budget?: WorkflowBudget;
+    onStopped?: (stop: WorkflowStop) => void;
     router: RouterLike;
+    spendOf?: (result: unknown) => SpendTotals | undefined;
     store: CheckpointStore;
     workflowId: string;
 }
+
+// @public
+export interface WorkflowStop {
+    detail: string;
+    // (undocumented)
+    reason: WorkflowStopReason;
+    // (undocumented)
+    totals: SpendTotals;
+}
+
+// @public
+export type WorkflowStopReason = "budget_exceeded";
 
 // @public
 export function wrapSigned(payload: Record<string, unknown>): string;

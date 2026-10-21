@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Spend caps are on by default with low ceilings** (roadmap §7.2 item 2 groundwork). When nothing
+  is set: `MAX_WORKFLOW_COST_USD=0.50`, `MAX_TOKEN_BUDGET=200000` (per agent process) and the new
+  `MAX_TASK_TOKEN_BUDGET=50000` (per task, all attempts). One resolver (`resolveSpendCaps` in
+  `src/shared/budget.ts`, also used by `loadConfig()` and `startAgentNode`) parses all four caps:
+  the literal value `unlimited` (case-insensitive) is the **only** way to remove a cap; `0`,
+  negative or non-numeric values now fall back to the default with one warning (previously `0`
+  meant unlimited). `MAX_WORKFLOW_TOKENS` stays unlimited when unset. A ceiling binds when the total
+  **reaches** it (`>=`).
+- `AgentStatePublisher` checks both token caps **before** the handler runs: a task that finds its
+  agent's or its own tally already at the cap is refused with zero LLM requests; the tally per
+  `taskId` survives redeliveries (bounded to the last 1 000 tasks). New
+  `AgentStatePublisherOpts.maxTaskTokenBudget`, `getTotalTokensUsed()`.
+- `WorkflowOrchestrator` enforces the workflow ceilings in the runtime, not only in the example
+  orchestrators: spend is accounted from every `runStep` result / `memoize` value (the structured
+  handler-result shape, or a custom `spendOf`), `recordSpend()` accepts external totals, and once a
+  ceiling is reached every further dispatch throws `BudgetExceededError` (`getStop()` returns
+  `{ reason: "budget_exceeded", detail, totals }`, `onStopped` fires once). Default budget =
+  `workflowBudgetFromEnv()`. Checkpointed steps still replay.
+- `BudgetExceededError` now extends the new `NonRetryableError` (`src/domain/errors`), carries a
+  `reasonCode`, and `AgentActor.executeWithRetries` re-throws any `NonRetryableError` on the first
+  attempt: one handler call, no breaker failure, one DLQ record with `error` = the reason code
+  (`token_budget_exceeded`, `task_token_budget_exceeded`, `budget_exceeded` — poison for
+  `replayDlq`) and `reason` = the message. Previously a budget breach was retried twice more.
+- `buildSecurityDeps()` logs a warning when `ECONOMICS_ENABLED=true`, because the deployed worker
+  wires no fleet cost limiter (roadmap §2 / ADR-023).
+- Example compose files default `MAX_WORKFLOW_TOKENS` to `unlimited` (was `0`).
+- Documentation corrected to what the code does today (roadmap §7.2 table): `tasks/cancel` stops
+  the gateway wait only; the kill-switch is per-process; no consume-side deduplication exists;
+  `ECONOMICS_ENABLED` alone enforces nothing in the worker; the 415 / error-sanitisation rows were
+  removed from `SECURITY_FEATURES.md`; global-research does not resume with a random `WORKFLOW_ID`;
+  KaibanJS `team.stop()` can abort non-OpenAI providers but the bridge does not call it yet
+  (`owned-llm.ts`, ADR-014). `SECURITY.md`: supported versions 2.x; open Dependabot advisories
+  as of 2026-10-21 replace the "0 vulnerabilities" sentence.
+
 ### Fixed
 - CI: `npm ci` failed in the Quality, Security and Docker jobs (and would have in the nightly,
   release and publish lanes) after the Dependabot updates of 2026-10-04: Dependabot writes the
@@ -89,8 +124,9 @@ Major release — breaking changes are documented in `MIGRATION.md`. Authoritati
 - **Dependencies:** KaibanJS 0.24.2, TypeScript 6.0, OpenTelemetry 0.219/0.77, bullmq 5.79, dotenv 17
   — all latest stable, **0 vulnerabilities** (ADR-012).
 - **gateway / worker ROLE split** — a single image runs as `ROLE=gateway|worker`. (BETA.1, ADR-013)
-- **AbortSignal cancellation** — an in-flight LLM call is aborted on task timeout / `tasks/cancel`
-  (the bridge owns the LLM instance). (BETA.1, ADR-014)
+- **AbortSignal cancellation** — an in-flight LLM call is aborted on task timeout and worker
+  shutdown (the bridge owns the LLM instance). A2A `tasks/cancel` stops the gateway wait only; the
+  worker runs to its timeout. (BETA.1, ADR-014; sentence corrected 2026-10-21, roadmap §7.2)
 - **Examples migrated to A2A v0.3** — removed all `tasks.create` / `tasks.get` / `agent.status`
   usage; both examples dispatch via `dispatchToAgent` and read AgentCard `skills[]`.
 - **Gateway HITL delivery** — the durable per-task BRPOP-list write now precedes the pub/sub

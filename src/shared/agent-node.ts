@@ -34,6 +34,7 @@ import {
 import { AgentStatePublisher } from "../adapters/state/agent-state-publisher";
 import { createDriver } from "./driver-factory";
 import { buildSecurityDeps } from "./build-security-deps";
+import { resolveSpendCaps } from "./budget";
 import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "./structured-logger";
 
@@ -71,12 +72,17 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   const driver = createDriver(agentId);
   const { actorDeps, tokenProvider } = buildSecurityDeps();
 
+  // Per-agent and per-task token caps (MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET;
+  // defaults 200 000 / 50 000, the literal `unlimited` removes one). Enforced by
+  // the publisher's wrapHandler before and after every task.
+  const caps = resolveSpendCaps();
   const statePublisher = new AgentStatePublisher(
     redisUrl,
     { agentId, name: displayName, role },
-    // Per-agent token budget (0 = unlimited). Enforced by the publisher's
-    // wrapHandler; previously loaded into config but never reached this path.
-    { maxTokenBudget: parseInt(process.env["MAX_TOKEN_BUDGET"] ?? "0", 10) },
+    {
+      maxTokenBudget: caps.maxTokenBudget,
+      maxTaskTokenBudget: caps.maxTaskTokenBudget,
+    },
   );
   const handler = statePublisher.wrapHandler(
     createKaibanTaskHandler(agentConfig, driver, tokenProvider),

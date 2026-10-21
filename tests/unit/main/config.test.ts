@@ -195,9 +195,21 @@ describe("loadConfig", () => {
     expect(loadConfig().port).toBe(3000);
   });
 
-  it("falls back to the default maxTokenBudget when MAX_TOKEN_BUDGET is non-numeric", () => {
+  it("falls back to the default maxTokenBudget (200 000) when MAX_TOKEN_BUDGET is non-numeric", () => {
     process.env["MAX_TOKEN_BUDGET"] = "lots";
-    expect(loadConfig().maxTokenBudget).toBe(0);
+    expect(loadConfig().maxTokenBudget).toBe(200_000);
+  });
+
+  it("token caps: defaults when unset, numeric when set, Infinity for `unlimited`", () => {
+    delete process.env["MAX_TOKEN_BUDGET"];
+    delete process.env["MAX_TASK_TOKEN_BUDGET"];
+    expect(loadConfig().maxTokenBudget).toBe(200_000);
+    expect(loadConfig().maxTaskTokenBudget).toBe(50_000);
+    process.env["MAX_TOKEN_BUDGET"] = "unlimited";
+    process.env["MAX_TASK_TOKEN_BUDGET"] = "1234";
+    const cfg = loadConfig();
+    expect(cfg.maxTokenBudget).toBe(Number.POSITIVE_INFINITY);
+    expect(cfg.maxTaskTokenBudget).toBe(1234);
   });
 
   it("falls back to defaults for non-numeric economics numerics", () => {

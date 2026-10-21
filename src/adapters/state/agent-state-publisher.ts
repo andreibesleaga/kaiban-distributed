@@ -14,6 +14,7 @@ import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import { sanitizeDelta } from "./distributedMiddleware";
 import { createStructuredLogger } from "../../shared/structured-logger";
+import { BudgetExceededError, formatCap } from "../../shared/budget";
 
 const log = createStructuredLogger({ component: "AgentStatePublisher" });
 
@@ -60,16 +61,38 @@ function truncateToBytes(str: string, maxBytes: number): string {
   return buf.toString("utf8", 0, end);
 }
 
+/** How many recent taskIds keep a per-task token tally (bounded memory). */
+const MAX_TRACKED_TASKS = 1_000;
+
 export interface AgentStatePublisherOpts {
-  /** Max cumulative tokens before the publisher throws BudgetExceededError. 0 = unlimited. */
+  /**
+   * Max cumulative tokens for this agent process (all tasks). Checked BEFORE a
+   * task runs (a task that finds the cap already met is refused without an LLM
+   * call) and after each result. `Infinity`, `undefined` or `0` = unlimited
+   * (the env path, `resolveSpendCaps`, never yields `0`).
+   */
   maxTokenBudget?: number;
+  /**
+   * Max tokens one task may consume across all its deliveries/attempts. Checked
+   * before the task runs and after each result. `Infinity`/`undefined`/`0` =
+   * unlimited.
+   */
+  maxTaskTokenBudget?: number;
+}
+
+/** A positive, finite cap binds; `Infinity` / `0` / `undefined` do not. */
+function cappedAt(cap: number | undefined): number | null {
+  return cap !== undefined && Number.isFinite(cap) && cap > 0 ? cap : null;
 }
 
 export class AgentStatePublisher {
   private redis: Redis;
   private agentInfo: AgentInfo;
   private totalTokensUsed = 0;
-  private readonly maxTokenBudget: number;
+  private readonly maxTokenBudget: number | null;
+  private readonly maxTaskTokenBudget: number | null;
+  /** Tokens consumed so far per taskId (bounded to MAX_TRACKED_TASKS entries). */
+  private readonly taskTokensUsed = new Map<string, number>();
 
   constructor(
     redisUrl: string,
@@ -78,7 +101,72 @@ export class AgentStatePublisher {
   ) {
     this.redis = new Redis(redisUrl, { lazyConnect: false });
     this.agentInfo = agentInfo;
-    this.maxTokenBudget = opts?.maxTokenBudget ?? 0;
+    this.maxTokenBudget = cappedAt(opts?.maxTokenBudget);
+    this.maxTaskTokenBudget = cappedAt(opts?.maxTaskTokenBudget);
+  }
+
+  /** Cumulative tokens this agent process has consumed. */
+  getTotalTokensUsed(): number {
+    return this.totalTokensUsed;
+  }
+
+  /**
+   * Pre-flight: refuse a task whose agent-level or task-level accumulated usage
+   * already meets its cap — before the handler (and the paid LLM call) runs.
+   */
+  private assertCapsNotMet(taskId: string): void {
+    if (
+      this.maxTokenBudget !== null &&
+      this.totalTokensUsed >= this.maxTokenBudget
+    ) {
+      throw new BudgetExceededError(
+        `Token budget exceeded before task ${taskId}: ` +
+          `${this.totalTokensUsed} >= ${formatCap(this.maxTokenBudget)}`,
+        "token_budget_exceeded",
+      );
+    }
+    const taskUsed = this.taskTokensUsed.get(taskId) ?? 0;
+    if (this.maxTaskTokenBudget !== null && taskUsed >= this.maxTaskTokenBudget) {
+      throw new BudgetExceededError(
+        `Task token budget exceeded before task ${taskId}: ` +
+          `${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}`,
+        "task_token_budget_exceeded",
+      );
+    }
+  }
+
+  /**
+   * Account a finished task's tokens against the agent and task tallies and
+   * return the breach (if any) to raise — task cap first, then agent cap.
+   */
+  private accountTokens(
+    taskId: string,
+    totalTokens: number,
+  ): BudgetExceededError | null {
+    this.totalTokensUsed += totalTokens;
+    const taskUsed = (this.taskTokensUsed.get(taskId) ?? 0) + totalTokens;
+    this.taskTokensUsed.delete(taskId);
+    this.taskTokensUsed.set(taskId, taskUsed);
+    if (this.taskTokensUsed.size > MAX_TRACKED_TASKS) {
+      const oldest = this.taskTokensUsed.keys().next().value as string;
+      this.taskTokensUsed.delete(oldest);
+    }
+    if (this.maxTaskTokenBudget !== null && taskUsed >= this.maxTaskTokenBudget) {
+      return new BudgetExceededError(
+        `Task token budget exceeded: ${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}`,
+        "task_token_budget_exceeded",
+      );
+    }
+    if (
+      this.maxTokenBudget !== null &&
+      this.totalTokensUsed >= this.maxTokenBudget
+    ) {
+      return new BudgetExceededError(
+        `Token budget exceeded: ${this.totalTokensUsed} >= ${formatCap(this.maxTokenBudget)}`,
+        "token_budget_exceeded",
+      );
+    }
+    return null;
   }
 
   /** Publish a partial state delta — board merges by agentId/taskId */
@@ -181,43 +269,49 @@ export class AgentStatePublisher {
         60,
       );
 
-      // → EXECUTING (task queued / starting)
-      this.currentStatus = "EXECUTING";
-      this.currentTaskId = payload.taskId;
-      pub({
-        agents: [
-          {
-            agentId,
-            name,
-            role,
-            status: "EXECUTING",
-            currentTaskId: payload.taskId,
-          },
-        ],
-        tasks: [
-          {
-            taskId: payload.taskId,
-            title,
-            status: "DOING",
-            assignedToAgentId: agentId,
-          },
-        ],
-      });
-
-      // → THINKING (LLM call in progress)
-      pub({
-        agents: [
-          {
-            agentId,
-            name,
-            role,
-            status: "THINKING",
-            currentTaskId: payload.taskId,
-          },
-        ],
-      });
-
       try {
+        // Pre-flight (roadmap §7.2 item 2): a task that finds a cap already met
+        // is refused here — no EXECUTING state, no handler call, no paid request;
+        // the catch below publishes ERROR/BLOCKED. BudgetExceededError is
+        // non-retryable, so the actor dead-letters it after this one attempt.
+        this.assertCapsNotMet(payload.taskId);
+
+        // → EXECUTING (task queued / starting)
+        this.currentStatus = "EXECUTING";
+        this.currentTaskId = payload.taskId;
+        pub({
+          agents: [
+            {
+              agentId,
+              name,
+              role,
+              status: "EXECUTING",
+              currentTaskId: payload.taskId,
+            },
+          ],
+          tasks: [
+            {
+              taskId: payload.taskId,
+              title,
+              status: "DOING",
+              assignedToAgentId: agentId,
+            },
+          ],
+        });
+
+        // → THINKING (LLM call in progress)
+        pub({
+          agents: [
+            {
+              agentId,
+              name,
+              role,
+              status: "THINKING",
+              currentTaskId: payload.taskId,
+            },
+          ],
+        });
+
         const result = await handler(payload, signal);
 
         // → DONE
@@ -226,13 +320,11 @@ export class AgentStatePublisher {
         const resultStr = this.formatDisplayResult(result);
         const tokenMeta = this.extractTokenMetadata(result);
 
-        // Token budget check
+        // Token budget check (task cap, then agent cap); the breach is
+        // non-retryable so the paid attempt is the only one.
         if (tokenMeta) {
-          this.totalTokensUsed += tokenMeta.totalTokens;
-          if (
-            this.maxTokenBudget > 0 &&
-            this.totalTokensUsed >= this.maxTokenBudget
-          ) {
+          const breach = this.accountTokens(payload.taskId, tokenMeta.totalTokens);
+          if (breach) {
             pub({
               agents: [
                 {
@@ -252,9 +344,7 @@ export class AgentStatePublisher {
                 },
               ],
             });
-            throw new Error(
-              `Token budget exceeded: ${this.totalTokensUsed} >= ${this.maxTokenBudget}`,
-            );
+            throw breach;
           }
         }
 

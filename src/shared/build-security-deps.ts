@@ -49,6 +49,19 @@ function buildAdmissionGateFromEnv(): IAdmissionGate | undefined {
 }
 
 /**
+ * Truth in the deployed worker (roadmap §2 / §7.5): the fleet cost limiter is a
+ * library capability a caller must inject; this path wires none, so say so.
+ */
+function warnIfEconomicsUnwired(): void {
+  if (!getBoolEnv("ECONOMICS_ENABLED", false)) return;
+  log.warn(
+    "ECONOMICS_ENABLED=true has no effect in this worker: no fleet cost limiter " +
+      "is wired (roadmap ADR-023); the MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET / " +
+      "MAX_WORKFLOW_COST_USD caps still apply",
+  );
+}
+
+/**
  * Builds security dependencies from environment variables.
  *
  * Returns:
@@ -73,6 +86,7 @@ export function buildSecurityDeps(): {
   );
 
   const admissionGate = buildAdmissionGateFromEnv();
+  warnIfEconomicsUnwired();
 
   const actorDeps: AgentActorDeps = {
     firewall: firewallEnabled ? new HeuristicFirewall() : undefined,

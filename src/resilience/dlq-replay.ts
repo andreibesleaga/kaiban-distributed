@@ -35,6 +35,11 @@ const log = createLogger("DlqReplay");
 export const DLQ_POISON_REASONS: ReadonlySet<string> = new Set([
   "blocked_by_semantic_firewall",
   "circuit_breaker_open",
+  // Non-retryable budget breaches (`BudgetExceededError.reasonCode`): the same
+  // cap refuses the task again until the operator raises or removes it.
+  "budget_exceeded",
+  "token_budget_exceeded",
+  "task_token_budget_exceeded",
 ]);
 
 /** Envelope fields added by the actor's DLQ publish; stripped before replay. */

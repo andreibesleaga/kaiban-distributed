@@ -10,6 +10,7 @@ import {
 import type { ISemanticFirewall } from "../../domain/security/semantic-firewall";
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
 import type { IAdmissionGate } from "../../domain/security/admission-gate";
+import { NonRetryableError } from "../../domain/errors/DomainError";
 import {
   recordAnomalyEvent,
   recordMessageProcessed,
@@ -257,6 +258,10 @@ export class AgentActor {
         recordMessageLatency(Date.now() - start, "completed");
         return;
       } catch (err) {
+        if (err instanceof NonRetryableError) {
+          await this.failNonRetryable(payload, err, start);
+          return;
+        }
         lastError = err instanceof Error ? err.message : String(err);
         log.error(
           { agentId: sanitizeId(this.id), attempt, err: lastError },
@@ -271,6 +276,35 @@ export class AgentActor {
     this.circuitBreaker?.recordFailure();
     recordMessageLatency(Date.now() - start, "failed");
     await this.publishToDlq(payload, lastError);
+  }
+
+  /**
+   * A `NonRetryableError` (e.g. `BudgetExceededError`) ends the task on the
+   * attempt that raised it: no further attempt, no breaker failure (it is not a
+   * downstream fault), one DLQ record whose `error` is the stable `reasonCode`
+   * (so `replayDlq` treats it as poison) and whose `reason` is the message.
+   */
+  private async failNonRetryable(
+    payload: MessagePayload,
+    err: NonRetryableError,
+    start: number,
+  ): Promise<void> {
+    log.warn(
+      {
+        agentId: sanitizeId(this.id),
+        taskId: payload.taskId,
+        reasonCode: err.reasonCode,
+        err: err.message,
+      },
+      "Task failed with a non-retryable error — not retrying",
+    );
+    recordAnomalyEvent("task.non_retryable", {
+      agentId: sanitizeId(this.id),
+      taskId: payload.taskId,
+      reason: err.reasonCode,
+    });
+    recordMessageLatency(Date.now() - start, "failed");
+    await this.publishToDlq(payload, err.reasonCode, err.message);
   }
 
   private async publishToDlq(

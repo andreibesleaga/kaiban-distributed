@@ -148,4 +148,24 @@ describe("buildSecurityDeps", () => {
     const { actorDeps } = buildSecurityDeps();
     expect(actorDeps.admissionGate).toBeUndefined();
   });
+
+  it("warns that ECONOMICS_ENABLED=true enforces nothing in this worker (no limiter is wired)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env["ECONOMICS_ENABLED"] = "true";
+    const { actorDeps } = buildSecurityDeps();
+    expect(actorDeps.admissionGate).toBeUndefined();
+    expect(warn.mock.calls.map((c) => c.join(" ")).join("\n")).toContain(
+      "ECONOMICS_ENABLED=true has no effect in this worker",
+    );
+    warn.mockRestore();
+    delete process.env["ECONOMICS_ENABLED"];
+  });
+
+  it("stays silent about economics when ECONOMICS_ENABLED is unset", () => {
+    delete process.env["ECONOMICS_ENABLED"];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    buildSecurityDeps();
+    expect(warn.mock.calls.map((c) => c.join(" ")).join("\n")).not.toContain("ECONOMICS_ENABLED");
+    warn.mockRestore();
+  });
 });
