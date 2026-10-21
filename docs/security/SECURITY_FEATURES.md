@@ -195,13 +195,15 @@ CHANNEL_SIGNING_SECRET=<random 32+ bytes, base64>   # activates signing
 | | `Strict-Transport-Security: max-age=63072000; includeSubDomains` |
 | | `Referrer-Policy: no-referrer` |
 | **Body size limit** | `express.json({ limit: '1mb' })` — rejects oversized payloads |
-| **Content-Type enforcement** | Returns 415 if `Content-Type` is not `application/json` on `/a2a/rpc` |
 | **Request timeout** | `req.setTimeout(30_000)` — prevents slow-read / Slowloris attacks |
 | **Rate limiting — RPC** | 100 req/min per IP via `SlidingWindowRateLimiter` |
 | **Rate limiting — health** | 5 req/min per IP (separate limiter; prevents recon abuse) |
 | **Trust proxy** | `app.set('trust proxy', 1)` only when `TRUST_PROXY=true` — prevents IP spoofing via `X-Forwarded-For` |
-| **Error sanitization** | Production: `'Internal server error'`; Development: full error message |
 | **Request logging** | UUID per request; logged on response finish (no sensitive data in log line) |
+
+Not implemented today (removed from the table on 2026-10-21, roadmap §7.2): a `415` Content-Type check
+and production error-message sanitisation on `/a2a/rpc` and the MCP path. `express.json()` simply does
+not parse a non-JSON body, and error responses carry the error message in every environment.
 
 **Rate limiter design:** `SlidingWindowRateLimiter` uses an in-memory `Map<ip, number[]>`. Expired timestamps are evicted on each access; empty keys are replaced rather than accumulated — preventing unbounded memory growth under IP-spray attacks.
 

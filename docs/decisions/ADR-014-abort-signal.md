@@ -12,9 +12,11 @@ tokens** for a result nobody would use (Finding #2 — zombie token burn). The s
 applies on graceful shutdown.
 
 KaibanJS `0.24.2` exposes **no AbortSignal**: `team.start()` cannot be passed a
-signal, and `team.stop()` does not abort the in-flight LLM HTTP request
-(master plan §B2/A9). So abort must be plumbed at the **LangChain
-`.invoke(input, { signal })`** layer — which means **owning the LLM instance**.
+signal. (Correction, 2026-10-21: `team.stop()` *does* abort the in-flight LLM
+request for every provider, but `team.start()` never settles after it and the
+bridge does not call it — roadmap §7.2 item 4.) So abort is plumbed at the
+**LangChain `.invoke(input, { signal })`** layer — which means **owning the LLM
+instance**.
 
 ## Decision
 1. **`TaskHandler` gains a signal:** `(payload, signal?: AbortSignal) => Promise<unknown>`.
@@ -39,8 +41,10 @@ signal, and `team.stop()` does not abort the in-flight LLM HTTP request
 - Cancellation is **provider-scoped to the OpenAI-compatible path**, which is the
   only provider this runtime resolves. For a hypothetical non-OpenAI provider,
   `buildOwnedLlm` returns `undefined` and KaibanJS owns the instance — the
-  actor-level timeout + DLQ still fire, but **in-flight token spend cannot be
-  cancelled** for that call. No KaibanJS fork was needed for the supported path.
+  actor-level timeout + DLQ still fire, but **in-flight token spend is not
+  cancelled today** for that call: KaibanJS's `team.stop()` can abort it, and the
+  bridge does not call it yet (roadmap §7.2 item 4). No KaibanJS fork was needed
+  for the supported path.
 - `@langchain/openai` is now a **direct dependency** (was transitive via
   `kaibanjs`), pinned `^0.5.7` to match KaibanJS's own range so the owned model is
   the same class KaibanJS uses (no `lc_namespace`/`instanceof` mismatch).

@@ -1,9 +1,10 @@
 /**
  * Owned LangChain LLM instance — the abort seam for Finding #2 (ADR-014).
  *
- * KaibanJS 0.24.2 exposes no AbortSignal: `team.start()` cannot be cancelled and
- * `team.stop()` does not abort the live LLM HTTP request. KaibanJS *does* accept
- * a pre-built LangChain model via `Agent({ llmInstance })` and uses it verbatim.
+ * KaibanJS 0.24.2 exposes no AbortSignal on `team.start()`. Its `team.stop()`
+ * does abort the live LLM request for every provider, but this bridge does not
+ * call it yet (roadmap §7.2 item 4). KaibanJS *does* accept a pre-built
+ * LangChain model via `Agent({ llmInstance })` and uses it verbatim.
  *
  * So we build the `ChatOpenAI` instance ourselves and wrap its `.invoke` /
  * `.stream` so the per-task `AbortSignal` from the actor is merged into the
@@ -14,8 +15,8 @@
  * `provider: "openai"` (OpenAI / OpenRouter / any OpenAI-compatible base URL —
  * see `build-llm-config.ts`). For any other provider we return `undefined` and
  * the bridge falls back to letting KaibanJS construct the instance (in which
- * case actor-level timeout/DLQ still applies, but in-flight token spend cannot be
- * cancelled — a documented limitation in ADR-014).
+ * case actor-level timeout/DLQ still applies, but in-flight token spend is not
+ * cancelled today — the bridge would have to call `team.stop()`; see ADR-014).
  */
 import { ChatOpenAI } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";

@@ -63,11 +63,13 @@ And the design stance that distinguishes it from most JS agent frameworks:
   `kaiban-state-events` and `kaiban-hitl-decisions` channels are **pinned to Redis Pub/Sub regardless
   of `MESSAGING_DRIVER`**. **Value:** durable task work and ephemeral UI/decision signalling each get
   the transport they actually need, and the contract is stable enough to reason about and test.
-- **At-least-once delivery with `taskId` idempotency (AP + BASE).** Both brokers guarantee
-  at-least-once, not exactly-once; `taskId` is the deduplication key and every handler is idempotent.
+- **At-least-once delivery with `taskId` as the deduplication key (AP + BASE).** Both brokers guarantee
+  at-least-once, not exactly-once; `taskId` is the key the orchestrator deduplicates on (checkpoint
+  replay and `CompletionRouter`). There is **no consume-side deduplication yet**: a task redelivered
+  to a worker runs again (roadmap §7.2 item 5), so handlers should be written to tolerate that.
   **Value:** "duplicates are normal and must not corrupt state"—the system reaches consistency through
-  message passing and idempotent handlers instead of a brittle global lock, which is what lets it scale
-  horizontally.
+  message passing and idempotent orchestration instead of a brittle global lock, which is what lets it
+  scale horizontally.
 - **Location transparency & horizontal scale.** Actors on one host or a global cluster look identical
   to the rest of the system; competing consumers (BullMQ round-robin / Kafka group rebalance) spread
   load. **Value:** "horizontal scale is one command" (`docker compose up --scale searcher=N` or
@@ -160,9 +162,11 @@ And the design stance that distinguishes it from most JS agent frameworks:
   operation, agent, and payload substrings, hot-reloadable. **Value:** security/compliance teams change
   what agents may do by editing a YAML file, no redeploy required.
 - **Agent registry + kill-switch (PDLSS).** Each agent carries Purpose / Duration / Limit / Scope /
-  Self-instantiation metadata; `revoke()` is an instant kill-switch that blocks expired, over-limit,
-  out-of-scope, or revoked agents. **Value:** a misbehaving agent can be stopped fleet-wide in one
-  call, and short-lived/scoped agents enforce least privilege by construction.
+  Self-instantiation metadata; `revoke()` blocks expired, over-limit, out-of-scope, or revoked agents.
+  Today this is a **per-process library capability**: the registry is not wired into the deployed
+  worker's admission gate, so a `revoke()` takes effect only in the process that holds that registry
+  (fleet-wide delivery is roadmap §6.3(g)). **Value:** short-lived/scoped agents enforce least
+  privilege by construction, and the kill-switch is in place for the control plane to wire.
 - **Secure, classified memory store.** `SecureMemoryStore` is tenant-keyspaced (no cross-tenant
   reads), with per-entry provenance + trust, classification (`public`/`internal`/`confidential`),
   retrieval-time RBAC, TTL eviction, min-trust filtering, and `revoke()` for poisoned entries.
@@ -176,20 +180,36 @@ And the design stance that distinguishes it from most JS agent frameworks:
 
 ### 2.6 Economics / FinOps cost control
 
-- **Fleet-wide rate + cost limiter (new in v2.0; default-off).** `RateCostLimiter` enforces request-
-  rate and cost budgets across the tightest binding scope (global + per-tenant + per-agent), backed by
-  `rate-limiter-flexible` with an injectable store (in-memory for one node, Redis for a fleet).
-  **Value:** a runaway loop or a bad prompt can't quietly burn the monthly budget—spend is capped
-  fleet-wide, complementing (never replacing) the existing per-task token accounting.
+- **Fleet-wide rate + cost limiter (new in v2.0; default-off; library capability).** `RateCostLimiter`
+  enforces request-rate and cost budgets across the tightest binding scope (global + per-tenant +
+  per-agent), backed by `rate-limiter-flexible` with an injectable store (in-memory for one node,
+  Redis for a fleet). The **deployed worker wires no limiter**: `ECONOMICS_ENABLED=true` on its own
+  enforces nothing there (a start-up warning says so); a consumer injects one through
+  `buildWorkerAdmissionGate(governance, { economics, costLimiter })`. Default wiring is roadmap §2
+  (ADR-023). **Value:** a runaway loop or a bad prompt can't quietly burn the monthly budget once a
+  limiter is wired—complementing (never replacing) the per-agent/per-task caps below.
 - **Pre-execution admission control (`CostReservation`).** Before a step runs, it returns
   `allow` / `degrade` / `reject`: over-budget rejects (the step never executes, no tokens spent),
   budget pressure at/above a threshold degrades to a cheaper model ("run cheaper," not "don't run").
   **Value:** cost is enforced *before* the LLM call, and the system gracefully trades quality for
   budget instead of hard-failing. Multi-scope reservations compensate so no partial reservation leaks.
-- **Workflow budget guard.** `MAX_WORKFLOW_COST_USD` / `MAX_WORKFLOW_TOKENS` are checked between every
-  phase and before each revision in both example orchestrators; a breach yields a **graceful STOPPED**
-  state (default `0.50` in the example compose files; `0` = unlimited). **Value:** an end-to-end
-  workflow has a hard ceiling and exits cleanly on breach rather than overspending.
+- **Caps and defaults (spend guard).** Four caps, read by one resolver (`resolveSpendCaps`) and
+  **on by default with low ceilings** when nothing is set:
+
+  | Variable | Scope | Default when unset | Enforced by |
+  |---|---|---|---|
+  | `MAX_WORKFLOW_COST_USD` | one workflow's cumulative estimated USD | `0.50` | `WorkflowOrchestrator` — stops dispatching when the total reaches it; `getStop()` reports `budget_exceeded` |
+  | `MAX_WORKFLOW_TOKENS` | one workflow's cumulative tokens | unlimited | `WorkflowOrchestrator` |
+  | `MAX_TOKEN_BUDGET` | one agent process, all tasks | `200000` | `AgentStatePublisher` — refused **before** the LLM call once met |
+  | `MAX_TASK_TOKEN_BUDGET` | one task, all attempts/deliveries | `50000` | `AgentStatePublisher` — refused before the call once met |
+
+  The **only** way to remove a cap is the literal value `unlimited` (case-insensitive). `0`,
+  negative or non-numeric values are a misconfiguration: the default applies and one warning is
+  logged. A breach is a `BudgetExceededError`, a `NonRetryableError`: the actor dead-letters the
+  task after that single attempt (DLQ `error` = `token_budget_exceeded` /
+  `task_token_budget_exceeded` / `budget_exceeded`, poison for replay). The example orchestrators
+  additionally check the same budget between phases and publish a graceful **STOPPED**.
+  **Value:** a fresh deployment cannot overspend by accident, and a breach costs one call, not three.
 - **Prompt-cache accounting & model right-sizing.** `priceUsage`/`effectiveCacheHitRate` bill cached
   input tokens at the provider's discount and surface the saving; `routeModel`/`estimatedStepCost` pick
   a model by capability and context window weighted by budget pressure. **Value:** accurate unit costs
@@ -215,9 +235,11 @@ And the design stance that distinguishes it from most JS agent frameworks:
   (default 10 / 60 s, opt-in). **Value:** a failing downstream (LLM provider, tool) is shed quickly
   instead of amplifying load and cascading.
 - **Per-task timeout with AbortSignal cancellation (v2.0).** A 5-minute default timeout, and an
-  in-flight LLM call is **actually aborted** on timeout or `tasks/cancel` (the bridge owns the LLM
-  instance). **Value:** a stuck inference is cancelled rather than left running and billing—and an
-  external caller can cancel a task and have the work stop.
+  in-flight LLM call is **actually aborted** on timeout and on worker shutdown (the bridge owns the
+  LLM instance on the OpenAI-compatible path). A2A `tasks/cancel` marks the task `canceled` and stops
+  the gateway waiting; **the worker is not told** and runs to its own timeout (a cancel reaching the
+  worker is roadmap §6 M-Ctl.2). **Value:** a stuck inference is cancelled rather than left running
+  and billing.
 - **Chaos / fault-injection mode.** `--chaos` crashes ~20% of searchers mid-flight; the broker's
   job-lock TTL reassigns the task. The `test:e2e:chaos` suite pauses the Redis broker mid-flight and
   asserts every buffered publish flushes on recovery with **zero dropped agent messages**. **Value:**
@@ -324,15 +346,20 @@ custom A2A connector, an MCP *client*, env-gated security controls, and a full C
   drain, and safe DLQ replay. **Value:** crash-safe core workflows and clean k8s lifecycle—reusable, not
   copy-pasted into each example.
 - **Economics / FinOps layer (ADR-019).** Fleet-wide rate + cost limiting and pre-execution cost
-  reservation, default-off. **Value:** spend is enforceable before the LLM call, fleet-wide.
+  reservation as a default-off library layer; the deployed worker wires no limiter yet
+  (`ECONOMICS_ENABLED=true` alone enforces nothing there — roadmap §2). **Value:** spend is
+  enforceable before the LLM call once a limiter is injected.
 - **Governance Action Gate + hot-path enforcement (ADR-020/021).** Hash-chained audit, policy-as-code,
   agent registry/kill-switch, and a non-bypassable gate wired into the actor's execution loop—default
   off, fail-closed on a throwing validator. **Value:** enforceable, auditable control over what agents
   may do, with no token spend on blocked actions.
-- **Workflow budget guard.** `MAX_WORKFLOW_COST_USD` / `MAX_WORKFLOW_TOKENS` with graceful STOPPED on
-  breach. **Value:** a hard, end-to-end ceiling on a whole workflow.
-- **AbortSignal cancellation (ADR-014).** In-flight LLM calls are aborted on timeout or cancel.
-  **Value:** stuck inferences stop billing and external cancellation actually halts work.
+- **Spend caps, on by default.** `MAX_WORKFLOW_COST_USD` (0.50), `MAX_TOKEN_BUDGET` (200 000) and
+  `MAX_TASK_TOKEN_BUDGET` (50 000) apply when unset; `unlimited` is the only opt-out; a breach is
+  non-retryable; the runtime orchestrator stops dispatching at the workflow cap. **Value:** a hard,
+  end-to-end ceiling on a whole workflow, from the first deployment.
+- **AbortSignal cancellation (ADR-014).** In-flight LLM calls are aborted on timeout and worker
+  shutdown; A2A `tasks/cancel` stops the gateway wait only (the worker runs to its timeout).
+  **Value:** stuck inferences stop billing.
 - **Dual-license, Apache-2.0 core (ADR-011, BREAKING).** The published npm library is now Apache-2.0
   (was GPL-3.0); the full app/board/examples stay GPL-3.0, with a `./shared` subpath export and
   GPL-leak-proof staging-dir packaging. **Value:** safe to adopt as a commercial dependency.
@@ -380,8 +407,9 @@ comparisons are framed cautiously—the agent-framework landscape moves fast.
   that the board, the auditors, and OpenTelemetry all consume.
 - **[differentiated] Governance and economics that are genuinely default-off yet non-bypassable when
   enabled, and enforced on the deployed actor's hot path before tokens are spent.** A hash-chained
-  audit, policy-as-code, an instant kill-switch, fleet-wide cost reservation, and admission-gate
-  enforcement that routes blocked work to the DLQ without running the handler (ADR-019/020/021) is an
+  audit, policy-as-code, an in-process kill-switch (not yet fleet-wired), cost reservation (a library
+  capability the worker does not wire by default), and admission-gate enforcement that routes blocked
+  work to the DLQ without running the handler (ADR-019/020/021) is an
   unusually complete control plane to find inside an open-source JS agent runtime—while staying a true
   no-op when disabled (a hard invariant with backing tests).
 - **[differentiated] Transport-agnostic by contract: swap Redis ↔ Kafka with zero worker code
@@ -438,7 +466,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 **Governance & economics**
 25. Action Gate, hash-chained `AuditLog`, `PolicyEngine` + `policies.yml`, `AgentRegistry` kill-switch, `SecureMemoryStore`.
 26. `RateCostLimiter`, `CostReservation` (allow/degrade/reject), `priceUsage`/cache accounting, `routeModel` right-sizing.
-27. Workflow budget guard (`MAX_WORKFLOW_COST_USD`/`MAX_WORKFLOW_TOKENS`) + per-agent `MAX_TOKEN_BUDGET`.
+27. Spend caps on by default: `MAX_WORKFLOW_COST_USD` (0.50) / `MAX_WORKFLOW_TOKENS`, per-agent `MAX_TOKEN_BUDGET` (200 000), per-task `MAX_TASK_TOKEN_BUDGET` (50 000); `unlimited` opts out.
 
 **Observability & board**
 28. React 18 + Vite + Tailwind + Zustand board (agent grid, 5-column Kanban, HITL modal, economics panel, event log), runtime-configurable gateway URL.

@@ -441,10 +441,12 @@ npm run lint && npm run typecheck && npm run test:coverage
 > **Runaway-spend guard.** Both example orchestrators enforce a workflow-level
 > budget after **every** phase (blog-team: research/write/edit; global-research:
 > search/write/governance/editorial) and before each revision, via
-> `MAX_WORKFLOW_COST_USD` (default `0.50` in the example compose files) and
-> `MAX_WORKFLOW_TOKENS` (`0` = unlimited). On breach the workflow stops gracefully
+> `MAX_WORKFLOW_COST_USD` (default `0.50` when unset) and `MAX_WORKFLOW_TOKENS`
+> (unlimited when unset; the literal `unlimited` is the only opt-out, `0` is a
+> misconfiguration). The runtime `WorkflowOrchestrator` also refuses any further
+> dispatch once a ceiling is reached. On breach the workflow stops gracefully
 > (STOPPED) instead of draining the budget. This is separate from the per-agent
-> `MAX_TOKEN_BUDGET`.
+> `MAX_TOKEN_BUDGET` (200 000) and per-task `MAX_TASK_TOKEN_BUDGET` (50 000).
 
 ---
 

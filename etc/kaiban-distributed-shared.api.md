@@ -27,10 +27,14 @@ export interface AgentNodeConfig {
 export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
 
 // @public
-export class BudgetExceededError extends Error {
-    constructor(reason: string);
+export class BudgetExceededError extends NonRetryableError {
+    constructor(reason: string, reasonCode?: string);
+    // (undocumented)
+    readonly code = "BUDGET_EXCEEDED";
     // (undocumented)
     readonly reason: string;
+    // (undocumented)
+    readonly reasonCode: string;
 }
 
 // Warning: (ae-forgotten-export) The symbol "LLMConfig" needs to be exported by the entry point index.d.ts
@@ -72,6 +76,15 @@ export function createLogger(tag: string): Logger;
 // @public
 export function createRpcClient(gatewayUrl: string): RpcClient;
 
+// @public
+export const DEFAULT_MAX_TASK_TOKEN_BUDGET = 50000;
+
+// @public
+export const DEFAULT_MAX_TOKEN_BUDGET = 200000;
+
+// @public
+export const DEFAULT_MAX_WORKFLOW_COST_USD = 0.5;
+
 // @public (undocumented)
 export interface DispatchParams {
     context?: string;
@@ -84,7 +97,17 @@ export interface DispatchParams {
 export function dispatchToAgent(driver: Pick<IMessagingDriver, "publish">, agentId: string, params: DispatchParams): Promise<string>;
 
 // @public (undocumented)
+export abstract class DomainError extends Error {
+    constructor(message: string);
+    // (undocumented)
+    abstract readonly code: string;
+}
+
+// @public (undocumented)
 export type DriverType = "bullmq" | "kafka" | "amqp";
+
+// @public
+export function formatCap(cap: number): string;
 
 // @public
 export function getBoolEnv(key: string, defaultValue: boolean): boolean;
@@ -138,6 +161,11 @@ export interface Logger {
 }
 
 // @public
+export abstract class NonRetryableError extends DomainError {
+    abstract readonly reasonCode: string;
+}
+
+// @public
 export function normaliseEditorialText(raw: string): string;
 
 // @public (undocumented)
@@ -158,6 +186,9 @@ export class OrchestratorStatePublisher {
 
 // @public
 export function overBudgetReason(totals: SpendTotals, budget: WorkflowBudget): string | null;
+
+// @public
+export function parseCapEnv(name: string, raw: string | undefined, fallback: number): number;
 
 // @public
 export function parseHandlerResult(raw: string): HandlerResult;
@@ -186,6 +217,12 @@ export interface RedisCheckpointStoreOptions {
 }
 
 // @public
+export function resetCapWarnings(): void;
+
+// @public
+export function resolveSpendCaps(env?: NodeJS.ProcessEnv): SpendCaps;
+
+// @public
 export interface RouterLike {
     // (undocumented)
     wait(taskId: string, timeoutMs: number, label: string, signal?: AbortSignal): Promise<string>;
@@ -206,6 +243,21 @@ export interface RunStepOptions {
 }
 
 // @public
+export interface SpendCaps {
+    // (undocumented)
+    maxTaskTokenBudget: number;
+    // (undocumented)
+    maxTokenBudget: number;
+    // (undocumented)
+    maxWorkflowCostUsd: number;
+    // (undocumented)
+    maxWorkflowTokens: number;
+}
+
+// @public
+export function spendOfHandlerResult(result: unknown): SpendTotals | undefined;
+
+// @public
 export interface SpendTotals {
     // (undocumented)
     estimatedCost: number;
@@ -223,6 +275,12 @@ export interface StepCheckpoint {
     // (undocumented)
     taskId: string;
 }
+
+// @public
+export const UNLIMITED: number;
+
+// @public
+export const UNLIMITED_SENTINEL = "unlimited";
 
 // @public
 export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision>;
@@ -245,22 +303,40 @@ export type WorkflowCheckpoint = Record<string, StepCheckpoint>;
 export class WorkflowOrchestrator {
     constructor(opts: WorkflowOrchestratorOptions);
     clear(): Promise<void>;
+    getSpend(): SpendTotals;
+    getStop(): WorkflowStop | null;
     isResuming(): Promise<boolean>;
     memoize<T>(name: string, produce: () => Promise<T>): Promise<T>;
+    recordSpend(delta: SpendTotals): void;
     runStep(name: string, opts: RunStepOptions): Promise<string>;
 }
 
 // @public (undocumented)
 export interface WorkflowOrchestratorOptions {
+    budget?: WorkflowBudget;
+    onStopped?: (stop: WorkflowStop) => void;
     router: RouterLike;
+    spendOf?: (result: unknown) => SpendTotals | undefined;
     store: CheckpointStore;
     workflowId: string;
 }
 
+// @public
+export interface WorkflowStop {
+    detail: string;
+    // (undocumented)
+    reason: WorkflowStopReason;
+    // (undocumented)
+    totals: SpendTotals;
+}
+
+// @public
+export type WorkflowStopReason = "budget_exceeded";
+
 // Warnings were encountered during analysis:
 //
-// src/shared/build-security-deps.ts:59:3 - (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
-// src/shared/build-security-deps.ts:60:3 - (ae-forgotten-export) The symbol "ITokenProvider" needs to be exported by the entry point index.d.ts
+// src/shared/build-security-deps.ts:72:3 - (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
+// src/shared/build-security-deps.ts:73:3 - (ae-forgotten-export) The symbol "ITokenProvider" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

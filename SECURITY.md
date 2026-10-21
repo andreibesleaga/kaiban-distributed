@@ -4,8 +4,8 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 1.x | ✅ |
-| < 1.0 | ❌ |
+| 2.x | ✅ |
+| < 2.0 | ❌ |
 
 ## Reporting a vulnerability
 
@@ -23,8 +23,10 @@ impact, and any suggested mitigation.
 - **Never commit a real key.** Only `.env.example` (placeholders) is tracked.
 - **Never log the key.** Keys are read from the environment only.
 - **Use a project-scoped key**; rotate at least every 90 days.
-- **Set `MAX_TOKEN_BUDGET`** and a hard provider-side billing ceiling so a
-  misconfigured fan-out loop cannot run up unbounded cost.
+- **Spend caps are on by default** (`MAX_WORKFLOW_COST_USD=0.50`,
+  `MAX_TOKEN_BUDGET=200000`, `MAX_TASK_TOKEN_BUDGET=50000` when unset; only the
+  literal `unlimited` removes one). Keep them, and set a hard provider-side
+  billing ceiling so a misconfigured fan-out loop cannot run up unbounded cost.
 
 ## Supply-chain posture
 
@@ -51,13 +53,24 @@ what the dependents declare. `js-yaml` is deliberately capped below `5` because
 
 ### Residual advisories
 
-`npm audit` currently reports **0 vulnerabilities** (0 critical / 0 high /
-0 moderate / 0 low) for both the root package and `board/`. CI fails the build on
-HIGH+ and intentionally does not block on moderates, since moderate findings
-fluctuate as the npm advisory database is updated against existing dependency
-versions and are predominantly **dev/build tooling and transitive** packages that
-**do not ship in the deployed worker/gateway image or the published `dist/src`
-library**. Any that reappear are tracked and cleared as upstream fixes land.
+**As of 2026-10-21** GitHub Dependabot lists **19 open advisories** against the
+two lockfiles (`package-lock.json`, `board/package-lock.json`):
+
+| Severity | Count | Packages (manifest) |
+| -------- | ----- | ------------------- |
+| Critical | 3 | `handlebars` ×2, `proxy-addr` (root) |
+| High | 3 | `@modelcontextprotocol/sdk` (root); `source-map-js` (root + board) |
+| Medium | 13 | `@opentelemetry/instrumentation-cassandra-driver`, `@opentelemetry/instrumentation-oracledb`, `fast-uri` ×2, `handlebars`, `qs` ×2, `sprintf-js`, `vitest` + `@vitest/mocker` (root + board), `postcss` (board) |
+
+Policy: open advisories are addressed on a **dependency branch** (the Dependabot
+pull requests or a consolidated `deps/*` branch), merged after CI and review —
+never mixed into feature or documentation changes. CI fails the build on HIGH+
+(`npm audit --audit-level=high`) and intentionally does not block on moderates,
+since moderate findings fluctuate as the npm advisory database is updated against
+existing dependency versions and are predominantly **dev/build tooling and
+transitive** packages that **do not ship in the deployed worker/gateway image or
+the published `dist/src` library**. This section is re-dated whenever the list
+changes.
 
 Note that the Trivy image scan reads `/app/package-lock.json` inside the runtime
 image, so it reports **dev-only** locked packages too even though the runner stage
