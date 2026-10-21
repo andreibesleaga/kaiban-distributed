@@ -27,6 +27,16 @@ export interface AgentNodeConfig {
 export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
 
 // @public
+export interface AttemptUsage {
+    // (undocumented)
+    estimatedCost: number;
+    // (undocumented)
+    inputTokens: number;
+    // (undocumented)
+    outputTokens: number;
+}
+
+// @public
 export class BudgetExceededError extends NonRetryableError {
     constructor(reason: string, reasonCode?: string);
     // (undocumented)
@@ -67,6 +77,12 @@ export class CompletionRouter {
     }>>;
 }
 
+// Warning: (ae-forgotten-export) The symbol "AgentInfo" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "AgentStatePublisher" needs to be exported by the entry point index.d.ts
+//
+// @public
+export function createAgentStatePublisher(redisUrl: string, agentInfo: AgentInfo, env?: NodeJS.ProcessEnv): AgentStatePublisher;
+
 // @public
 export function createDriver(groupIdSuffix?: string): IMessagingDriver;
 
@@ -105,6 +121,15 @@ export abstract class DomainError extends Error {
 
 // @public (undocumented)
 export type DriverType = "bullmq" | "kafka" | "amqp";
+
+// @public
+export class FailedAttemptError extends DomainError {
+    constructor(message: string, usage: AttemptUsage);
+    // (undocumented)
+    readonly code = "ATTEMPT_FAILED";
+    // (undocumented)
+    readonly usage: AttemptUsage;
+}
 
 // @public
 export function formatCap(cap: number): string;

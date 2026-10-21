@@ -31,7 +31,10 @@ import {
   createKaibanTaskHandler,
   type KaibanAgentConfig,
 } from "../infrastructure/kaibanjs/kaiban-agent-bridge";
-import { AgentStatePublisher } from "../adapters/state/agent-state-publisher";
+import {
+  AgentStatePublisher,
+  type AgentInfo,
+} from "../adapters/state/agent-state-publisher";
 import { createDriver } from "./driver-factory";
 import { buildSecurityDeps } from "./build-security-deps";
 import { resolveSpendCaps } from "./budget";
@@ -61,6 +64,26 @@ export interface AgentNodeConfig {
 }
 
 /**
+ * Build the worker's `AgentStatePublisher` with the per-agent and per-task
+ * token caps resolved from the environment (MAX_TOKEN_BUDGET /
+ * MAX_TASK_TOKEN_BUDGET; defaults 200 000 / 50 000, the literal `unlimited`
+ * removes one). `startAgentNode` uses it; a custom worker entry point that
+ * cannot use `startAgentNode` (e.g. the global-research searcher) calls it
+ * directly so it gets the same caps instead of none.
+ */
+export function createAgentStatePublisher(
+  redisUrl: string,
+  agentInfo: AgentInfo,
+  env: NodeJS.ProcessEnv = process.env,
+): AgentStatePublisher {
+  const caps = resolveSpendCaps(env);
+  return new AgentStatePublisher(redisUrl, agentInfo, {
+    maxTokenBudget: caps.maxTokenBudget,
+    maxTaskTokenBudget: caps.maxTaskTokenBudget,
+  });
+}
+
+/**
  * Starts a kaiban-distributed agent node with a single call.
  * Resolves once the actor has started and the initial IDLE state has been published.
  */
@@ -72,18 +95,13 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   const driver = createDriver(agentId);
   const { actorDeps, tokenProvider } = buildSecurityDeps();
 
-  // Per-agent and per-task token caps (MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET;
-  // defaults 200 000 / 50 000, the literal `unlimited` removes one). Enforced by
-  // the publisher's wrapHandler before and after every task.
-  const caps = resolveSpendCaps();
-  const statePublisher = new AgentStatePublisher(
-    redisUrl,
-    { agentId, name: displayName, role },
-    {
-      maxTokenBudget: caps.maxTokenBudget,
-      maxTaskTokenBudget: caps.maxTaskTokenBudget,
-    },
-  );
+  // Per-agent and per-task token caps, enforced by the publisher's wrapHandler
+  // before and after every task (failed paid attempts included).
+  const statePublisher = createAgentStatePublisher(redisUrl, {
+    agentId,
+    name: displayName,
+    role,
+  });
   const handler = statePublisher.wrapHandler(
     createKaibanTaskHandler(agentConfig, driver, tokenProvider),
   );

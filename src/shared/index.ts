@@ -64,7 +64,7 @@ export type {
   RedisCheckpointStoreOptions,
 } from "./orchestrator";
 
-export { startAgentNode } from "./agent-node";
+export { startAgentNode, createAgentStatePublisher } from "./agent-node";
 export type { AgentNodeConfig } from "./agent-node";
 
 export { dispatchToAgent, AGENT_CHANNEL_PREFIX } from "./dispatch";
@@ -87,4 +87,9 @@ export {
 } from "./budget";
 export type { SpendTotals, WorkflowBudget, SpendCaps } from "./budget";
 // Base class of every error the actor does not retry (BudgetExceededError extends it).
-export { DomainError, NonRetryableError } from "../domain/errors/DomainError";
+export {
+  DomainError,
+  NonRetryableError,
+  FailedAttemptError,
+} from "../domain/errors/DomainError";
+export type { AttemptUsage } from "../domain/errors/DomainError";

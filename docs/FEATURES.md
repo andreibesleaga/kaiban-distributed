@@ -209,6 +209,13 @@ And the design stance that distinguishes it from most JS agent frameworks:
   task after that single attempt (DLQ `error` = `token_budget_exceeded` /
   `task_token_budget_exceeded` / `budget_exceeded`, poison for replay). The example orchestrators
   additionally check the same budget between phases and publish a graceful **STOPPED**.
+  `WorkflowOrchestrator` saves its spend totals and stop with every checkpoint, so a resumed run
+  (same `workflowId`) keeps its spend: replayed steps are not charged again, and a run at its cap
+  stays stopped unless the cap is raised (the example orchestrators still clear the checkpoint on a
+  budget stop). A failed paid attempt counts too: the KaibanJS bridge throws a `FailedAttemptError`
+  with the attempt's usage, and once that reaches `MAX_TOKEN_BUDGET` or `MAX_TASK_TOKEN_BUDGET` the
+  task is dead-lettered without a further retry. The example compose files pass all four caps to
+  the containers that read them.
   **Value:** a fresh deployment cannot overspend by accident, and a breach costs one call, not three.
 - **Prompt-cache accounting & model right-sizing.** `priceUsage`/`effectiveCacheHitRate` bill cached
   input tokens at the provider's discount and surface the saving; `routeModel`/`estimatedStepCost` pick

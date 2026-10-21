@@ -12,7 +12,7 @@ vi.mock("../../../src/shared/structured-logger", () => ({
   resolveLogLevel: (): string => "silent",
 }));
 
-import { startAgentNode } from "../../../src/shared";
+import { startAgentNode, createAgentStatePublisher } from "../../../src/shared";
 
 // ── Mock all heavy dependencies ──────────────────────────────────────────────
 
@@ -243,3 +243,40 @@ describe("startAgentNode", () => {
     exitSpy.mockRestore();
   });
 });
+
+describe("createAgentStatePublisher — the shared, capped publisher for custom worker entry points", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("passes both resolved token caps (defaults 200 000 / 50 000 when unset)", async () => {
+    const { AgentStatePublisher } =
+      await import("../../../src/adapters/state/agent-state-publisher");
+    const info = { agentId: "searcher-2", name: "Zara-2", role: "Web Research Specialist" };
+    const publisher = createAgentStatePublisher("redis://r:6379", info, {});
+    expect(publisher).toBe(mockStatePublisherInstance);
+    expect(AgentStatePublisher).toHaveBeenCalledWith("redis://r:6379", info, {
+      maxTokenBudget: 200_000,
+      maxTaskTokenBudget: 50_000,
+    });
+  });
+
+  it("reads MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET (process.env by default; `unlimited` removes a cap)", async () => {
+    const { AgentStatePublisher } =
+      await import("../../../src/adapters/state/agent-state-publisher");
+    const info = { agentId: "a", name: "A", role: "R" };
+    process.env["MAX_TOKEN_BUDGET"] = "unlimited";
+    process.env["MAX_TASK_TOKEN_BUDGET"] = "1234";
+    try {
+      createAgentStatePublisher("redis://r", info);
+    } finally {
+      delete process.env["MAX_TOKEN_BUDGET"];
+      delete process.env["MAX_TASK_TOKEN_BUDGET"];
+    }
+    expect(AgentStatePublisher).toHaveBeenCalledWith("redis://r", info, {
+      maxTokenBudget: Number.POSITIVE_INFINITY,
+      maxTaskTokenBudget: 1234,
+    });
+  });
+});
+

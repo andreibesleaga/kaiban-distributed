@@ -130,6 +130,9 @@ services:
       MESSAGING_DRIVER: bullmq
       SERVICE_NAME: kaiban-worker
       AGENT_IDS: researcher,writer
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     # Worker role has no HTTP /health — disable the inherited Dockerfile probe.
     healthcheck:

@@ -289,6 +289,16 @@ export interface AppConfig {
 export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
 
 // @public
+export interface AttemptUsage {
+    // (undocumented)
+    estimatedCost: number;
+    // (undocumented)
+    inputTokens: number;
+    // (undocumented)
+    outputTokens: number;
+}
+
+// @public
 export class AuditLog implements AuditSink {
     append(decision: GateDecision, timestamp: string): AuditRecord;
     records(): readonly AuditRecord[];
@@ -576,6 +586,15 @@ export interface EvaluationPayload {
 
 // @public (undocumented)
 export function extractTraceContext(carrier: Record<string, string>): ReturnType<typeof propagation.extract>;
+
+// @public
+export class FailedAttemptError extends DomainError {
+    constructor(message: string, usage: AttemptUsage);
+    // (undocumented)
+    readonly code = "ATTEMPT_FAILED";
+    // (undocumented)
+    readonly usage: AttemptUsage;
+}
 
 // @public
 export function firewallValidator(firewall: ISemanticFirewall): GateValidator;

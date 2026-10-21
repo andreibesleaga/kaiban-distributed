@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createKaibanTaskHandler } from "../../../src/infrastructure/kaibanjs/kaiban-agent-bridge";
+import {
+  FailedAttemptError,
+  NonRetryableError,
+} from "../../../src/domain/errors/DomainError";
 import type {
   IMessagingDriver,
   MessagePayload,
@@ -151,6 +155,24 @@ describe("createKaibanTaskHandler", () => {
     await expect(h(basePayload)).rejects.toThrow(
       "KaibanJS workflow errored: LLM API Error",
     );
+  });
+
+  it("a failed workflow carries the attempt's token usage (FailedAttemptError, still retryable)", async () => {
+    mockTeamStart.mockResolvedValue({
+      ...makeSuccess("LLM API Error", 60, 20),
+      status: "ERRORED",
+    });
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B" },
+      makeMockDriver(),
+    );
+    const err = await h(basePayload).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(FailedAttemptError);
+    expect(err).not.toBeInstanceOf(NonRetryableError);
+    expect((err as Error).message).toBe("KaibanJS workflow errored: LLM API Error");
+    const usage = (err as FailedAttemptError).usage;
+    expect(usage).toMatchObject({ inputTokens: 60, outputTokens: 20 });
+    expect(usage.estimatedCost).toBeGreaterThan(0);
   });
 
   it('throws with "unknown" when ERRORED status has null result', async () => {

@@ -51,3 +51,30 @@ export abstract class NonRetryableError extends DomainError {
   /** Stable, machine-readable reason written to the DLQ record. */
   abstract readonly reasonCode: string;
 }
+
+/** Token usage of one paid LLM attempt (the handler-result usage fields). */
+export interface AttemptUsage {
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCost: number;
+}
+
+/**
+ * A task attempt that failed AFTER it spent tokens (e.g. a KaibanJS workflow
+ * that ended ERRORED or BLOCKED). It stays retryable — it is not a
+ * `NonRetryableError` — but carries the attempt's `usage`, so
+ * `AgentStatePublisher.wrapHandler` counts it against the per-agent and
+ * per-task token caps before the actor retries. When that reaches a cap the
+ * publisher raises a non-retryable `BudgetExceededError` instead, and no
+ * further paid attempt is made.
+ */
+export class FailedAttemptError extends DomainError {
+  readonly code = "ATTEMPT_FAILED";
+
+  constructor(
+    message: string,
+    public readonly usage: AttemptUsage,
+  ) {
+    super(message);
+  }
+}

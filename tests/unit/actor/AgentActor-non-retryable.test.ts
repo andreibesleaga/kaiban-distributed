@@ -28,6 +28,7 @@ vi.mock("ioredis", () => ({
 import { AgentActor } from "../../../src/application/actor/AgentActor";
 import { AgentStatePublisher } from "../../../src/adapters/state/agent-state-publisher";
 import { BudgetExceededError } from "../../../src/shared/budget";
+import { FailedAttemptError } from "../../../src/domain/errors/DomainError";
 import { DLQ_POISON_REASONS } from "../../../src/resilience/dlq-replay";
 import type { ICircuitBreaker } from "../../../src/domain/security/circuit-breaker";
 import type {
@@ -160,5 +161,42 @@ describe("AgentActor — non-retryable errors", () => {
       expect(record.data["error"]).toBe("token_budget_exceeded");
     }
     expect(String(dlq[1]?.data["reason"])).toContain("before task t3");
+  });
+
+  it("end to end: failed paid attempts count against the task cap — no further provider request once it is reached", async () => {
+    const { driver, deliver, published } = makeCapturingDriver();
+    const provider = { requests: 0, tokens: 60 };
+    const llm = async (): Promise<unknown> => {
+      provider.requests += 1;
+      throw new FailedAttemptError("KaibanJS workflow errored: boom", {
+        inputTokens: provider.tokens,
+        outputTokens: 0,
+        estimatedCost: 0.01,
+      });
+    };
+    const publisher = new AgentStatePublisher(
+      "redis://x",
+      { agentId: "agent-1", name: "A", role: "W" },
+      { maxTaskTokenBudget: 50 },
+    );
+    const actor = new AgentActor("agent-1", driver, "q", publisher.wrapHandler(llm));
+    await actor.start();
+
+    // The first failed attempt already spends 60 >= 50: no retry at all.
+    await deliver(task("t-fail"));
+    expect(provider.requests).toBe(1);
+    const dlq = published("kaiban-events-failed");
+    expect(dlq).toHaveLength(1);
+    expect(dlq[0]?.data["error"]).toBe("task_token_budget_exceeded");
+
+    // 30 per failed attempt: attempt 1 (30) is retried, attempt 2 (60) stops —
+    // two paid requests instead of the three a plain failure gets.
+    provider.tokens = 30;
+    await deliver(task("t-fail-2"));
+    expect(provider.requests).toBe(3);
+    expect(published("kaiban-events-failed")[1]?.data["error"]).toBe(
+      "task_token_budget_exceeded",
+    );
+    expect(published("kaiban-events-completed")).toHaveLength(0);
   });
 });

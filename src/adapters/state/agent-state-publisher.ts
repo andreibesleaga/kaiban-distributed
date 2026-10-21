@@ -15,6 +15,7 @@ import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import { sanitizeDelta } from "./distributedMiddleware";
 import { createStructuredLogger } from "../../shared/structured-logger";
 import { BudgetExceededError, formatCap } from "../../shared/budget";
+import { FailedAttemptError } from "../../domain/errors/DomainError";
 
 const log = createStructuredLogger({ component: "AgentStatePublisher" });
 
@@ -68,13 +69,15 @@ export interface AgentStatePublisherOpts {
   /**
    * Max cumulative tokens for this agent process (all tasks). Checked BEFORE a
    * task runs (a task that finds the cap already met is refused without an LLM
-   * call) and after each result. `Infinity`, `undefined` or `0` = unlimited
+   * call) and after each result or usage-carrying failed attempt. `Infinity`,
+   * `undefined` or `0` = unlimited
    * (the env path, `resolveSpendCaps`, never yields `0`).
    */
   maxTokenBudget?: number;
   /**
    * Max tokens one task may consume across all its deliveries/attempts. Checked
-   * before the task runs and after each result. `Infinity`/`undefined`/`0` =
+   * before the task runs and after each result — including a failed attempt
+   * whose `FailedAttemptError` carries its usage. `Infinity`/`undefined`/`0` =
    * unlimited.
    */
   maxTaskTokenBudget?: number;
@@ -372,6 +375,9 @@ export class AgentStatePublisher {
 
         return result;
       } catch (err) {
+        // A failed attempt that already spent tokens counts against the caps
+        // BEFORE the actor retries; reaching one ends the task non-retryably.
+        const failure = this.accountFailedAttempt(payload.taskId, err);
         // → ERROR
         this.currentStatus = "ERROR";
         pub({
@@ -393,9 +399,27 @@ export class AgentStatePublisher {
             },
           ],
         });
-        throw err;
+        throw failure;
       }
     };
+  }
+
+  /**
+   * Count the usage a `FailedAttemptError` carries. Returns the cap breach to
+   * raise instead of the failure (non-retryable), else the original error.
+   */
+  private accountFailedAttempt(taskId: string, err: unknown): unknown {
+    if (!(err instanceof FailedAttemptError)) return err;
+    const breach = this.accountTokens(
+      taskId,
+      err.usage.inputTokens + err.usage.outputTokens,
+    );
+    if (!breach) return err;
+    log.warn(
+      { taskId, reasonCode: breach.reasonCode, failure: err.message },
+      "Failed attempt reached a token cap — not retrying",
+    );
+    return breach;
   }
 
   async disconnect(): Promise<void> {

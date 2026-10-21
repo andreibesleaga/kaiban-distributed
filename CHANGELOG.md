@@ -25,6 +25,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ceiling is reached every further dispatch throws `BudgetExceededError` (`getStop()` returns
   `{ reason: "budget_exceeded", detail, totals }`, `onStopped` fires once). Default budget =
   `workflowBudgetFromEnv()`. Checkpointed steps still replay.
+- `WorkflowOrchestrator` keeps the workflow spend across a resume: the running totals and the stop
+  record (`reason`, `detail`) are saved with every checkpoint, in one reserved entry
+  (`__workflow_spend__`, now refused as a step name) of the same record, and restored once when a
+  fresh instance with the same `workflowId` first loads it. Replayed checkpointed steps are not
+  charged again; spend fed in through `recordSpend()` is saved in the background too. A resumed run
+  that is still at its cap stays stopped (no second `onStopped`); a larger cap lets it continue.
+  Spend is now accounted **before** `store.save` in `runStep` and `memoize`, so a failed save can
+  neither drop it nor let a retry pass the cap. Previously totals restarted from zero on resume.
+  (The example orchestrators still keep their own per-run totals and clear the checkpoint on a
+  budget stop — roadmap §7.4.)
+- Failed attempts count against the token caps: the KaibanJS bridge throws the new
+  `FailedAttemptError` (still retryable) with the attempt's token usage when a workflow ends
+  ERRORED/BLOCKED, and `AgentStatePublisher.wrapHandler` adds that usage to the agent and task
+  tallies before the failure propagates. When that reaches `MAX_TOKEN_BUDGET` or
+  `MAX_TASK_TOKEN_BUDGET` it raises `BudgetExceededError` instead, so the actor makes no further
+  paid retry. Previously a failed attempt's tokens were not counted.
 - `BudgetExceededError` now extends the new `NonRetryableError` (`src/domain/errors`), carries a
   `reasonCode`, and `AgentActor.executeWithRetries` re-throws any `NonRetryableError` on the first
   attempt: one handler call, no breaker failure, one DLQ record with `error` = the reason code
@@ -42,6 +58,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as of 2026-10-21 replace the "0 vulnerabilities" sentence.
 
 ### Fixed
+- Token caps reach every worker: all worker services in the root `docker-compose.yml` and the
+  example `docker-compose.yml` / `docker-compose.kafka.yml` files forward
+  `MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}` and
+  `MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}` (an `--env-file` value, `unlimited`
+  included, was not passed into the containers). The orchestrator comments no longer say
+  `0 = unlimited`.
+- The global-research searcher runs with the token caps: it builds its publisher with the new
+  `createAgentStatePublisher()` (exported from `kaiban-distributed/shared`, also used by
+  `startAgentNode`) instead of an uncapped `new AgentStatePublisher(...)`.
 - CI: `npm ci` failed in the Quality, Security and Docker jobs (and would have in the nightly,
   release and publish lanes) after the Dependabot updates of 2026-10-04: Dependabot writes the
   lockfile with npm 11, which omits optional nested entries (`typescript@5.9.3` under

@@ -155,31 +155,45 @@ describe("WorkflowOrchestrator — cost cap", () => {
     expect(provider.requests).toBe(3);
   });
 
-  it("checkpointed steps still replay after a stop (they cost nothing); the next new step is refused", async () => {
+  it("RESUME keeps the spend: a new instance restores totals + stop, replays are not charged twice, a new paid step stays blocked", async () => {
     const store = new InMemoryCheckpointStore();
     const provider = makeProvider(0.6);
-    const first = new WorkflowOrchestrator({
-      workflowId: "wf-cp",
-      router: provider.router,
-      store,
-      budget: { maxTokens: UNLIMITED, maxCostUsd: 0.5 },
-    });
-    await first.runStep("s1", { dispatch: provider.dispatch, timeoutMs: 10 }); // 0.6 → stopped
+    const budget = { maxTokens: UNLIMITED, maxCostUsd: 0.5 };
+    const first = new WorkflowOrchestrator({ workflowId: "wf-cp", router: provider.router, store, budget });
+    await first.runStep("s1", { dispatch: provider.dispatch, timeoutMs: 10 }); // $0.60 → stopped
     expect(first.getStop()?.reason).toBe("budget_exceeded");
 
-    // A resumed instance replays s1 from the checkpoint without dispatching.
+    // A fresh instance with the same workflowId (crash → restart).
+    const resumedStops: WorkflowStop[] = [];
     const resumed = new WorkflowOrchestrator({
       workflowId: "wf-cp",
       router: provider.router,
       store,
-      budget: { maxTokens: UNLIMITED, maxCostUsd: 0.5 },
+      budget,
+      onStopped: (s): number => resumedStops.push(s),
     });
+    // The checkpointed step replays without dispatching ...
     await expect(
       resumed.runStep("s1", { dispatch: provider.dispatch, timeoutMs: 10 }),
     ).resolves.toContain("result of task-1");
+    // ... and is NOT charged again: the restored totals are the first run's.
+    expect(resumed.getSpend()).toEqual({ totalTokens: 100, estimatedCost: 0.6 });
+    expect(resumed.getStop()).toMatchObject({
+      reason: "budget_exceeded",
+      detail: first.getStop()?.detail,
+    });
+    expect(resumedStops).toHaveLength(0); // restored, not newly reached
+
+    // A new paid step is refused before dispatch — the provider sees nothing.
+    await expect(
+      resumed.runStep("s2", { dispatch: provider.dispatch, timeoutMs: 10 }),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
     expect(provider.requests).toBe(1);
-    // Totals are per instance (not persisted): the resumed run starts at zero.
-    expect(resumed.getSpend()).toEqual({ totalTokens: 0, estimatedCost: 0 });
+
+    // Replaying again is still free (restore happens once per instance).
+    await resumed.runStep("s1", { dispatch: provider.dispatch, timeoutMs: 10 });
+    expect(await resumed.isResuming()).toBe(true);
+    expect(resumed.getSpend()).toEqual({ totalTokens: 100, estimatedCost: 0.6 });
   });
 
   it("a deduplicated taskId is not accounted twice", async () => {

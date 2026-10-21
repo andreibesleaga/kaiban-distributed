@@ -140,6 +140,9 @@ services:
       JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
       CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
       CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     # Worker nodes do not expose /health — disable inherited Dockerfile HEALTHCHECK
     healthcheck:
@@ -180,6 +183,9 @@ services:
       JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
       CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
       CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     healthcheck:
       disable: true
@@ -219,6 +225,9 @@ services:
       JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
       CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
       CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+      # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
+      MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
+      MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
     restart: on-failure
     healthcheck:
       disable: true
@@ -252,7 +261,7 @@ services:
       RESEARCH_WAIT_MS: ${RESEARCH_WAIT_MS:-120000}
       WRITE_WAIT_MS: ${WRITE_WAIT_MS:-240000}
       EDIT_WAIT_MS: ${EDIT_WAIT_MS:-300000}
-      # Workflow-level spend guard (0 = unlimited). Stops a runaway before it drains the budget.
+      # Workflow-level spend guard (the literal `unlimited` removes a cap; 0 does not). Stops a runaway before it drains the budget.
       MAX_WORKFLOW_COST_USD: ${MAX_WORKFLOW_COST_USD:-0.50}
       MAX_WORKFLOW_TOKENS: ${MAX_WORKFLOW_TOKENS:-unlimited}
     # stdin_open + tty are required for readline-based HITL interaction

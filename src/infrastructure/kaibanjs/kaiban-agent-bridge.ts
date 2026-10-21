@@ -3,6 +3,7 @@ import type { IAgentParams } from "kaibanjs";
 import type { MessagePayload, IMessagingDriver } from "../messaging/interfaces";
 import type { ITokenProvider } from "../../domain/security/token-provider";
 import type { TaskHandler } from "../../application/actor/AgentActor";
+import { FailedAttemptError } from "../../domain/errors/DomainError";
 import { buildOwnedLlm } from "./owned-llm";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
@@ -379,7 +380,9 @@ function findWorkflowFallbackMessage(
  * WorkflowResult.stats provides real token counts and cost — no extraction hacks.
  *
  * Maps MessagePayload → KaibanJS Task → Team.start() → returns KaibanHandlerResult.
- * Throws on ERRORED status so AgentActor retries (max 3 times), then DLQs.
+ * Throws a `FailedAttemptError` (with the attempt's token usage) on ERRORED /
+ * BLOCKED status so AgentActor retries (max 3 times), then DLQs — unless the
+ * state publisher finds that the failed attempts reached a token cap.
  * The result is included in kaiban-events-completed data.result for downstream chaining.
  */
 export function createKaibanTaskHandler(
@@ -433,9 +436,16 @@ export function createKaibanTaskHandler(
     if (!isSuccessfulWorkflowStatus(result.status)) {
       const failureReason =
         extractWorkflowFailureReason(team, result) ?? "unknown";
-      throw new Error(
+      // The failed attempt was paid for: carry its usage so the state
+      // publisher counts it against the token caps before any retry.
+      throw new FailedAttemptError(
         /* v8 ignore next — null/undefined status returns true from isSuccessfulWorkflowStatus so "failed" fallback is unreachable */
         `KaibanJS workflow ${String(result.status ?? "failed").toLowerCase()}: ${failureReason}`,
+        {
+          inputTokens: handlerResult.inputTokens,
+          outputTokens: handlerResult.outputTokens,
+          estimatedCost: handlerResult.estimatedCost,
+        },
       );
     }
 

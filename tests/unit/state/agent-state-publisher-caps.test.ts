@@ -8,7 +8,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AgentStatePublisher } from "../../../src/adapters/state/agent-state-publisher";
 import { BudgetExceededError } from "../../../src/shared/budget";
-import { NonRetryableError } from "../../../src/domain/errors/DomainError";
+import {
+  FailedAttemptError,
+  NonRetryableError,
+} from "../../../src/domain/errors/DomainError";
 import type { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
 
 const mockPublish = vi.fn().mockResolvedValue(1);
@@ -171,6 +174,75 @@ describe("per-task cap (maxTaskTokenBudget)", () => {
     });
     const handler = pub.wrapHandler(async () => "plain text, no usage");
     await expect(handler(payload("t1"))).resolves.toBe("plain text, no usage");
+    expect(pub.getTotalTokensUsed()).toBe(0);
+  });
+});
+
+describe("failed attempts count against the caps (FailedAttemptError usage)", () => {
+  /** A mock provider whose every call is paid and then fails. */
+  function makeFailingProvider(tokensPerCall: number): {
+    requests: number;
+    handler: () => Promise<unknown>;
+  } {
+    const provider = {
+      requests: 0,
+      handler: async (): Promise<unknown> => {
+        provider.requests += 1;
+        throw new FailedAttemptError("KaibanJS workflow errored: boom", {
+          inputTokens: tokensPerCall,
+          outputTokens: 0,
+          estimatedCost: 0.001,
+        });
+      },
+    };
+    return provider;
+  }
+
+  it("a failed attempt that reaches the task cap raises a non-retryable breach", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTaskTokenBudget: 50 });
+    const provider = makeFailingProvider(60);
+    const handler = pub.wrapHandler(provider.handler);
+    const err = await handler(payload("t1")).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BudgetExceededError);
+    expect((err as BudgetExceededError).reasonCode).toBe("task_token_budget_exceeded");
+    expect((err as Error).message).toMatch(/Task token budget exceeded: 60 >= 50/);
+    expect(pub.getTotalTokensUsed()).toBe(60);
+    expect(publishedStatuses().at(-1)).toEqual({ agent: "ERROR", task: "BLOCKED" });
+
+    // A redelivery is refused pre-flight: no further provider request.
+    const again = await handler(payload("t1")).catch((e: unknown) => e);
+    expect((again as Error).message).toContain("before task t1");
+    expect(provider.requests).toBe(1);
+  });
+
+  it("a failed attempt that reaches the agent cap raises token_budget_exceeded", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTokenBudget: 50 });
+    const err = await pub
+      .wrapHandler(makeFailingProvider(50).handler)(payload("t1"))
+      .catch((e: unknown) => e);
+    expect((err as BudgetExceededError).reasonCode).toBe("token_budget_exceeded");
+  });
+
+  it("under the caps the original (retryable) failure propagates, with its usage counted", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTaskTokenBudget: 100 });
+    const handler = pub.wrapHandler(makeFailingProvider(40).handler);
+    const err = await handler(payload("t1")).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(FailedAttemptError);
+    expect(err).not.toBeInstanceOf(NonRetryableError);
+    expect(pub.getTotalTokensUsed()).toBe(40);
+    await handler(payload("t1")).catch(() => undefined); // 80
+    const third = await handler(payload("t1")).catch((e: unknown) => e); // 120 >= 100
+    expect((third as BudgetExceededError).reasonCode).toBe("task_token_budget_exceeded");
+  });
+
+  it("a plain Error carries no usage and is not counted", async () => {
+    const pub = new AgentStatePublisher("redis://x", info, { maxTaskTokenBudget: 1 });
+    const err = await pub
+      .wrapHandler(async () => {
+        throw new Error("network down");
+      })(payload("t1"))
+      .catch((e: unknown) => e);
+    expect((err as Error).message).toBe("network down");
     expect(pub.getTotalTokensUsed()).toBe(0);
   });
 });
