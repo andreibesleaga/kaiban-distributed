@@ -63,13 +63,16 @@ describe("AgentActor — task timeout", () => {
 
     await getHandler()(makePayload("t-slow"));
 
-    // Handler should have been called once (it's slow, not retried because timeout = error)
+    // Called once: a timeout is not retried (2.0.1). The DLQ `error` is the
+    // stable code; the human message is the `reason`.
+    expect(slowHandler).toHaveBeenCalledTimes(1);
     const publishCalls = (driver.publish as ReturnType<typeof vi.fn>).mock
       .calls;
     const dlqCall = publishCalls.find((c) => c[0] === "kaiban-events-failed");
     expect(dlqCall).toBeDefined();
     const dlqData = dlqCall?.[1].data as Record<string, unknown>;
-    expect(String(dlqData["error"])).toContain("timed out");
+    expect(dlqData["error"]).toBe("task_timeout");
+    expect(String(dlqData["reason"])).toContain("timed out");
   });
 
   it("handler that rejects AFTER losing the timeout race does not unhandledReject (C10)", async () => {

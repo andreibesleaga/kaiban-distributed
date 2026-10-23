@@ -94,16 +94,15 @@ describe("GatewayApp — A2A auth middleware", () => {
 
   // ─── Health endpoint rate limiting ────────────────────────────────────────
 
-  it("health endpoint enforces a separate (stricter) rate limit", async () => {
+  it("probe endpoints allow a Kubernetes cadence but are still bounded (120 req/min per client)", async () => {
     const gw = makeGateway();
-    // First 5 requests succeed
-    for (let i = 0; i < 5; i++) {
-      const res = await request(gw.app).get("/health");
+    // liveness + readiness + startup every few seconds from one kubelet address
+    for (let i = 0; i < 120; i++) {
+      const res = await request(gw.app).get(i % 2 ? "/health" : "/ready");
       expect(res.status).toBe(200);
     }
-    // 6th request is rate-limited (health limiter = 5 req/min)
-    const res6 = await request(gw.app).get("/health");
-    expect(res6.status).toBe(429);
+    const over = await request(gw.app).get("/health");
+    expect(over.status).toBe(429);
   });
 
   // ─── Trust proxy ──────────────────────────────────────────────────────────

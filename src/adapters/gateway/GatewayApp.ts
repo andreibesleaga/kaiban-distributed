@@ -126,7 +126,9 @@ export class GatewayApp {
   private readonly mcpHandler?: McpHttpHandler;
   private readonly mcpPath: string;
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
-  private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 5);
+  // Probe routes: room for Kubernetes liveness + readiness + startup from one
+  // kubelet address, still bounded so the Redis/broker checks cannot be flooded.
+  private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 120);
 
   constructor(deps: GatewayAppDeps) {
     this.requestHandler = deps.requestHandler;

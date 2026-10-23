@@ -20,6 +20,30 @@ const log = createStructuredLogger({ component: "SocketGateway" });
 
 const STATE_EVENT = STATE_EVENT_UPDATE;
 const DEFAULT_DECISIONS = ["PUBLISH", "REVISE", "REJECT"];
+/** Task ids are UUIDs or simple slugs; anything else never reaches a Redis key. */
+const TASK_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
+/** HITL decisions accepted per connection per window. */
+const HITL_MAX_PER_WINDOW = 10;
+const HITL_WINDOW_MS = 10_000;
+
+type HitlAck = (response: { ok: boolean; error?: string }) => void;
+
+/** Why a HITL payload is refused, or null when it is well-formed. */
+function hitlPayloadError(
+  payload: unknown,
+  validDecisions: string[],
+): string | null {
+  if (typeof payload !== "object" || payload === null) return "invalid payload";
+  const { taskId, decision } = payload as Record<string, unknown>;
+  if (typeof taskId !== "string" || typeof decision !== "string") {
+    return "invalid taskId or decision";
+  }
+  if (!TASK_ID_PATTERN.test(taskId)) return "invalid taskId";
+  if (!validDecisions.includes(decision)) {
+    return `invalid decision value: ${decision}`;
+  }
+  return null;
+}
 
 /**
  * Accumulated state snapshot.
@@ -139,6 +163,69 @@ export class SocketGateway {
     }
   }
 
+  private handleHitlDecision(
+    socket: Socket,
+    sentAt: number[],
+    payload: unknown,
+    ack?: HitlAck,
+  ): void {
+    const error = hitlPayloadError(payload, this.validDecisions);
+    if (error) {
+      ack?.({ ok: false, error });
+      return;
+    }
+    const now = Date.now();
+    while (sentAt.length > 0 && now - sentAt[0]! >= HITL_WINDOW_MS)
+      sentAt.shift();
+    if (sentAt.length >= HITL_MAX_PER_WINDOW) {
+      ack?.({ ok: false, error: "rate limited" });
+      return;
+    }
+    sentAt.push(now);
+    const { taskId, decision } = payload as {
+      taskId: string;
+      decision: string;
+    };
+    const subject = socket.data["sub"] as string | undefined;
+    log.info(
+      { decision, taskId: taskId.slice(-8), ...(subject ? { subject } : {}) },
+      "HITL decision received",
+    );
+    this.forwardHitlDecision(taskId, decision, ack);
+  }
+
+  /**
+   * Dual delivery: write the durable per-task list FIRST (the reliable BRPOP
+   * fallback — no timing dependency), then publish on pub/sub (the fast path).
+   * ACK the board only after the reliable path is persisted, so a pub/sub
+   * message the orchestrator connects too late to receive is always recoverable
+   * via BRPOP. If either write fails, tell the board to retry rather than
+   * silently dropping the decision.
+   */
+  private forwardHitlDecision(
+    taskId: string,
+    decision: string,
+    ack?: HitlAck,
+  ): void {
+    const msg = wrapSigned({ taskId, decision });
+    const listKey = `${HITL_CHANNEL}:${taskId}`;
+    this.hitlPublisher
+      .lpush(listKey, msg)
+      .then(() => this.hitlPublisher.expire(listKey, 300))
+      .then(() => this.hitlPublisher.publish(HITL_CHANNEL, msg))
+      .then(() => {
+        log.info(
+          { decision, taskId: taskId.slice(-8) },
+          "HITL decision forwarded to Redis (list + pub/sub)",
+        );
+        ack?.({ ok: true });
+      })
+      .catch((err: unknown) => {
+        log.error({ err }, "Failed to forward HITL decision to Redis");
+        ack?.({ ok: false, error: "Redis write failed" });
+      });
+  }
+
   // ─── Initialisation ───────────────────────────────────────────────────────
 
   public initialize(): void {
@@ -167,6 +254,8 @@ export class SocketGateway {
         if (!token) return next(new Error("Missing board token"));
         const payload = verifyBoardToken(token);
         socket.data["exp"] = payload["exp"];
+        if (typeof payload["sub"] === "string")
+          socket.data["sub"] = payload["sub"];
         next();
       } catch {
         next(new Error("Invalid or expired board token"));
@@ -199,53 +288,9 @@ export class SocketGateway {
 
       // Forward HITL decisions from board → Redis → orchestrator.
       // The optional ack callback lets the board confirm delivery end-to-end.
-      socket.on(
-        HITL_SOCKET_EVENT,
-        (
-          payload: unknown,
-          ack?: (response: { ok: boolean; error?: string }) => void,
-        ) => {
-          if (typeof payload !== "object" || payload === null) {
-            ack?.({ ok: false, error: "invalid payload" });
-            return;
-          }
-          const { taskId, decision } = payload as Record<string, unknown>;
-          if (typeof taskId !== "string" || typeof decision !== "string") {
-            ack?.({ ok: false, error: "invalid taskId or decision" });
-            return;
-          }
-          if (!this.validDecisions.includes(decision)) {
-            ack?.({ ok: false, error: `invalid decision value: ${decision}` });
-            return;
-          }
-          log.info(
-            { decision: String(decision), taskId: taskId.slice(-8) },
-            "HITL decision received",
-          );
-          const msg = wrapSigned({ taskId, decision });
-          // Dual delivery: write the durable per-task list FIRST (the reliable
-          // BRPOP fallback — no timing dependency), then publish on pub/sub (the
-          // fast path). ACK the board only after the reliable path is persisted,
-          // so a pub/sub message the orchestrator connects too late to receive is
-          // always recoverable via BRPOP. If either write fails, tell the board
-          // to retry rather than silently dropping the decision.
-          const listKey = `${HITL_CHANNEL}:${taskId}`;
-          this.hitlPublisher
-            .lpush(listKey, msg)
-            .then(() => this.hitlPublisher.expire(listKey, 300))
-            .then(() => this.hitlPublisher.publish(HITL_CHANNEL, msg))
-            .then(() => {
-              log.info(
-                { decision: String(decision), taskId: taskId.slice(-8) },
-                "HITL decision forwarded to Redis (list + pub/sub)",
-              );
-              ack?.({ ok: true });
-            })
-            .catch((err: unknown) => {
-              log.error({ err }, "Failed to forward HITL decision to Redis");
-              ack?.({ ok: false, error: "Redis write failed" });
-            });
-        },
+      const sentAt: number[] = []; // per-connection rate window
+      socket.on(HITL_SOCKET_EVENT, (payload: unknown, ack?: HitlAck) =>
+        this.handleHitlDecision(socket, sentAt, payload, ack),
       );
     });
 

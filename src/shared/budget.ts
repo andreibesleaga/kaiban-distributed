@@ -52,7 +52,12 @@ export interface SpendTotals {
  * restored checkpoint spend).
  */
 export function cleanSpendAmount(x: unknown): number {
-  const n = Number(x ?? 0);
+  let n: number;
+  try {
+    n = Number(x ?? 0);
+  } catch {
+    return 0; // a value whose conversion throws (a Symbol, a hostile object) counts as zero
+  }
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 

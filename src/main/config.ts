@@ -2,6 +2,9 @@ import { readFileSync } from "fs";
 import type { EconomicsConfig } from "../economics/types";
 import type { GovernanceConfig } from "../governance/types";
 import { resolveSpendCaps } from "../shared/budget";
+import { createStructuredLogger } from "../shared/structured-logger";
+
+const log = createStructuredLogger({ component: "config" });
 
 export type MessagingDriver = "bullmq" | "kafka" | "amqp";
 
@@ -132,7 +135,57 @@ function loadTlsConfig(
   };
 }
 
+/** Secrets that sign or verify tokens and channel messages. */
+const SIGNING_SECRETS = [
+  "BOARD_JWT_SECRET",
+  "A2A_JWT_SECRET",
+  "CHANNEL_SIGNING_SECRET",
+];
+const MIN_SECRET_BYTES = 32;
+
+/**
+ * With NODE_ENV=production the three secrets must be set, at least 32 bytes each
+ * and distinct; boot fails otherwise (the message names the variable, never its
+ * value). `ALLOW_INSECURE_PRODUCTION=true` lets a missing secret through with a
+ * warning on every start; a weak or repeated secret is never allowed.
+ */
+export function assertProductionSecrets(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (env["NODE_ENV"] !== "production") return;
+  const allowInsecure = env["ALLOW_INSECURE_PRODUCTION"] === "true";
+  const seen = new Map<string, string>();
+  for (const name of SIGNING_SECRETS) {
+    const value = env[name];
+    if (!value) {
+      if (!allowInsecure) {
+        throw new Error(
+          `${name} is required in production (or set ALLOW_INSECURE_PRODUCTION=true to run without it)`,
+        );
+      }
+      log.warn(
+        { secret: name },
+        "Running in production without this secret (ALLOW_INSECURE_PRODUCTION=true)",
+      );
+      continue;
+    }
+    if (Buffer.byteLength(value, "utf8") < MIN_SECRET_BYTES) {
+      throw new Error(
+        `${name} must be at least ${MIN_SECRET_BYTES} bytes in production`,
+      );
+    }
+    const twin = seen.get(value);
+    if (twin) {
+      throw new Error(
+        `${twin} and ${name} must be distinct secrets in production`,
+      );
+    }
+    seen.set(value, name);
+  }
+}
+
 export function loadConfig(): AppConfig {
+  assertProductionSecrets();
   const agentIdsRaw = requireEnv("AGENT_IDS");
   const redisUrl = getEnv("REDIS_URL", "redis://localhost:6379");
   const parsed = new URL(redisUrl);

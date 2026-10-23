@@ -804,17 +804,16 @@ describe("6. Rate Limiting (real HTTP server)", () => {
     return { baseUrl, close };
   }
 
-  it("/health: 5 requests pass; 6th within same window returns 429", async () => {
+  it("/health: 120 requests pass (probe cadence); the 121st within the same window returns 429", async () => {
     const { baseUrl, close } = await startServer();
     try {
-      const statuses = await Promise.all(
-        Array.from({ length: 6 }, () =>
-          fetch(`${baseUrl}/health`).then((r) => r.status),
-        ),
-      );
-      // First 5 must be 200; 6th must be 429
-      expect(statuses.slice(0, 5).every((s) => s === 200)).toBe(true);
-      expect(statuses[5]).toBe(429);
+      const statuses: number[] = [];
+      for (let i = 0; i < 121; i++) {
+        statuses.push(await fetch(`${baseUrl}/health`).then((r) => r.status));
+      }
+      // First 120 must be 200; the 121st must be 429 (probe limiter, 2.0.1)
+      expect(statuses.slice(0, 120).every((s) => s === 200)).toBe(true);
+      expect(statuses[120]).toBe(429);
     } finally {
       await close();
     }

@@ -106,7 +106,12 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   const handler = statePublisher.wrapHandler(
     createKaibanTaskHandler(agentConfig, driver, tokenProvider),
   );
-  const actor = new AgentActor(agentId, driver, queue, handler, actorDeps);
+  // AGENT_TIMEOUT_MS bounds each task attempt on this worker (unset = 5 min default).
+  const taskTimeoutMs = positiveIntEnv("AGENT_TIMEOUT_MS");
+  const actor = new AgentActor(agentId, driver, queue, handler, {
+    ...actorDeps,
+    ...(taskTimeoutMs !== undefined ? { taskTimeoutMs } : {}),
+  });
 
   await actor.start();
   log.info({ label, agent: displayName, queue }, "Agent node started");
@@ -115,7 +120,11 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   // Graceful drain (Phase R): stop the actor (no new work) → drain in-flight →
   // close driver → close publisher, ordered + best-effort, within a bounded
   // deadline (after which the orchestrator SIGKILLs anyway).
-  process.on("SIGTERM", () => {
+  // SIGTERM (orchestrator) and SIGINT (Ctrl-C) drain the same way, once.
+  let draining = false;
+  const drain = (): void => {
+    if (draining) return;
+    draining = true;
     void (async (): Promise<void> => {
       const result = await gracefulShutdown({
         deadlineMs: NODE_SHUTDOWN_DEADLINE_MS,
@@ -127,5 +136,13 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
       });
       process.exit(result.timedOut || result.errors.length > 0 ? 1 : 0);
     })();
-  });
+  };
+  process.on("SIGTERM", drain);
+  process.on("SIGINT", drain);
+}
+
+/** A positive integer from the environment, or undefined (unset, text, 0, negative). */
+function positiveIntEnv(name: string): number | undefined {
+  const n = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }

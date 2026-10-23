@@ -647,7 +647,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "name": "kaiban-gateway",
   "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
   "url": "http://localhost:3000/a2a/rpc",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
     { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" },
@@ -825,7 +825,7 @@ All responses: `{ data, meta, errors }` envelope.
 |---------|--------|---------|
 | `kaiban-agents-{agentId}` | BullMQ / Kafka | Task inbox per agent |
 | `kaiban-events-completed` | BullMQ / Kafka | Successful task results |
-| `kaiban-events-failed` | BullMQ / Kafka | DLQ after 3 retry failures, or after one non-retryable failure (budget breach) |
+| `kaiban-events-failed` | BullMQ / Kafka | DLQ after 3 retry failures, or after one non-retryable failure (budget breach, timeout, worker stopping); the record keeps the task inputs (up to 64 KB) so it can be replayed |
 | `kaiban-state-events` | Redis Pub/Sub | Agent/workflow state → board |
 | `kaiban-hitl-decisions` | Redis Pub/Sub | Board HITL decisions → orchestrator |
 
@@ -852,8 +852,19 @@ All responses: `{ data, meta, errors }` envelope.
 | `MAX_TASK_TOKEN_BUDGET` | `50000` | No | Token cap per task, all attempts seen by the same agent process (attempts whose KaibanJS workflow ends BLOCKED included; an ERRORED workflow makes `team.start()` reject and is not counted) |
 | `MAX_WORKFLOW_COST_USD` | `0.50` | No | Cost cap per workflow (orchestrator) |
 | `MAX_WORKFLOW_TOKENS` | `unlimited` | No | Token cap per workflow (orchestrator) |
+| `AGENT_TIMEOUT_MS` | `300000` | No | Time limit for one task attempt, on the gateway's wait and (since 2.0.1) on every worker node; a timed-out task is not retried |
+| `ALLOW_INSECURE_PRODUCTION` | — | No | With `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct; `true` lets a missing one through with a warning on every start (a weak or repeated secret is never allowed) |
 
 Only the literal `unlimited` removes a spend cap; `0`, a negative number or text gives the default and logs one warning.
+
+#### Stopping a run (2.0.1)
+
+There is no operator stop command yet (planned for 2.1: stop per task, workflow, node or fleet, plus pause and resume). In 2.0.1:
+
+- **Stop a worker** with SIGTERM or Ctrl-C (SIGINT). It takes no new task, aborts the call in flight, does not retry it, and drains within 25 s. The interrupted task goes to the dead-letter channel as `actor_stopped`, with its inputs, so it can be replayed.
+- **A task that times out** (`AGENT_TIMEOUT_MS`) is aborted and dead-lettered as `task_timeout`; it is not retried, so it is paid for once.
+- **The spend caps** above are the safety net: a run or task that reaches its cap stops dispatching and is not retried.
+- `tasks/cancel` (A2A) stops the gateway waiting; the worker is not told (see the A2A table).
 
 #### Board app (`board/.env`)
 

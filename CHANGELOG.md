@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-10-23
+
+Critical fixes before the companion book's launch. Everything under this heading, including the
+spend-cap work merged earlier (#155–#157), ships as 2.0.1. No public API change.
+
+### Fixed
+- **A stopped or timed-out task is not retried.** Before, stopping a worker aborted the call in
+  flight and the retry loop ran it again (paid again during shutdown), and a timeout was retried
+  twice with a fresh 5-minute timer. Now a timeout ends the task as `task_timeout` (counts one
+  circuit-breaker failure) and a stop as `actor_stopped`; a stop during the back-off cancels the
+  next attempt, and a task delivered while the actor drains is not run. Both codes are replayable.
+- **`AGENT_TIMEOUT_MS` reaches the worker nodes** (it only bounded the gateway's wait; workers
+  always used 5 minutes).
+- **Worker nodes drain on SIGINT as on SIGTERM**, once per process even if both arrive.
+- **Dead-letter records keep the task inputs**, so `replayDlq` re-runs the same task instead of an
+  empty one. Inputs that would exceed the 64 KB cap are left out and the record is marked
+  `_inputs_omitted`; replay skips such records, and records written before 2.0.1, as `inputs_missing`.
+- **A failed task's error carries the reason** after the code (`Agent failed: <code> — <reason>`).
+- **Orchestrator:** a step waiting for the first checkpoint load when `clear()` runs throws instead
+  of dispatching after the reset; a saved spend value whose conversion throws counts as zero.
+- **Probe routes no longer restart pods:** `/health`, `/ready` and `/startup` allow 120 requests a
+  minute per client (was 5, below the Kubernetes probe cadence).
+
+### Security
+- **Production secrets:** with `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`,
+  `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, at least 32 bytes and distinct.
+  `ALLOW_INSECURE_PRODUCTION=true` lets a missing secret through with a warning on every start; a
+  short or repeated secret is never allowed. The error names the variable, never its value.
+- **HITL decisions:** the `taskId` must match `^[A-Za-z0-9._:-]{1,200}$` before it becomes a Redis
+  key; 10 decisions per 10 s per connection; the board token's subject is logged with the decision.
+
+### Not in 2.0.1 (planned for 2.1)
+- An operator stop command (task, workflow, node, fleet), pause and resume; KaibanJS `team.stop()`
+  on abort; role checks on HITL decisions and control routes. See `docs/roadmap/V2.1-ROADMAP.md` §7.3.
+
 ### Changed
 - **Spend caps are on by default with low ceilings** (roadmap §7.2 item 2 groundwork). When nothing
   is set: `MAX_WORKFLOW_COST_USD=0.50`, `MAX_TOKEN_BUDGET=200000` (per agent, i.e. per

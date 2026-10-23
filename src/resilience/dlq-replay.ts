@@ -56,7 +56,10 @@ export const DLQ_POISON_REASONS: ReadonlySet<string> = new Set([
 ]);
 
 /** Envelope fields added by the actor's DLQ publish; stripped before replay. */
-const FAILURE_ENVELOPE_FIELDS = ["status", "error", "reason", "_truncated"];
+const FAILURE_ENVELOPE_FIELDS = ["status", "error", "reason", "_truncated", "_inputs_omitted"];
+
+/** Skip reason for a record that has no task inputs to replay (omitted as too large, or written before 2.0.1). */
+export const DLQ_INPUTS_MISSING = "inputs_missing";
 
 /** A single dead-letter record read off `kaiban-events-failed`. */
 export interface DlqRecord {
@@ -129,11 +132,20 @@ export async function replayDlq(deps: DlqReplayDeps): Promise<DlqReplayResult> {
       continue;
     }
 
+    const original = restoreOriginalData(payload.data);
+    if (payload.data["_inputs_omitted"] === true || Object.keys(original).length === 0) {
+      // Republishing an empty task would run a generic one and pay for it.
+      result.skipped += 1;
+      result.skippedReasons.push({ taskId: payload.taskId, reason: DLQ_INPUTS_MISSING });
+      log.warn(`Skipping DLQ record ${payload.taskId.slice(-8)}: no task inputs to replay`);
+      continue;
+    }
+
     await deps.driver.publish(queueFor(payload.agentId), {
       taskId: payload.taskId,
       agentId: payload.agentId,
       timestamp: Date.now(),
-      data: restoreOriginalData(payload.data),
+      data: original,
       ...(payload.traceHeaders ? { traceHeaders: payload.traceHeaders } : {}),
     });
     result.replayed += 1;
