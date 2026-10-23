@@ -6,6 +6,60 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.2] — 2026-10-23
+
+Follow-ups to 2.0.1 that fit a patch: no new channel, no change to a default. One additive public API
+field (`AgentActorDeps.retryOnTimeout`).
+
+### Fixed
+- **Aborting a task also stops the KaibanJS team.** On a timeout, an actor stop or a shutdown the
+  bridge calls `team.stop()` and rejects with the actor's non-retryable abort reason, instead of
+  leaving `team.start()` running. The team stops at the agent loop's next step; an LLM call already
+  in flight on a provider other than the OpenAI-compatible one is not cancelled mid-call. An
+  already-aborted task builds nothing. Tasks run without a signal behave as before.
+- **A multi-agent worker drains every agent before it exits.** 2.0.1 drained once per agent node,
+  so in a worker running several agents the first node to finish exited the process while the
+  others were still draining. Now one SIGTERM or SIGINT drains all nodes of the process together,
+  then exits once (non-zero if any node failed to drain cleanly).
+- **Telemetry is flushed before exit.** The worker (after its drain) and the gateway (last shutdown
+  step) wait for one once-only flush, bounded to 3 s so a hung exporter cannot block exit. Ctrl-C
+  now flushes too. The SDK's own SIGTERM listener stays in 2.0.x for processes without their own
+  shutdown; in a worker or the gateway it stands down, so it cannot flush before the drain.
+- **Kafka workers heartbeat while a task runs** (every 3 s), so a task longer than the ~30 s
+  session timeout no longer gets its worker evicted from the group and the task re-run elsewhere.
+  Heartbeat errors are logged, not thrown; session and rebalance timeouts are unchanged. A real
+  rebalance can still deliver a task twice until consume-side dedup lands in 2.1.
+- **Probe routes have one bucket per route:** `/health`, `/ready` and `/startup` each allow 120
+  requests a minute per client, so one route's traffic cannot exhaust another's.
+
+### Added
+- **`RETRY_ON_TIMEOUT=true`** (default off; `1` also accepted): a timed-out task goes through the
+  normal retry and back-off path, 3 attempts in all. A stop or a budget breach is never retried; the
+  last timeout still dead-letters as `task_timeout` and counts once on the circuit breaker. The
+  gateway's A2A wait grows to 3 × `AGENT_TIMEOUT_MS` plus back-off plus 5 s when it is on (so the
+  worker's own `task_timeout` result arrives first), so set it the same
+  on the gateway and every worker. A `WorkflowOrchestrator` `timeoutMs` or an example's wait is not
+  scaled: raise it by hand. `AgentActorDeps` gains the optional `retryOnTimeout`.
+
+### Security
+- **Token role check:** `verifyBoardToken` and `verifyA2AToken` require the `role` claim their
+  issue helpers already set (`board-viewer`, `a2a-client`), so a board token is refused on the A2A
+  and MCP routes and an A2A token on the board socket, even when both secrets are equal. Tokens from
+  `issueBoardToken` / `issueA2AToken` keep working; a hand-signed token must carry the matching
+  role. Strict `iss`/`aud` checks remain planned for 2.1.
+
+### Build
+- **npm publishing uses npm trusted publishing (OIDC):** `publish-npm.yml` needs no `NPM_TOKEN`,
+  runs on every non-prerelease version tag (the release event never fired, because `release.yml`
+  creates the release with `GITHUB_TOKEN`) and by hand with `--ref vX.Y.Z`. It typechecks, lints
+  and runs the unit suite with coverage thresholds before it publishes.
+
+### Not in 2.0.2 (planned for 2.1)
+- Operator stop command, pause and resume; board-operator role and `decidedBy` on HITL decisions with
+  a run-time board token; strict `iss`/`aud`; consume-side dedup, completion routing across
+  processes, durable DLQ; `team.stop()` for `kaiban-team-bridge`. See
+  `docs/roadmap/V2.1-ROADMAP.md` §7.4.
+
 ## [2.0.1] — 2026-10-23
 
 Critical fixes before the companion book's launch. Everything under this heading, including the

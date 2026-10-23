@@ -7,6 +7,8 @@
  */
 import jwt from "jsonwebtoken";
 
+const A2A_ROLE = "a2a-client";
+
 function getSecret(): string {
   const s = process.env["A2A_JWT_SECRET"];
   if (!s) throw new Error("A2A_JWT_SECRET not set");
@@ -21,7 +23,7 @@ export function issueA2AToken(
   serviceId: string,
   expiresInSeconds = 86400,
 ): string {
-  return jwt.sign({ sub: serviceId, role: "a2a-client" }, getSecret(), {
+  return jwt.sign({ sub: serviceId, role: A2A_ROLE }, getSecret(), {
     algorithm: "HS256",
     expiresIn: expiresInSeconds,
   });
@@ -29,12 +31,15 @@ export function issueA2AToken(
 
 /**
  * Verify an Authorization: Bearer <token> header.
- * Throws on missing header, invalid format, bad signature, expiry, or missing A2A_JWT_SECRET.
+ * Throws on missing header, invalid format, bad signature, expiry, wrong role (e.g. a board token signed
+ * with the same secret), or missing A2A_JWT_SECRET.
  */
 export function verifyA2AToken(authHeader: string | undefined): jwt.JwtPayload {
   if (!authHeader?.startsWith("Bearer "))
     throw new Error("Missing Authorization header");
-  return jwt.verify(authHeader.slice(7), getSecret(), {
+  const payload = jwt.verify(authHeader.slice(7), getSecret(), {
     algorithms: ["HS256"],
   }) as jwt.JwtPayload;
+  if (payload["role"] !== A2A_ROLE) throw new Error("Wrong token role");
+  return payload;
 }

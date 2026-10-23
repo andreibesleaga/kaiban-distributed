@@ -190,6 +190,16 @@ describe("loadConfig", () => {
     expect(loadConfig().agentTimeoutMs).toBe(120000);
   });
 
+  it("retryOnTimeout is off by default and on for RETRY_ON_TIMEOUT=true or 1", () => {
+    expect(loadConfig().retryOnTimeout).toBe(false);
+    process.env["RETRY_ON_TIMEOUT"] = "true";
+    expect(loadConfig().retryOnTimeout).toBe(true);
+    process.env["RETRY_ON_TIMEOUT"] = "1";
+    expect(loadConfig().retryOnTimeout).toBe(true);
+    process.env["RETRY_ON_TIMEOUT"] = "false";
+    expect(loadConfig().retryOnTimeout).toBe(false);
+  });
+
   it("falls back to the default port when PORT is non-numeric", () => {
     process.env["PORT"] = "not-a-port";
     expect(loadConfig().port).toBe(3000);

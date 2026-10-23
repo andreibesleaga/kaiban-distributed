@@ -11,6 +11,37 @@ import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "KafkaDriver" });
 
+/**
+ * KafkaJS only heartbeats between messages, so a handler that runs longer than
+ * the session timeout (default 30 s) gets the worker evicted from the group and
+ * the task redelivered elsewhere. While a handler runs we heartbeat on this
+ * interval: the KafkaJS default heartbeatInterval (3 s), a tenth of the default
+ * sessionTimeout, so several beats fit inside one session window.
+ */
+const HEARTBEAT_INTERVAL_MS = 3000;
+
+/**
+ * Runs fn while sending Kafka heartbeats on an interval; the timer is always
+ * cleared. Heartbeat failures (e.g. REBALANCE_IN_PROGRESS) are logged, never
+ * thrown, so they cannot fail the task itself.
+ */
+async function withHeartbeat<T>(
+  heartbeat: () => Promise<void>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const timer = setInterval(() => {
+    heartbeat().catch((err: unknown) => {
+      log.warn({ err: String(err) }, "Kafka heartbeat failed during task");
+    });
+  }, HEARTBEAT_INTERVAL_MS);
+  timer.unref();
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 export interface KafkaDriverConfig {
   brokers: string[];
   clientId: string;
@@ -119,7 +150,7 @@ export class KafkaDriver implements IMessagingDriver {
     await this.consumer.subscribe({ topic, fromBeginning: false });
     this.subscribedTopic = topic;
     await this.consumer.run({
-      eachMessage: async ({ message }) => {
+      eachMessage: async ({ message, heartbeat }) => {
         if (!message.value) return;
         let parsed: MessagePayload;
         try {
@@ -136,7 +167,9 @@ export class KafkaDriver implements IMessagingDriver {
         const ctx = extractTraceContext(
           sanitizeTraceHeaders(parsed.traceHeaders),
         );
-        await otelContext.with(ctx, () => handler(parsed));
+        await withHeartbeat(heartbeat, () =>
+          otelContext.with(ctx, () => handler(parsed)),
+        );
       },
     });
   }

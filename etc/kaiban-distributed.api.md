@@ -143,6 +143,7 @@ export interface AgentActorDeps {
     circuitBreaker?: ICircuitBreaker;
     // (undocumented)
     firewall?: ISemanticFirewall;
+    retryOnTimeout?: boolean;
     taskTimeoutMs?: number;
 }
 
@@ -279,6 +280,8 @@ export interface AppConfig {
         url: string;
         tls?: TlsConfig;
     };
+    // (undocumented)
+    retryOnTimeout: boolean;
     // (undocumented)
     security: {
         semanticFirewallEnabled: boolean;

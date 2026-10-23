@@ -12,7 +12,14 @@ vi.mock("../../../src/shared/structured-logger", () => ({
   resolveLogLevel: (): string => "silent",
 }));
 
+const mockFlushTelemetry = vi.hoisted(() => vi.fn());
+vi.mock("../../../src/infrastructure/telemetry/telemetry-shutdown", () => ({
+  shutdownTelemetry: mockFlushTelemetry,
+  deferTelemetryShutdown: vi.fn(),
+}));
+
 import { startAgentNode, createAgentStatePublisher } from "../../../src/shared";
+import { resetProcessDrain } from "../../../src/shared/process-drain";
 import { AgentActor } from "../../../src/application/actor/AgentActor";
 
 // ── Mock all heavy dependencies ──────────────────────────────────────────────
@@ -111,6 +118,7 @@ describe("startAgentNode", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetProcessDrain();
     // Capture SIGTERM listeners so we can invoke them
     sigTermListeners = [];
     vi.spyOn(process, "on").mockImplementation((event, handler) => {
@@ -303,6 +311,7 @@ describe("startAgentNode — 2.0.1: timeout and signals", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetProcessDrain();
     listeners = {};
     vi.spyOn(process, "on").mockImplementation((event, handler) => {
       (listeners[String(event)] ??= []).push(handler as () => void);
@@ -313,6 +322,7 @@ describe("startAgentNode — 2.0.1: timeout and signals", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete process.env["AGENT_TIMEOUT_MS"];
+    delete process.env["RETRY_ON_TIMEOUT"];
   });
 
   it("passes AGENT_TIMEOUT_MS to the actor as taskTimeoutMs", async () => {
@@ -349,6 +359,116 @@ describe("startAgentNode — 2.0.1: timeout and signals", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(mockActorStop).toHaveBeenCalledTimes(1);
     expect(exitSpy).toHaveBeenCalledTimes(1);
+    exitSpy.mockRestore();
+  });
+
+  it("one signal drains every node of the process, then exits once (multi-agent worker)", async () => {
+    const order: string[] = [];
+    const releases: Array<() => void> = [];
+    mockActorStop.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releases.push(() => {
+            order.push("node-drained");
+            resolve();
+          });
+        }),
+    );
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((_code?: number | string | null) => {
+        order.push("exit");
+        return undefined as never;
+      });
+    await startAgentNode(cfg);
+    await startAgentNode({
+      ...cfg,
+      agentId: "writer",
+      queue: "kaiban-agents-writer",
+    });
+    // Listeners are registered once per process, not once per node.
+    expect(listeners["SIGTERM"]?.length).toBe(1);
+    listeners["SIGTERM"]![0]!();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockActorStop).toHaveBeenCalledTimes(2);
+    releases[0]!();
+    await new Promise((r) => setTimeout(r, 10));
+    // The first node to finish no longer exits while the other still drains.
+    expect(exitSpy).not.toHaveBeenCalled();
+    releases[1]!();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual(["node-drained", "node-drained", "exit"]);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    mockActorStop.mockReset().mockResolvedValue(undefined);
+    exitSpy.mockRestore();
+  });
+
+  it("exits non-zero when any node of the process fails to drain cleanly", async () => {
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(
+        (_code?: number | string | null) => undefined as never,
+      );
+    mockActorStop
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("second node stop failed"));
+    await startAgentNode(cfg);
+    await startAgentNode({
+      ...cfg,
+      agentId: "writer",
+      queue: "kaiban-agents-writer",
+    });
+    listeners["SIGTERM"]![0]!();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(exitSpy).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+
+  it("RETRY_ON_TIMEOUT=true or 1 turns retryOnTimeout on; anything else leaves it off", async () => {
+    for (const [v, on] of [
+      ["true", true],
+      ["1", true],
+      [undefined, false],
+      ["false", false],
+      ["yes", false],
+    ] as const) {
+      if (v === undefined) delete process.env["RETRY_ON_TIMEOUT"];
+      else process.env["RETRY_ON_TIMEOUT"] = v;
+      await startAgentNode(cfg);
+      const deps = vi.mocked(AgentActor).mock.calls.at(-1)?.[4] as {
+        retryOnTimeout?: boolean;
+      };
+      expect(deps.retryOnTimeout === true).toBe(on);
+    }
+  });
+
+  it("the drain awaits the telemetry flush before it exits", async () => {
+    const order: string[] = [];
+    let finishFlush!: () => void;
+    mockFlushTelemetry.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFlush = (): void => {
+            order.push("flushed");
+            resolve();
+          };
+        }),
+    );
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((_code?: number | string | null) => {
+        order.push("exit");
+        return undefined as never;
+      });
+    await startAgentNode(cfg);
+    listeners["SIGTERM"]![0]!();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockFlushTelemetry).toHaveBeenCalledTimes(1);
+    expect(exitSpy).not.toHaveBeenCalled();
+    finishFlush();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual(["flushed", "exit"]);
     exitSpy.mockRestore();
   });
 });

@@ -10,13 +10,20 @@ name: Publish to npm (Apache-2.0 core · provenance)
 # the `files` allow-list (ADR-011). The staging script assembles a clean dir
 # whose only LICENSE is LICENSE-APACHE, then `npm publish --provenance`.
 #
-# Triggers: manual (workflow_dispatch) for the first/controlled publish, and
-# automatically when a NON-prerelease GitHub release is published.
+# Authentication is npm trusted publishing (OIDC): no NPM_TOKEN. npm exchanges
+# the job's id-token for a short-lived publish token (npm >= 11.5.1). The
+# trusted publisher on npmjs.com must name this file:
+#   npm trust github kaiban-distributed --file publish-npm.yml --repo andreibesleaga/kaiban-distributed --allow-publish
+#
+# Triggers: every NON-prerelease version tag, and manual (workflow_dispatch) to
+# (re)publish a tag: `gh workflow run publish-npm.yml --ref vX.Y.Z`. Not the
+# `release: published` event: release.yml creates the release with
+# GITHUB_TOKEN, and events made with GITHUB_TOKEN start no other workflow.
 
 on:
   workflow_dispatch:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -25,12 +32,12 @@ jobs:
   publish:
     name: npm publish (staging dir · provenance)
     runs-on: ubuntu-latest
-    # On the release trigger, skip prereleases (e.g. v2.0.0-beta → has a '-'),
+    # On the tag trigger, skip prereleases (e.g. v2.0.0-beta → has a '-'),
     # which must never go to the `latest` dist-tag. Manual dispatch always runs.
-    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.release.tag_name, '-') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-') }}
     permissions:
       contents: read
-      id-token: write # REQUIRED for npm build provenance (OIDC)
+      id-token: write # REQUIRED: npm trusted publishing + build provenance (OIDC)
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
@@ -44,12 +51,17 @@ jobs:
       - name: Use npm 11.17.0
         run: npm install -g npm@11.17.0
       - run: npm ci
+      # The tag push starts this job in parallel with release.yml, so the
+      # publish carries its own gate: npm versions cannot be republished.
+      - name: Gate — typecheck, lint, unit tests with coverage thresholds
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run test:coverage
       # pack-staging.sh --publish: build → assemble Apache-2.0-only staging dir
       # (no GPL LICENSE leak) → strip lifecycle scripts/devDeps → publish with
       # provenance + public access. publishConfig in package.json already pins
-      # access:public + provenance:true; provenance succeeds here because the job
-      # carries the OIDC id-token.
+      # access:public + provenance:true; both the publish login and provenance
+      # come from the job's OIDC id-token (trusted publishing).
       - name: Publish Apache-2.0 core to npm (with provenance)
         run: bash scripts/pack-staging.sh --publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

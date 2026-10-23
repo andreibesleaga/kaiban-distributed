@@ -474,7 +474,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 14. `MCPFederationClient` outbound stdio client for external MCP tools.
 
 **Resilience & ops**
-15. Retry (3× linear backoff) → DLQ; no retry after a budget breach, a timeout or a stop; 5-minute per-task timeout (`AGENT_TIMEOUT_MS`, on workers too); AbortSignal cancellation.
+15. Retry (3× linear backoff) → DLQ; no retry after a budget breach or a stop, and none after a timeout unless `RETRY_ON_TIMEOUT=true`; 5-minute per-task timeout (`AGENT_TIMEOUT_MS`, on workers too); AbortSignal cancellation.
 16. `SlidingWindowBreaker` circuit breaker (threshold 10 / 60 s, opt-in).
 17. `/health`, `/ready`, `/startup` probes; deadline-bounded graceful shutdown.
 18. `dlq-replay.ts` operator recovery; **chaos mode** (`--chaos`, ~20% searcher crash) + a chaos e2e suite asserting zero dropped messages on broker pause/resume.

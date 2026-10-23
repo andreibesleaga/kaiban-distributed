@@ -64,3 +64,15 @@ tests: `AgentActor-abort.test.ts` (signal passed; aborted on timeout + on stop),
 `owned-llm.test.ts` (signal injected into invoke/stream; combined signals;
 non-openai → undefined), `kaiban-agent-bridge-abort.test.ts` (llmInstance injected
 with the actor signal; legacy/no-signal path unchanged).
+
+## Amendment 2.0.2 (2026-10-23)
+The bridge now calls `team.stop()` when the actor's signal aborts (timeout, actor
+stop, shutdown). `createKaibanTaskHandler` rejects at once with the signal's
+reason (the actor's non-retryable `ControlAbortError`) if the signal is already
+aborted, and otherwise races `team.start()` against the abort, because
+`team.start()` never settles after `team.stop()`. `stop()` rejects when the
+workflow is not running, so that failure is ignored. The Limitations bullet on
+non-OpenAI providers is superseded as follows: the team now stops at the agent
+loop's next iteration boundary and the actor releases the job immediately, but an
+in-flight non-OpenAI LLM call is not itself cancelled. `kaiban-team-bridge.ts` is
+unchanged. Guard tests: `kaiban-agent-bridge-abort.test.ts`.

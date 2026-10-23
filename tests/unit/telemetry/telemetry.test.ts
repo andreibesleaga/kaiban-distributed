@@ -54,6 +54,11 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ConsoleSpanExporter } from "@opentelemetry/sdk-trace-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { initTelemetry } from "../../../src/infrastructure/telemetry/telemetry";
+import {
+  deferTelemetryShutdown,
+  resetTelemetryShutdown,
+  shutdownTelemetry,
+} from "../../../src/infrastructure/telemetry/telemetry-shutdown";
 
 /** Attach start/shutdown spies to the NodeSDK mock via prototype (avoids arrow fn constructor issue) */
 function buildSDKSpies(shutdownPromise: Promise<void> = Promise.resolve()): {
@@ -194,6 +199,28 @@ describe("initTelemetry — SIGTERM handler", () => {
       expect.objectContaining({ err: shutdownError }),
       "Telemetry SDK shutdown failed",
     );
+  });
+
+  it("two SIGTERMs (or SIGTERM plus a worker drain) flush the SDK only once", async () => {
+    const { shutdownSpy } = buildSDKSpies();
+    initTelemetry({ serviceName: "svc", exporterEndpoint: "http://x" });
+    process.emit("SIGTERM");
+    process.emit("SIGTERM");
+    await shutdownTelemetry();
+    expect(shutdownSpy).toHaveBeenCalledOnce();
+  });
+
+  it("stands down when a worker drain or the gateway owns the flush (it flushes last itself)", async () => {
+    const { shutdownSpy } = buildSDKSpies();
+    initTelemetry({ serviceName: "svc", exporterEndpoint: "http://x" });
+    deferTelemetryShutdown();
+    process.emit("SIGTERM");
+    await new Promise<void>((r) => setTimeout(r, 20));
+    expect(shutdownSpy).not.toHaveBeenCalled();
+    // The owner's own last step still flushes.
+    await shutdownTelemetry();
+    expect(shutdownSpy).toHaveBeenCalledOnce();
+    resetTelemetryShutdown();
   });
 
   it("multiple calls each register their own SIGTERM listener", () => {

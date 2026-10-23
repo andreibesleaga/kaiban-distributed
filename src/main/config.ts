@@ -49,6 +49,7 @@ export interface AppConfig {
   agentIds: string[];
   validHitlDecisions: string[];
   agentTimeoutMs: number;
+  retryOnTimeout: boolean;
   /** Per-agent token cap (`MAX_TOKEN_BUDGET`; default 200 000; `Infinity` = unlimited). */
   maxTokenBudget: number;
   /** Per-task token cap (`MAX_TASK_TOKEN_BUDGET`; default 50 000; `Infinity` = unlimited). */
@@ -228,6 +229,7 @@ export function loadConfig(): AppConfig {
       .map((s) => s.trim())
       .filter(Boolean),
     agentTimeoutMs: parseIntEnv("AGENT_TIMEOUT_MS", 300000),
+    retryOnTimeout: getBoolEnv("RETRY_ON_TIMEOUT", false),
     maxTokenBudget: caps.maxTokenBudget,
     maxTaskTokenBudget: caps.maxTaskTokenBudget,
     mcp: {

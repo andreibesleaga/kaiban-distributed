@@ -126,8 +126,9 @@ export class GatewayApp {
   private readonly mcpHandler?: McpHttpHandler;
   private readonly mcpPath: string;
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
-  // Probe routes: room for Kubernetes liveness + readiness + startup from one
-  // kubelet address, still bounded so the Redis/broker checks cannot be flooded.
+  // Probe routes: 120/min per route per client (keyed route|ip), so Kubernetes
+  // liveness + readiness + startup from one kubelet address never share a bucket,
+  // still bounded so the Redis/broker checks cannot be flooded.
   private healthRateLimiter = new SlidingWindowRateLimiter(60_000, 120);
 
   constructor(deps: GatewayAppDeps) {
@@ -160,7 +161,7 @@ export class GatewayApp {
 
     this.app.get(
       "/health",
-      this.healthRateLimit.bind(this),
+      this.healthRateLimit.bind(this, "/health"),
       this.handleHealth.bind(this),
     );
 
@@ -168,12 +169,12 @@ export class GatewayApp {
     // broker reachability; startup gates slow boot. 200 ready / 503 not-ready.
     this.app.get(
       "/ready",
-      this.healthRateLimit.bind(this),
+      this.healthRateLimit.bind(this, "/ready"),
       this.handleProbe.bind(this, this.readinessProbe),
     );
     this.app.get(
       "/startup",
-      this.healthRateLimit.bind(this),
+      this.healthRateLimit.bind(this, "/startup"),
       this.handleProbe.bind(this, this.startupProbe),
     );
 
@@ -255,13 +256,15 @@ export class GatewayApp {
     next();
   }
 
+  /** Per-route key: one probe route's traffic cannot exhaust another's bucket. */
   private healthRateLimit(
+    route: string,
     req: Request,
     res: Response,
     next: NextFunction,
   ): void {
     const clientIp = req.ip ?? req.socket.remoteAddress ?? "unknown";
-    if (!this.healthRateLimiter.isAllowed(clientIp)) {
+    if (!this.healthRateLimiter.isAllowed(`${route}|${clientIp}`)) {
       res.status(429).json(apiError("Too Many Requests"));
       return;
     }

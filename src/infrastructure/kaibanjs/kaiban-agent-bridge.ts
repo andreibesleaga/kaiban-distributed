@@ -373,6 +373,69 @@ function findWorkflowFallbackMessage(
   return undefined;
 }
 
+/** Build the one-task Team, owning the LLM when the actor supplies a signal. */
+function buildTeam(
+  agentConfig: KaibanAgentConfig,
+  payload: MessagePayload,
+  env: Record<string, string>,
+  signal?: AbortSignal,
+): Team {
+  // Finding #2 (ADR-014): when the actor supplies an AbortSignal, OWN the
+  // LangChain LLM so the signal reaches `.invoke(input, { signal })` and a
+  // timed-out / cancelled task stops burning tokens. KaibanJS 0.24.2 exposes
+  // no abort on team.start(); it accepts our pre-built model verbatim. When
+  // there is no signal (or a non-openai provider), KaibanJS builds its own
+  // instance from env — unchanged behavior.
+  const ownedLlm = signal
+    ? buildOwnedLlm(agentConfig.llmConfig, signal)
+    : undefined;
+  const agent = new Agent(
+    ownedLlm ? { ...agentConfig, llmInstance: ownedLlm } : agentConfig,
+  );
+  const team = new Team({
+    name: `task-${payload.taskId}`,
+    agents: [agent],
+    tasks: [buildTask(payload, agent)],
+    env,
+  });
+  return team;
+}
+
+/**
+ * Run `team.start()` and, when the actor's signal aborts, stop the team and
+ * settle with the abort reason (the actor's non-retryable ControlAbortError).
+ *
+ * KaibanJS 0.24.2: `team.start()` never settles after `team.stop()`, so the
+ * start promise is raced against the abort. `stop()` is async and rejects when
+ * the workflow is not RUNNING/PAUSED, so its failure is swallowed. The team
+ * stops at the agent loop's next iteration boundary. No signal → plain start.
+ */
+async function startTeam(
+  team: Team,
+  inputs: Record<string, unknown>,
+  signal?: AbortSignal,
+): ReturnType<Team["start"]> {
+  if (!signal) return team.start(inputs);
+  signal.throwIfAborted();
+
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = (): void => {
+      void Promise.resolve(team.stop()).catch(() => {});
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  const started = team.start(inputs);
+  // The losing side may still reject later; it must not become unhandled.
+  started.catch(() => {});
+  try {
+    return await Promise.race([started, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 /**
  * Creates an AgentActor-compatible task handler backed by a KaibanJS Team.
  *
@@ -385,6 +448,8 @@ function findWorkflowFallbackMessage(
  * 0.24.2; ERRORED makes it reject, with no usage) so AgentActor retries (max 3
  * times), then DLQs — unless the state publisher finds that the failed attempts
  * reached a token cap.
+ * When the actor aborts the task (timeout, actor stop) the team is stopped and
+ * the handler rejects with the signal's reason (see `startTeam`).
  * The result is included in kaiban-events-completed data.result for downstream chaining.
  */
 export function createKaibanTaskHandler(
@@ -396,29 +461,15 @@ export function createKaibanTaskHandler(
     payload: MessagePayload,
     signal?: AbortSignal,
   ): Promise<unknown> => {
+    // Already aborted (timeout/stop raced the dispatch): build nothing.
+    signal?.throwIfAborted();
     const env = await buildEnv(tokenProvider, payload.taskId);
+    signal?.throwIfAborted();
 
-    // Finding #2 (ADR-014): when the actor supplies an AbortSignal, OWN the
-    // LangChain LLM so the signal reaches `.invoke(input, { signal })` and a
-    // timed-out / cancelled task stops burning tokens. KaibanJS 0.24.2 exposes
-    // no abort on team.start(); it accepts our pre-built model verbatim. When
-    // there is no signal (or a non-openai provider), KaibanJS builds its own
-    // instance from env — unchanged behavior.
-    const ownedLlm = signal
-      ? buildOwnedLlm(agentConfig.llmConfig, signal)
-      : undefined;
-    const agent = new Agent(
-      ownedLlm ? { ...agentConfig, llmInstance: ownedLlm } : agentConfig,
-    );
-    const team = new Team({
-      name: `task-${payload.taskId}`,
-      agents: [agent],
-      tasks: [buildTask(payload, agent)],
-      env,
-    });
+    const team = buildTeam(agentConfig, payload, env, signal);
 
     const inputs = (payload.data["inputs"] as Record<string, unknown>) ?? {};
-    const result = await team.start(inputs);
+    const result = await startTeam(team, inputs, signal);
 
     // Compute cost before the status check so we can log it regardless.
     // KaibanJS's own summary box shows $-1 when the model isn't in its private

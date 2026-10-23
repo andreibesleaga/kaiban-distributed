@@ -94,7 +94,7 @@ export interface McpServerDeps {
 }
 
 const DEFAULT_NAME = "kaiban-distributed";
-const DEFAULT_VERSION = "2.0.1";
+const DEFAULT_VERSION = "2.0.2";
 const CONSENT_INSTRUCTION_PREVIEW = 200;
 
 /** Whether a capability of `kind`/`name` is permitted by the allow-list. */

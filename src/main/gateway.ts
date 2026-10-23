@@ -19,6 +19,11 @@ import { SocketGateway } from "../adapters/gateway/SocketGateway";
 import { buildReadinessProbe, buildStartupProbe } from "../resilience/health";
 import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "../shared/structured-logger";
+import { taskWaitMs } from "../application/actor/retry-policy";
+import {
+  deferTelemetryShutdown,
+  shutdownTelemetry,
+} from "../infrastructure/telemetry/telemetry-shutdown";
 
 const log = createStructuredLogger({ component: "gateway" });
 
@@ -136,10 +141,11 @@ export async function runGateway(): Promise<void> {
     router,
     redisUrl: config.redis.url,
     name: config.serviceName,
-    version: "2.0.1",
+    version: "2.0.2",
     baseUrl: process.env["A2A_PUBLIC_URL"] ?? `http://localhost:${config.port}`,
     agentIds: config.agentIds,
-    timeoutMs: config.agentTimeoutMs,
+    // With RETRY_ON_TIMEOUT the worker may run three timed-out attempts; wait for all of them.
+    timeoutMs: taskWaitMs(config.agentTimeoutMs, config.retryOnTimeout),
     jwtEnabled: Boolean(config.security.a2aJwtSecret),
   });
   await a2a.start();
@@ -216,6 +222,8 @@ export async function runGateway(): Promise<void> {
         },
         { name: "close-completed-driver", run: (): Promise<void> => completedDriver.disconnect() },
         { name: "close-messaging-driver", run: (): Promise<void> => messagingDriver.disconnect() },
+        // Last: the exit below must not cut the final span/metric batch.
+        { name: "flush-telemetry", run: (): Promise<void> => shutdownTelemetry() },
       ],
     });
     log.info(
@@ -225,6 +233,8 @@ export async function runGateway(): Promise<void> {
     process.exit(result.timedOut || result.errors.length > 0 ? 1 : 0);
   };
 
+  // The shutdown above flushes telemetry last; the SDK's own listener must not flush first.
+  deferTelemetryShutdown();
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
 }

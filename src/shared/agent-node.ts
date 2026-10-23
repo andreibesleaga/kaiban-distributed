@@ -40,6 +40,7 @@ import { buildSecurityDeps } from "./build-security-deps";
 import { resolveSpendCaps } from "./budget";
 import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "./structured-logger";
+import { registerNodeDrain } from "./process-drain";
 
 const log = createStructuredLogger({ component: "agent-node" });
 
@@ -108,9 +109,12 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   );
   // AGENT_TIMEOUT_MS bounds each task attempt on this worker (unset = 5 min default).
   const taskTimeoutMs = positiveIntEnv("AGENT_TIMEOUT_MS");
+  // RETRY_ON_TIMEOUT=true|1 re-enables bounded retry of a timed-out task (default: off).
+  const retryOnTimeout = boolEnv("RETRY_ON_TIMEOUT");
   const actor = new AgentActor(agentId, driver, queue, handler, {
     ...actorDeps,
     ...(taskTimeoutMs !== undefined ? { taskTimeoutMs } : {}),
+    ...(retryOnTimeout ? { retryOnTimeout } : {}),
   });
 
   await actor.start();
@@ -119,30 +123,30 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
 
   // Graceful drain (Phase R): stop the actor (no new work) → drain in-flight →
   // close driver → close publisher, ordered + best-effort, within a bounded
-  // deadline (after which the orchestrator SIGKILLs anyway).
-  // SIGTERM (orchestrator) and SIGINT (Ctrl-C) drain the same way, once.
-  let draining = false;
-  const drain = (): void => {
-    if (draining) return;
-    draining = true;
-    void (async (): Promise<void> => {
-      const result = await gracefulShutdown({
-        deadlineMs: NODE_SHUTDOWN_DEADLINE_MS,
-        steps: [
-          { name: "stop-actor", run: (): Promise<void> => actor.stop() },
-          { name: "close-driver", run: (): Promise<void> => driver.disconnect() },
-          { name: "close-publisher", run: (): Promise<void> => statePublisher.disconnect() },
-        ],
-      });
-      process.exit(result.timedOut || result.errors.length > 0 ? 1 : 0);
-    })();
-  };
-  process.on("SIGTERM", drain);
-  process.on("SIGINT", drain);
+  // deadline (after which the orchestrator SIGKILLs anyway). SIGTERM and SIGINT
+  // drain every node of this process together, once, then flush telemetry and
+  // exit (process-drain.ts).
+  registerNodeDrain(async (): Promise<boolean> => {
+    const result = await gracefulShutdown({
+      deadlineMs: NODE_SHUTDOWN_DEADLINE_MS,
+      steps: [
+        { name: "stop-actor", run: (): Promise<void> => actor.stop() },
+        { name: "close-driver", run: (): Promise<void> => driver.disconnect() },
+        { name: "close-publisher", run: (): Promise<void> => statePublisher.disconnect() },
+      ],
+    });
+    return !result.timedOut && result.errors.length === 0;
+  });
 }
 
 /** A positive integer from the environment, or undefined (unset, text, 0, negative). */
 function positiveIntEnv(name: string): number | undefined {
   const n = Number.parseInt(process.env[name] ?? "", 10);
   return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** True only for the literals "true" or "1" (the repo's boolean env convention). */
+function boolEnv(name: string): boolean {
+  const v = process.env[name];
+  return v === "true" || v === "1";
 }

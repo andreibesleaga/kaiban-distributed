@@ -254,6 +254,21 @@ describe("runGateway", () => {
     expect((await deps.startupProbe()).ready).toBe(false);
   });
 
+  it("waits one attempt for a task by default and all attempts with RETRY_ON_TIMEOUT", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    process.env["AGENT_TIMEOUT_MS"] = "1000";
+    await runGateway();
+    expect(
+      (h.buildA2AStack.mock.calls as unknown as [{ timeoutMs: number }][])[0]![0].timeoutMs,
+    ).toBe(1000);
+
+    process.env["RETRY_ON_TIMEOUT"] = "true";
+    await runGateway();
+    expect(
+      (h.buildA2AStack.mock.calls as unknown as [{ timeoutMs: number }][])[1]![0].timeoutMs,
+    ).toBe(3 * 1000 + 100 + 200 + 5000);
+  });
+
   it("exits non-zero when a shutdown step fails", async () => {
     process.env["MESSAGING_DRIVER"] = "bullmq";
     h.socketShutdown.mockRejectedValueOnce(new Error("socket drain failed"));
