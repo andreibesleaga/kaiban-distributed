@@ -16,6 +16,7 @@ import {
   recordMessageProcessed,
   recordMessageLatency,
 } from "../../infrastructure/telemetry/telemetry";
+import { RETRY_ATTEMPTS, RETRY_BASE_DELAY_MS } from "./retry-policy";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "AgentActor" });
@@ -33,8 +34,6 @@ export type TaskHandler = (
   signal?: AbortSignal,
 ) => Promise<unknown>;
 
-const RETRY_ATTEMPTS = 3;
-const RETRY_BASE_DELAY_MS = 100;
 // 64 KB — cap outbound message data. The invariant is BYTES (the message is
 // JSON-serialized and transmitted as UTF-8), so all checks/truncation use
 // Buffer.byteLength(...,"utf8"), mirroring a2a-input-validation.ts.
@@ -113,6 +112,14 @@ export interface AgentActorDeps {
   admissionGate?: IAdmissionGate;
   /** Max ms a single task handler may run before being timed out (default: 300_000) */
   taskTimeoutMs?: number;
+  /**
+   * Retry a task that timed out through the normal retry path (3 attempts in
+   * all, linear back-off). Default `false`: a timeout is final, so a hung
+   * provider call is paid for once. When on, a hung call can be paid for up to
+   * three times; a stop is still never retried, and the last timeout still
+   * dead-letters as `task_timeout`.
+   */
+  retryOnTimeout?: boolean;
 }
 
 export class AgentActor {
@@ -124,6 +131,7 @@ export class AgentActor {
   private circuitBreaker?: ICircuitBreaker;
   private admissionGate?: IAdmissionGate;
   private taskTimeoutMs: number;
+  private retryOnTimeout: boolean;
   /** In-flight task abort controllers, so stop() can cancel running work. */
   private readonly inFlight = new Set<AbortController>();
   /** Set by stop(): no attempt starts or is retried after it. */
@@ -144,6 +152,7 @@ export class AgentActor {
     this.circuitBreaker = deps?.circuitBreaker;
     this.admissionGate = deps?.admissionGate;
     this.taskTimeoutMs = deps?.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
+    this.retryOnTimeout = deps?.retryOnTimeout === true;
   }
 
   public async start(): Promise<void> {
@@ -285,7 +294,7 @@ export class AgentActor {
         recordMessageLatency(Date.now() - start, "completed");
         return;
       } catch (err) {
-        const final = this.nonRetryable(err);
+        const final = this.finalError(err, attempt);
         if (final) {
           await this.failNonRetryable(payload, final, start);
           return;
@@ -340,6 +349,21 @@ export class AgentActor {
     if (err.reasonCode === "task_timeout") this.circuitBreaker?.recordFailure();
     recordMessageLatency(Date.now() - start, "failed");
     await this.publishToDlq(payload, err.reasonCode, err.message);
+  }
+
+  /**
+   * The error that ends the task on this attempt, or null when another attempt
+   * may run. With `retryOnTimeout`, a timeout before the last attempt is not final.
+   */
+  private finalError(err: unknown, attempt: number): NonRetryableError | null {
+    const final = this.nonRetryable(err);
+    const retriesTimeout =
+      this.retryOnTimeout &&
+      !this.stopping &&
+      attempt < RETRY_ATTEMPTS &&
+      final instanceof ControlAbortError &&
+      final.reasonCode === "task_timeout";
+    return retriesTimeout ? null : final;
   }
 
   /** The error as a non-retryable one, or null when another attempt may run. */

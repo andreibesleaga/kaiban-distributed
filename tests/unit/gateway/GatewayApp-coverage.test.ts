@@ -15,11 +15,16 @@ describe("GatewayApp — health rate limit coverage", () => {
 
     (
       gw as unknown as {
-        healthRateLimit: (req: unknown, res: unknown, next: unknown) => void;
+        healthRateLimit: (
+          route: string,
+          req: unknown,
+          res: unknown,
+          next: unknown,
+        ) => void;
       }
-    ).healthRateLimit(req, res, next);
+    ).healthRateLimit("/health", req, res, next);
 
-    expect(isAllowed).toHaveBeenCalledWith("10.0.0.7");
+    expect(isAllowed).toHaveBeenCalledWith("/health|10.0.0.7");
     expect(next).toHaveBeenCalledOnce();
   });
 
@@ -36,11 +41,16 @@ describe("GatewayApp — health rate limit coverage", () => {
 
     (
       gw as unknown as {
-        healthRateLimit: (req: unknown, res: unknown, next: unknown) => void;
+        healthRateLimit: (
+          route: string,
+          req: unknown,
+          res: unknown,
+          next: unknown,
+        ) => void;
       }
-    ).healthRateLimit(req, { status }, next);
+    ).healthRateLimit("/ready", req, { status }, next);
 
-    expect(isAllowed).toHaveBeenCalledWith("unknown");
+    expect(isAllowed).toHaveBeenCalledWith("/ready|unknown");
     expect(status).toHaveBeenCalledWith(429);
     expect(json).toHaveBeenCalledWith(
       expect.objectContaining({

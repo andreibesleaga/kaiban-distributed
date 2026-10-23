@@ -2,6 +2,7 @@
  * Cross-auth boundary tests — verify that board tokens cannot be used for A2A
  * and vice versa, and that firewall blocks don't count as circuit breaker failures.
  */
+import jwt from "jsonwebtoken";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   AgentActor,
@@ -48,9 +49,9 @@ describe("Cross-auth boundary — board token vs A2A token", () => {
     expect(() => verifyBoardToken(a2aToken)).toThrow();
   });
 
-  it("tokens with same secret but different roles are still valid JWT (role check is at caller level)", async () => {
-    // Edge case: if someone sets BOARD_JWT_SECRET === A2A_JWT_SECRET
-    process.env["A2A_JWT_SECRET"] = BOARD_SECRET; // Same secret as board
+  it("with a shared secret, a board token is still rejected by verifyA2AToken (role check)", async () => {
+    // Edge case: operator sets BOARD_JWT_SECRET === A2A_JWT_SECRET
+    process.env["A2A_JWT_SECRET"] = BOARD_SECRET;
 
     const { issueBoardToken } =
       await import("../../../src/infrastructure/security/board-auth");
@@ -58,9 +59,39 @@ describe("Cross-auth boundary — board token vs A2A token", () => {
       await import("../../../src/infrastructure/security/a2a-auth");
 
     const boardToken = issueBoardToken("operator");
-    // This WILL verify since same secret, but role is 'board-viewer' not 'a2a-client'
-    const decoded = verifyA2AToken(`Bearer ${boardToken}`);
-    expect(decoded["role"]).toBe("board-viewer"); // Wrong role — caller should reject
+    expect(() => verifyA2AToken(`Bearer ${boardToken}`)).toThrow(
+      "Wrong token role",
+    );
+  });
+
+  it("with a shared secret, an A2A token is still rejected by verifyBoardToken (role check)", async () => {
+    process.env["A2A_JWT_SECRET"] = BOARD_SECRET;
+
+    const { issueA2AToken } =
+      await import("../../../src/infrastructure/security/a2a-auth");
+    const { verifyBoardToken } =
+      await import("../../../src/infrastructure/security/board-auth");
+
+    const a2aToken = issueA2AToken("worker-1");
+    expect(() => verifyBoardToken(a2aToken)).toThrow("Wrong token role");
+  });
+
+  it("with a shared secret, tokens without a role claim are rejected by both verifiers", async () => {
+    process.env["A2A_JWT_SECRET"] = BOARD_SECRET;
+
+    const { verifyA2AToken } =
+      await import("../../../src/infrastructure/security/a2a-auth");
+    const { verifyBoardToken } =
+      await import("../../../src/infrastructure/security/board-auth");
+
+    const noRole = jwt.sign({ sub: "x" }, BOARD_SECRET, {
+      algorithm: "HS256",
+      expiresIn: 60,
+    });
+    expect(() => verifyA2AToken(`Bearer ${noRole}`)).toThrow(
+      "Wrong token role",
+    );
+    expect(() => verifyBoardToken(noRole)).toThrow("Wrong token role");
   });
 });
 

@@ -77,5 +77,12 @@ with the job's `GITHUB_TOKEN` (`packages: write`, no secret), turns provenance o
 and skips a version that is already on GitHub Packages. **npmjs.com remains canonical**; the Phase 4b
 `pack-staging.sh --publish` flow above is unchanged (it is already wired into `publish-npm.yml`).
 
+**npm authentication (2.0.2): trusted publishing.** `publish-npm.yml` logs in to npmjs.com with the
+job's GitHub OIDC id-token, not an `NPM_TOKEN`: npm now asks token-based publishes for a one-time
+password, which CI cannot give. One-time setup by a package owner (npm ≥ 11.10, 2FA on the account):
+`npm trust github kaiban-distributed --file publish-npm.yml --repo andreibesleaga/kaiban-distributed --allow-publish`.
+The workflow runs on every non-prerelease `v*` tag; republish a tag with
+`gh workflow run publish-npm.yml --ref vX.Y.Z`.
+
 Backfill of an existing version: `gh workflow run publish-github-packages.yml --ref v2.0.0`.
 

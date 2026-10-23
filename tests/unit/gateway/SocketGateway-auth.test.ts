@@ -145,6 +145,21 @@ describe("SocketGateway — JWT auth middleware", () => {
       );
     });
 
+    it("calls next(error) when auth.token is an a2a-client token signed with the board secret", () => {
+      const sg = getGateway();
+      sg.initialize();
+      const a2aToken = jwt.sign({ sub: "svc", role: "a2a-client" }, BOARD_SECRET, {
+        algorithm: "HS256",
+        expiresIn: 3600,
+      });
+      const socket = makeMockSocket({ token: a2aToken });
+      const next = vi.fn();
+      capturedUseMiddleware!(socket, next);
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "Invalid or expired board token" }),
+      );
+    });
+
     it("calls next(error) when auth.token is signed with wrong secret", () => {
       const sg = getGateway();
       sg.initialize();

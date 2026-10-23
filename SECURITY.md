@@ -13,6 +13,11 @@ validate the task id and are rate-limited per connection; probe routes have thei
 Not yet in 2.0.1 (planned for 2.1): an operator stop command, role checks on HITL decisions and on
 control routes, and per-run tokens for the board.
 
+Security changes in 2.0.2: a board token is rejected on the A2A and MCP routes and an A2A token is
+rejected on the board socket, by the `role` claim the token helpers already issue (this matters when
+both secrets are equal; hand-signed tokens must carry `board-viewer` or `a2a-client`); each probe
+route (`/health`, `/ready`, `/startup`) has its own 120 per minute bucket per client.
+
 ## Reporting a vulnerability
 
 Please report security issues **privately** — do not open a public issue.

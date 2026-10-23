@@ -9,6 +9,7 @@ import {
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { metrics, trace } from "@opentelemetry/api";
 import { createStructuredLogger } from "../../shared/structured-logger";
+import { onTelemetrySigterm, trackTelemetrySdk } from "./telemetry-shutdown";
 
 const log = createStructuredLogger({ component: "Telemetry" });
 
@@ -16,8 +17,6 @@ export interface TelemetryConfig {
   serviceName: string;
   exporterEndpoint?: string;
 }
-
-let sdk: NodeSDK | null = null;
 
 export function initTelemetry(config: TelemetryConfig): void {
   if (!config.exporterEndpoint) {
@@ -38,7 +37,7 @@ export function initTelemetry(config: TelemetryConfig): void {
     exportIntervalMillis: 60000,
   });
 
-  sdk = new NodeSDK({
+  const sdk = new NodeSDK({
     serviceName: config.serviceName,
     traceExporter: exporter,
     metricReader,
@@ -46,12 +45,11 @@ export function initTelemetry(config: TelemetryConfig): void {
   });
 
   sdk.start();
+  trackTelemetrySdk(sdk);
 
-  process.on("SIGTERM", () => {
-    sdk?.shutdown().catch((err: unknown) =>
-      log.error({ err }, "Telemetry SDK shutdown failed"),
-    );
-  });
+  // Kept for 2.0.x so a process without its own shutdown still flushes. A worker
+  // or the gateway defers it (deferTelemetryShutdown) and flushes last itself.
+  process.on("SIGTERM", onTelemetrySigterm);
 }
 
 // ── Metrics instruments ──────────────────────────────────────────────────────

@@ -7,6 +7,8 @@
  */
 import jwt from "jsonwebtoken";
 
+const BOARD_ROLE = "board-viewer";
+
 function getSecret(): string {
   const s = process.env["BOARD_JWT_SECRET"];
   if (!s) throw new Error("BOARD_JWT_SECRET not set");
@@ -21,7 +23,7 @@ export function issueBoardToken(
   subject: string,
   expiresInSeconds = 3600,
 ): string {
-  return jwt.sign({ sub: subject, role: "board-viewer" }, getSecret(), {
+  return jwt.sign({ sub: subject, role: BOARD_ROLE }, getSecret(), {
     algorithm: "HS256",
     expiresIn: expiresInSeconds,
   });
@@ -29,10 +31,13 @@ export function issueBoardToken(
 
 /**
  * Verify and decode a board viewer token.
- * Throws on invalid signature, expiry, or missing BOARD_JWT_SECRET.
+ * Throws on invalid signature, expiry, wrong role (e.g. an A2A token signed
+ * with the same secret), or missing BOARD_JWT_SECRET.
  */
 export function verifyBoardToken(token: string): jwt.JwtPayload {
-  return jwt.verify(token, getSecret(), {
+  const payload = jwt.verify(token, getSecret(), {
     algorithms: ["HS256"],
   }) as jwt.JwtPayload;
+  if (payload["role"] !== BOARD_ROLE) throw new Error("Wrong token role");
+  return payload;
 }

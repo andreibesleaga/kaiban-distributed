@@ -197,7 +197,7 @@ CHANNEL_SIGNING_SECRET=<random 32+ bytes, base64>   # activates signing
 | **Body size limit** | `express.json({ limit: '1mb' })` — rejects oversized payloads |
 | **Request timeout** | `req.setTimeout(30_000)` — prevents slow-read / Slowloris attacks |
 | **Rate limiting — RPC** | 100 req/min per IP via `SlidingWindowRateLimiter` |
-| **Rate limiting — probes** | 120 req/min per IP on `/health`, `/ready`, `/startup` (separate limiter: room for Kubernetes probe cadence, still bounded; 5/min before 2.0.1 restarted pods) |
+| **Rate limiting — probes** | 120 req/min per route per IP on `/health`, `/ready`, `/startup` (each route has its own bucket since 2.0.2; separate limiter: room for Kubernetes probe cadence, still bounded; 5/min before 2.0.1 restarted pods) |
 | **HITL decisions** | `taskId` must match `^[A-Za-z0-9._:-]{1,200}$` before it becomes a Redis key; 10 decisions per 10 s per connection; the board token's subject is logged with each decision (role checks: 2.1) |
 | **Production secrets** | With `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct (`ALLOW_INSECURE_PRODUCTION=true` lets a missing one through with a warning; weak or repeated secrets are never allowed) |
 | **Trust proxy** | `app.set('trust proxy', 1)` only when `TRUST_PROXY=true` — prevents IP spoofing via `X-Forwarded-For` |

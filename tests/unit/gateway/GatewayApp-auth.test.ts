@@ -47,6 +47,21 @@ describe("GatewayApp — A2A auth middleware", () => {
       expect(res.body.errors[0].message).toBe("Unauthorized");
     });
 
+    it("returns 401 for a board-viewer token even when signed with the A2A secret", async () => {
+      const gw = makeGateway();
+      const boardToken = jwt.sign(
+        { sub: "operator", role: "board-viewer" },
+        A2A_SECRET,
+        { algorithm: "HS256", expiresIn: 3600 },
+      );
+      const res = await request(gw.app)
+        .post("/a2a/rpc")
+        .set("Content-Type", "application/json")
+        .set("Authorization", `Bearer ${boardToken}`)
+        .send(RPC_SEND);
+      expect(res.status).toBe(401);
+    });
+
     it("returns 401 when token is signed with wrong secret", async () => {
       const gw = makeGateway();
       const bad = makeToken("wrong-secret");
@@ -94,15 +109,22 @@ describe("GatewayApp — A2A auth middleware", () => {
 
   // ─── Health endpoint rate limiting ────────────────────────────────────────
 
-  it("probe endpoints allow a Kubernetes cadence but are still bounded (120 req/min per client)", async () => {
+  it("probe routes have independent buckets: exhausting /health does not throttle /ready or /startup", async () => {
     const gw = makeGateway();
-    // liveness + readiness + startup every few seconds from one kubelet address
     for (let i = 0; i < 120; i++) {
-      const res = await request(gw.app).get(i % 2 ? "/health" : "/ready");
-      expect(res.status).toBe(200);
+      expect((await request(gw.app).get("/health")).status).toBe(200);
     }
-    const over = await request(gw.app).get("/health");
-    expect(over.status).toBe(429);
+    expect((await request(gw.app).get("/health")).status).toBe(429);
+    expect((await request(gw.app).get("/ready")).status).toBe(200);
+    expect((await request(gw.app).get("/startup")).status).toBe(200);
+  });
+
+  it("each probe route allows 120 req/min per client, then returns 429", async () => {
+    const gw = makeGateway();
+    for (let i = 0; i < 120; i++) {
+      expect((await request(gw.app).get("/ready")).status).toBe(200);
+    }
+    expect((await request(gw.app).get("/ready")).status).toBe(429);
   });
 
   // ─── Trust proxy ──────────────────────────────────────────────────────────
