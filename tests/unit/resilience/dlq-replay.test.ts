@@ -219,4 +219,28 @@ describe("replayDlq", () => {
       traceparent: "00-abc-def-01",
     });
   });
+
+  it("skips a record whose inputs were omitted (too large) instead of replaying an empty task", async () => {
+    const driver = makeDriver();
+    const result = await replayDlq({
+      driver,
+      records: [
+        dlqRecord("big", "writer", { status: "failed", error: "timeout", _inputs_omitted: true }),
+      ],
+    });
+    expect(result.replayed).toBe(0);
+    expect(result.skippedReasons).toEqual([{ taskId: "big", reason: "inputs_missing" }]);
+    expect(driver.published).toHaveLength(0);
+  });
+
+  it("skips a record that carries no inputs at all (written before inputs were kept)", async () => {
+    const driver = makeDriver();
+    const result = await replayDlq({
+      driver,
+      records: [dlqRecord("old", "writer", { status: "failed", error: "timeout" })],
+    });
+    expect(result.replayed).toBe(0);
+    expect(result.skippedReasons).toEqual([{ taskId: "old", reason: "inputs_missing" }]);
+  });
 });
+

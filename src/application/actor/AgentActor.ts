@@ -83,6 +83,25 @@ function capDataSize(data: Record<string, unknown>): Record<string, unknown> {
 /** Default per-task execution timeout: 5 minutes */
 const DEFAULT_TASK_TIMEOUT_MS = 300_000;
 
+/**
+ * A task cut short by the runtime: it timed out (`task_timeout`) or the actor is
+ * stopping (`actor_stopped`). Never retried — a retry would pay the provider again
+ * for work nobody will read. Both codes stay replayable from the DLQ.
+ */
+class ControlAbortError extends NonRetryableError {
+  readonly code = "CONTROL_ABORT";
+
+  constructor(
+    public readonly reasonCode: "task_timeout" | "actor_stopped",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const stoppedError = (): ControlAbortError =>
+  new ControlAbortError("actor_stopped", "Actor stopping");
+
 export interface AgentActorDeps {
   firewall?: ISemanticFirewall;
   circuitBreaker?: ICircuitBreaker;
@@ -107,6 +126,8 @@ export class AgentActor {
   private taskTimeoutMs: number;
   /** In-flight task abort controllers, so stop() can cancel running work. */
   private readonly inFlight = new Set<AbortController>();
+  /** Set by stop(): no attempt starts or is retried after it. */
+  private stopping = false;
 
   constructor(
     id: string,
@@ -149,6 +170,12 @@ export class AgentActor {
         { agentId: sanitizeId(this.id), target: payload.agentId },
         "Ignored task for a different agent",
       );
+      return;
+    }
+
+    if (this.stopping) {
+      // Delivered while the actor drains: not run, kept replayable in the DLQ.
+      await this.publishToDlq(payload, "actor_stopped", "Actor stopping");
       return;
     }
 
@@ -258,8 +285,9 @@ export class AgentActor {
         recordMessageLatency(Date.now() - start, "completed");
         return;
       } catch (err) {
-        if (err instanceof NonRetryableError) {
-          await this.failNonRetryable(payload, err, start);
+        const final = this.nonRetryable(err);
+        if (final) {
+          await this.failNonRetryable(payload, final, start);
           return;
         }
         lastError = err instanceof Error ? err.message : String(err);
@@ -269,6 +297,11 @@ export class AgentActor {
         );
         if (attempt < RETRY_ATTEMPTS) {
           await delay(RETRY_BASE_DELAY_MS * attempt);
+          if (this.stopping) {
+            // stop() arrived during the back-off: the next attempt never starts.
+            await this.failNonRetryable(payload, stoppedError(), start);
+            return;
+          }
         }
       }
     }
@@ -303,8 +336,17 @@ export class AgentActor {
       taskId: payload.taskId,
       reason: err.reasonCode,
     });
+    // A timeout is a downstream fault (the provider did not answer in time).
+    if (err.reasonCode === "task_timeout") this.circuitBreaker?.recordFailure();
     recordMessageLatency(Date.now() - start, "failed");
     await this.publishToDlq(payload, err.reasonCode, err.message);
+  }
+
+  /** The error as a non-retryable one, or null when another attempt may run. */
+  private nonRetryable(err: unknown): NonRetryableError | null {
+    if (err instanceof NonRetryableError) return err;
+    // Whatever the handler threw after stop() aborted it, the actor is draining.
+    return this.stopping ? stoppedError() : null;
   }
 
   private async publishToDlq(
@@ -315,17 +357,27 @@ export class AgentActor {
     recordMessageProcessed("failed");
     // Byte-cap each free-text field so a giant error/reason cannot blow the 64 KB
     // outbound invariant (multi-byte safe). capDataSize is the outer guard.
+    const failure: Record<string, unknown> = {
+      status: "failed",
+      error: truncateToBytes(error, MAX_PUBLISH_DATA_LEN),
+      ...(reason
+        ? { reason: truncateToBytes(reason, MAX_PUBLISH_DATA_LEN) }
+        : {}),
+    };
+    // The record carries the task's original inputs so replayDlq can re-run the
+    // same task (the failure fields win on a key clash and are stripped on replay).
+    // If the inputs would push the record past the cap they are left out and the
+    // record is marked, so replay skips it rather than running an empty task.
+    const withInputs: Record<string, unknown> = { ...payload.data, ...failure };
+    const data =
+      Buffer.byteLength(JSON.stringify(withInputs), "utf8") <= MAX_PUBLISH_DATA_LEN
+        ? withInputs
+        : { ...failure, _inputs_omitted: true };
     await this.driver.publish(DLQ_CHANNEL, {
       taskId: payload.taskId,
       agentId: this.id,
       timestamp: Date.now(),
-      data: capDataSize({
-        status: "failed",
-        error: truncateToBytes(error, MAX_PUBLISH_DATA_LEN),
-        ...(reason
-          ? { reason: truncateToBytes(reason, MAX_PUBLISH_DATA_LEN) }
-          : {}),
-      }),
+      data: capDataSize(data),
     });
   }
 
@@ -354,8 +406,12 @@ export class AgentActor {
       timeoutHandle = setTimeout(() => {
         // Abort first so the handler's underlying work (LLM .invoke) cancels,
         // THEN reject the race so the actor's retry/DLQ path runs.
-        controller.abort(new Error(`Task timed out after ${timeoutMs}ms`));
-        reject(new Error(`Task timed out after ${timeoutMs}ms`));
+        const timedOut = new ControlAbortError(
+          "task_timeout",
+          `Task timed out after ${timeoutMs}ms`,
+        );
+        controller.abort(timedOut);
+        reject(timedOut);
       }, timeoutMs);
     });
     try {
@@ -370,10 +426,11 @@ export class AgentActor {
 
   public async stop(): Promise<void> {
     log.info({ agentId: sanitizeId(this.id) }, "Actor stopping");
+    this.stopping = true;
     // Cancel any in-flight task work on graceful shutdown so a draining node
     // does not keep burning tokens on tasks it will never report on.
     for (const controller of this.inFlight) {
-      controller.abort(new Error("Actor stopping"));
+      controller.abort(stoppedError());
     }
     this.inFlight.clear();
     await this.driver.unsubscribe(this.queueName);

@@ -27,7 +27,7 @@ What is **default-ON** (structural, always in force):
 - A2A input validation (`agentId` ≤64, `/^[\w-]+$/`, `*` rejected; `instruction` ≤10 000;
   total params ≤64 KB) — [`a2a-input-validation.ts`](../src/infrastructure/federation/a2a-input-validation.ts).
 - Helmet/CSP/HSTS, per-IP rate limits, request/body/frame size caps, request timeout.
-- Per-task retry (3× linear) → DLQ, 5-min per-task timeout, AbortSignal cancellation, graceful shutdown.
+- Per-task retry (3× linear) → DLQ, no retry after a budget breach, timeout or stop, 5-min per-task timeout, AbortSignal cancellation, graceful shutdown (SIGTERM and SIGINT).
 - CI/CD quality + supply-chain gates (100% coverage, lint, madge, api-extractor, npm audit, gitleaks,
   OSV, CodeQL, SBOM, SLSA, cosign, Scorecard).
 
@@ -109,7 +109,7 @@ not fully wired, or deploy-dependent) · ⬜ gap / roadmap (not yet implemented)
 | **Repudiation** | Agent/human denies an action | 🟡 | Hash-chained audit of every gate decision [`audit-log.ts`](../src/governance/audit-log.ts), OTel traces, HITL decision logging | Non-repudiation strength bounded by the audit chain being in-memory + the gate being opt-in. |
 | **Information disclosure** | PII / secrets leak via state events or logs | ✅ | `sanitizeDelta()` PII strip + SHA-256 agent-id hashing (`src/adapters/state/`), result/message size caps, secrets via env only (never logged) | Default-ON data-protection caps. |
 | **Information disclosure** | Cross-tenant / over-privileged memory reads | 🟡 | [`secure-memory-store.ts`](../src/memory/secure-memory-store.ts): tenant keyspaces + retrieval-time RBAC (role × classification) + minTrust floor | New opt-in component; consumers must adopt the store. |
-| **Denial of service** | Request flood / oversized payload / runaway loop | ✅ / 🟡 | Per-IP rate limits (RPC 100/min, health 5/min), body 1 MB, WS frame 1 MB, request timeout 30 s, input caps (✅ default-ON); circuit breaker + fleet rate/cost limiter (🟡 opt-in) | HTTP-surface DoS guards are default-ON; cross-agent/fleet limiting is opt-in (`ECONOMICS_ENABLED`). |
+| **Denial of service** | Request flood / oversized payload / runaway loop | ✅ / 🟡 | Per-IP rate limits (RPC 100/min, probe routes 120/min), per-connection HITL decision limit (10 per 10 s), body 1 MB, WS frame 1 MB, request timeout 30 s, input caps (✅ default-ON); circuit breaker + fleet rate/cost limiter (🟡 opt-in) | HTTP-surface DoS guards are default-ON; cross-agent/fleet limiting is opt-in (`ECONOMICS_ENABLED`). |
 | **Denial of service** | Encryption-in-transit / MITM | 🟡 | mTLS `REDIS_TLS_*` / `KAFKA_SSL_*`, `TLS_REJECT_UNAUTHORIZED` default true | Deploy-dependent. |
 | **Elevation of privilege** | Compromised/rogue agent escalates | 🟡 | RBAC in memory store, kill-switch [`registry.ts`](../src/governance/registry.ts), MCP least-privilege allow-list [`mcp-server.ts`](../src/infrastructure/federation/mcp-server.ts), non-root container | Kill-switch/gate enforcement depends on gate wiring; MCP allow-list is default-deny per kind. |
 

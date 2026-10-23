@@ -293,6 +293,22 @@ export class WorkflowOrchestrator {
     }
   }
 
+  /**
+   * Load for a step. A step that was waiting for the first load when `clear()`
+   * ran belongs to the finished run: it throws instead of dispatching after the
+   * reset (a step called after `clear()` starts a fresh record as before).
+   */
+  private async loadForStep(name: string): Promise<WorkflowCheckpoint> {
+    const generation = this.generation;
+    const cp = await this.ensureLoaded();
+    if (generation !== this.generation) {
+      throw new Error(
+        `step "${name}" not started: the workflow checkpoint was cleared while it waited to load`,
+      );
+    }
+    return cp;
+  }
+
   private async ensureLoaded(): Promise<WorkflowCheckpoint> {
     if (!this.loading) {
       const loading: Promise<void> = this.load().catch((err: unknown) => {
@@ -382,7 +398,7 @@ export class WorkflowOrchestrator {
    */
   async runStep(name: string, opts: RunStepOptions): Promise<string> {
     this.assertStepName(name);
-    const cp = await this.ensureLoaded();
+    const cp = await this.loadForStep(name);
 
     const existing = cp[name];
     if (existing) return existing.result;
@@ -427,7 +443,7 @@ export class WorkflowOrchestrator {
    */
   async memoize<T>(name: string, produce: () => Promise<T>): Promise<T> {
     this.assertStepName(name);
-    const cp = await this.ensureLoaded();
+    const cp = await this.loadForStep(name);
 
     const existing = cp[name];
     if (existing) return JSON.parse(existing.result) as T;

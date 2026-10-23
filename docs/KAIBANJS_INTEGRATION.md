@@ -35,7 +35,7 @@ System based on [KaibanJS](https://kaibanjs.com). Complete reference for integra
 |---------|---------------|-------------------|
 | Execution | Single process | Multiple isolated worker nodes |
 | Messaging | In-process function calls | BullMQ (Redis) or Kafka |
-| Fault tolerance | None | 3× retry with linear backoff (100 ms × attempt) + DLQ |
+| Fault tolerance | None | 3× retry with linear backoff (100 ms × attempt) + DLQ; no retry after a budget breach, timeout or stop |
 | Visualization | React board (local) | Live board via Socket.io across nodes |
 | Orchestration | Sequential/parallel in-process | Event-driven via CompletionRouter |
 | External access | None | JSON-RPC 2.0 A2A + MCP protocol |

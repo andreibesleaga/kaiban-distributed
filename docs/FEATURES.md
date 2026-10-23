@@ -238,11 +238,14 @@ And the design stance that distinguishes it from most JS agent frameworks:
 ### 2.7 Resilience & operations
 
 - **Retry → DLQ with a typed taxonomy.** Tasks retry 3× (linear backoff) then land in
-  `kaiban-events-failed`; the DLQ distinguishes retries-exhausted from non-retryable poison
+  `kaiban-events-failed`; a budget breach, a timeout (`task_timeout`) or a stopping worker
+  (`actor_stopped`) ends the task after one attempt (2.0.1). Each record keeps the task inputs (up to
+  64 KB; larger inputs are left out and the record is marked); the DLQ distinguishes retries-exhausted from non-retryable poison
   (firewall-block, breaker-open, and the per-task and workflow budget breaches). **Value:** transient failures self-heal, and genuinely bad messages
   are quarantined instead of crash-looping the consumer.
-- **Safe DLQ replay.** `src/resilience/dlq-replay.ts` replays the retries-exhausted class and the
-  per-agent budget breach (`token_budget_exceeded`), and **skips non-retryable poison**. **Value:** an operator can recover from an outage without re-injecting
+- **Safe DLQ replay.** `src/resilience/dlq-replay.ts` replays the retries-exhausted class, the
+  per-agent budget breach (`token_budget_exceeded`), timeouts and tasks interrupted by a stop, and **skips non-retryable poison** and records
+  without task inputs (`inputs_missing`: too large, or written before 2.0.1). **Value:** an operator can recover from an outage without re-injecting
   prompt-injection or breaker-tripping messages.
 - **Health & lifecycle probes.** `/health`, plus `/ready` (Redis + broker reachable) and `/startup`
   probes, and a deadline-bounded **graceful shutdown** (stop intake → drain → finish acks → flush →
@@ -471,7 +474,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 14. `MCPFederationClient` outbound stdio client for external MCP tools.
 
 **Resilience & ops**
-15. Retry (3× linear backoff) → DLQ; 5-minute per-task timeout; AbortSignal cancellation.
+15. Retry (3× linear backoff) → DLQ; no retry after a budget breach, a timeout or a stop; 5-minute per-task timeout (`AGENT_TIMEOUT_MS`, on workers too); AbortSignal cancellation.
 16. `SlidingWindowBreaker` circuit breaker (threshold 10 / 60 s, opt-in).
 17. `/health`, `/ready`, `/startup` probes; deadline-bounded graceful shutdown.
 18. `dlq-replay.ts` operator recovery; **chaos mode** (`--chaos`, ~20% searcher crash) + a chaos e2e suite asserting zero dropped messages on broker pause/resume.

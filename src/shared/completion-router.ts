@@ -74,7 +74,11 @@ export class CompletionRouter {
         const errMsg = String(
           payload.data["error"] ?? "Task failed after max retries",
         );
-        reject(new Error(`Agent failed: ${errMsg}`));
+        // The reason (e.g. the budget breach detail) follows the stable code.
+        const reason = payload.data["reason"];
+        const detail =
+          typeof reason === "string" && reason ? ` — ${reason}` : "";
+        reject(new Error(`Agent failed: ${errMsg}${detail}`));
       }
     });
   }

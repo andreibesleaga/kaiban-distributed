@@ -93,7 +93,7 @@ describe("CompletionRouter", () => {
 
   it("uses same driver for both queues when no failedDriver provided (lazily, on first wait)", () => {
     const { driver } = makeCapturingDriver();
-    const router = new CompletionRouter(driver);
+    const router = new CompletionRouter(driver, driver);
     expect(driver.subscribe).not.toHaveBeenCalled();
 
     void router.wait("lazy-task", 5000, "test");
@@ -235,7 +235,7 @@ describe("CompletionRouter", () => {
 
   it("wait() rejects with timeout error when timer fires before message", async () => {
     const { driver } = makeCapturingDriver();
-    const router = new CompletionRouter(driver);
+    const router = new CompletionRouter(driver, driver);
     const promise = router.wait("task-timeout", 3000, "research");
 
     // Advance time past timeout
@@ -361,7 +361,7 @@ describe("CompletionRouter", () => {
 
   it("waitAll() includes error entry for timed-out tasks without rejecting", async () => {
     const { driver } = makeCapturingDriver();
-    const router = new CompletionRouter(driver);
+    const router = new CompletionRouter(driver, driver);
     const allPromise = router.waitAll(["slow-task"], 2000, "search");
 
     vi.advanceTimersByTime(2001);
@@ -404,7 +404,7 @@ describe("CompletionRouter", () => {
 
   it("rejects the wait when the AbortSignal fires", async () => {
     const { driver } = makeCapturingDriver();
-    const router = new CompletionRouter(driver);
+    const router = new CompletionRouter(driver, driver);
     const controller = new AbortController();
     const pending = router.wait("abort-task", 10_000, "x", controller.signal);
     controller.abort();
@@ -413,7 +413,7 @@ describe("CompletionRouter", () => {
 
   it("rejects immediately when the signal is already aborted", async () => {
     const { driver } = makeCapturingDriver();
-    const router = new CompletionRouter(driver);
+    const router = new CompletionRouter(driver, driver);
     const controller = new AbortController();
     controller.abort();
     await expect(
@@ -434,7 +434,7 @@ describe("CompletionRouter", () => {
       unsubscribe: vi.fn().mockResolvedValue(undefined),
       disconnect: vi.fn().mockResolvedValue(undefined),
     };
-    const router = new CompletionRouter(driver);
+    const router = new CompletionRouter(driver, driver);
     const controller = new AbortController();
     const pending = router.wait(
       "done-then-abort",
@@ -447,5 +447,40 @@ describe("CompletionRouter", () => {
     );
     controller.abort(); // no-op: pending already cleared
     await expect(pending).resolves.toBe("ok");
+  });
+});
+
+describe("CompletionRouter — the failure text reaches the caller", () => {
+  it("appends the DLQ reason to the code", async () => {
+    let failed!: (p: {
+      taskId: string;
+      agentId: string;
+      timestamp: number;
+      data: Record<string, unknown>;
+    }) => Promise<void>;
+    const driver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn((q: string, h: typeof failed) => {
+        if (q === "kaiban-events-failed") failed = h;
+        return Promise.resolve();
+      }),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    const router = new CompletionRouter(driver, driver);
+    const p = router.wait("t-r", 5_000, "step");
+    await failed({
+      taskId: "t-r",
+      agentId: "a",
+      timestamp: 0,
+      data: {
+        status: "failed",
+        error: "token_budget_exceeded",
+        reason: "Token budget exceeded: 600 >= 500",
+      },
+    });
+    await expect(p).rejects.toThrow(
+      "Agent failed: token_budget_exceeded — Token budget exceeded: 600 >= 500",
+    );
   });
 });

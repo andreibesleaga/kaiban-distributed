@@ -247,4 +247,64 @@ describe("SocketGateway — HITL edge cases", () => {
       hitl({ taskId: "no-ack-task", decision: "INVALID" }),
     ).not.toThrow();
   });
+
+  it("rejects a taskId that is too long or has characters outside [A-Za-z0-9._:-]", () => {
+    const { hitl } = connectSocket();
+    for (const taskId of ["a".repeat(201), "../etc", "a b", "x\ny", ""]) {
+      const ack = vi.fn();
+      hitl({ taskId, decision: "PUBLISH" }, ack);
+      expect(ack).toHaveBeenCalledWith({ ok: false, error: "invalid taskId" });
+    }
+    expect(mockLpush).not.toHaveBeenCalled();
+  });
+
+  it("accepts a UUID taskId", async () => {
+    const { hitl } = connectSocket();
+    const ack = vi.fn();
+    hitl(
+      { taskId: "3f2b8c1e-9d4a-4e7b-8a1c-2d3e4f5a6b7c", decision: "PUBLISH" },
+      ack,
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ack).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it("rate-limits decisions per connection (10 per 10 s)", async () => {
+    const { hitl } = connectSocket();
+    const acks: Array<{ ok: boolean; error?: string }> = [];
+    for (let i = 0; i < 11; i++)
+      hitl({ taskId: `t-${i}`, decision: "PUBLISH" }, (r) => acks.push(r));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(acks.filter((a) => a.ok)).toHaveLength(10);
+    expect(acks).toContainEqual({ ok: false, error: "rate limited" });
+    expect(mockLpush).toHaveBeenCalledTimes(10);
+  });
+
+  it("the rate window slides: after 10 s a connection may send again", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      const { hitl } = connectSocket();
+      for (let i = 0; i < 10; i++)
+        hitl({ taskId: `w-${i}`, decision: "PUBLISH" }, vi.fn());
+      vi.setSystemTime(new Date("2026-01-01T00:00:10Z"));
+      const ack = vi.fn();
+      hitl({ taskId: "w-late", decision: "PUBLISH" }, ack);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(ack).toHaveBeenCalledWith({ ok: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs who sent the decision when the board token carried a subject", () => {
+    const socket = makeMockSocket();
+    socket.data["sub"] = "operator-1";
+    connectionHandler!(socket);
+    getHitlHandler(socket)({ taskId: "t-who", decision: "REJECT" }, vi.fn());
+    expect(mockLog.info).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: "operator-1", decision: "REJECT" }),
+      "HITL decision received",
+    );
+  });
 });

@@ -179,6 +179,14 @@ describe("SocketGateway — JWT auth middleware", () => {
       expect(next).toHaveBeenCalledWith(); // no error
     });
 
+    it("stores the token subject in socket.data so HITL decisions name who sent them", () => {
+      const sg = getGateway();
+      sg.initialize();
+      const socket = makeMockSocket({ token: makeToken() });
+      capturedUseMiddleware!(socket, vi.fn());
+      expect(typeof socket.data["sub"]).toBe("string");
+    });
+
     it("stores exp in socket.data for expiry enforcement", () => {
       const sg = getGateway();
       sg.initialize();

@@ -136,7 +136,7 @@ export async function runGateway(): Promise<void> {
     router,
     redisUrl: config.redis.url,
     name: config.serviceName,
-    version: "2.0.0",
+    version: "2.0.1",
     baseUrl: process.env["A2A_PUBLIC_URL"] ?? `http://localhost:${config.port}`,
     agentIds: config.agentIds,
     timeoutMs: config.agentTimeoutMs,

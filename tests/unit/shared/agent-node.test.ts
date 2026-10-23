@@ -13,6 +13,7 @@ vi.mock("../../../src/shared/structured-logger", () => ({
 }));
 
 import { startAgentNode, createAgentStatePublisher } from "../../../src/shared";
+import { AgentActor } from "../../../src/application/actor/AgentActor";
 
 // ── Mock all heavy dependencies ──────────────────────────────────────────────
 
@@ -281,5 +282,73 @@ describe("createAgentStatePublisher — the shared, capped publisher for custom 
       maxTokenBudget: Number.POSITIVE_INFINITY,
       maxTaskTokenBudget: 1234,
     });
+  });
+});
+
+describe("startAgentNode — 2.0.1: timeout and signals", () => {
+  const cfg = {
+    agentId: "researcher",
+    queue: "kaiban-agents-researcher",
+    agentConfig: {
+      name: "Ava",
+      role: "Researcher",
+      goal: "Research",
+      background: "Expert",
+    },
+    displayName: "Ava",
+    role: "News Researcher",
+    label: "[Researcher]",
+  };
+  let listeners: Record<string, Array<() => void>>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listeners = {};
+    vi.spyOn(process, "on").mockImplementation((event, handler) => {
+      (listeners[String(event)] ??= []).push(handler as () => void);
+      return process;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env["AGENT_TIMEOUT_MS"];
+  });
+
+  it("passes AGENT_TIMEOUT_MS to the actor as taskTimeoutMs", async () => {
+    process.env["AGENT_TIMEOUT_MS"] = "45000";
+    await startAgentNode(cfg);
+    const deps = vi.mocked(AgentActor).mock.calls.at(-1)?.[4] as {
+      taskTimeoutMs?: number;
+    };
+    expect(deps.taskTimeoutMs).toBe(45_000);
+  });
+
+  it("leaves the actor default when AGENT_TIMEOUT_MS is unset or not a positive number", async () => {
+    for (const v of [undefined, "abc", "0", "-5"]) {
+      if (v === undefined) delete process.env["AGENT_TIMEOUT_MS"];
+      else process.env["AGENT_TIMEOUT_MS"] = v;
+      await startAgentNode(cfg);
+      const deps = vi.mocked(AgentActor).mock.calls.at(-1)?.[4] as {
+        taskTimeoutMs?: number;
+      };
+      expect(deps.taskTimeoutMs).toBeUndefined();
+    }
+  });
+
+  it("SIGINT drains like SIGTERM, and the drain runs once when both arrive", async () => {
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(
+        (_code?: number | string | null) => undefined as never,
+      );
+    await startAgentNode(cfg);
+    expect(listeners["SIGINT"]?.length).toBe(1);
+    listeners["SIGINT"]![0]!();
+    listeners["SIGTERM"]![0]!();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockActorStop).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledTimes(1);
+    exitSpy.mockRestore();
   });
 });
