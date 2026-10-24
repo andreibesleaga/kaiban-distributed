@@ -101,6 +101,7 @@
     "follow-redirects": ">=1.16.1 <2",
     "source-map-js": ">=1.2.2 <2",
     "fast-copy": ">=4.1.0 <5",
+    "body-parser": ">=2.4.0 <3",
     "madge": {
       "typescript": "$typescript"
     }

@@ -91,8 +91,9 @@ jobs:
       - name: Use npm 11.17.0
         run: npm install -g npm@11.17.0
       - run: npm ci
-      - name: Dependency audit (fail on HIGH+; moderates triaged in SECURITY.md)
-        run: npm audit --audit-level=high
+      # Fails on HIGH+ except the dated exceptions in .trivyignore (each explained in SECURITY.md).
+      - name: Dependency audit (fail on HIGH+; moderates and exceptions triaged in SECURITY.md)
+        run: node scripts/audit-gate.js
       - name: Generate CycloneDX 1.6 SBOM
         # --ignore-npm-errors: `npm ls` exits non-zero on a harmless dev-only peer
         # mismatch (madge→precinct wants TypeScript 5.x while the project pins 6.x);
@@ -166,6 +167,7 @@ jobs:
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          trivyignores: .trivyignore
           exit-code: "1"
         env:
           TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
@@ -179,6 +181,7 @@ jobs:
           output: trivy.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          trivyignores: .trivyignore
           exit-code: "0"
         env:
           TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db

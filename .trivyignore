@@ -1,0 +1,10 @@
+# Accepted HIGH advisories — read by the Trivy image scan and by scripts/audit-gate.js (npm audit).
+# Every entry needs a reason in SECURITY.md ("Residual advisories") and an exp: date; an expired
+# entry is enforced again. List the GHSA id (npm audit) and the CVE id (Trivy).
+
+# zod 3.x (Zod memory exhaustion on oversized constrained collections). Pulled in only by kaibanjs
+# 0.24.2 (latest) through @kaibanjs/workflow, @langchain/openai 0.5, openai 4–5 and stagehand; no
+# patched 3.x exists and those packages declare zod ^3 (dependency or peer). Kaiban's own code uses
+# zod 4.6.7 (patched). Re-check on every kaibanjs release.
+GHSA-mrhx-c7xc-m3w5 exp:2026-12-31
+CVE-2023-54404 exp:2026-12-31
