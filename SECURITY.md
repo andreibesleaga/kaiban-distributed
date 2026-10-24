@@ -42,7 +42,8 @@ impact, and any suggested mitigation.
 ## Supply-chain posture
 
 CI enforces a dependency audit that **fails on HIGH or CRITICAL** advisories
-(`npm audit --audit-level=high`), plus OSV-Scanner, gitleaks secret scanning,
+(`scripts/audit-gate.js` on the root lockfile — `npm audit` with the dated exceptions of
+`.trivyignore`; `npm audit --audit-level=high` on the board), plus OSV-Scanner, gitleaks secret scanning,
 CodeQL, a CycloneDX 1.6 SBOM, and OpenSSF Scorecard. Releases carry SLSA build
 provenance and a Sigstore (cosign keyless) signature.
 
@@ -57,7 +58,7 @@ patched versions: `@langchain/core`, `@langchain/community`, `langchain`,
 (>=4.3.0 <5), `postcss` (>=8.5.25), `@opentelemetry/exporter-prometheus`,
 `form-data` (>=4.0.6), `vite` (>=8.1.6), `handlebars` (>=4.7.10 <5), `proxy-addr`
 (>=2.0.8 <3), `follow-redirects` (>=1.16.1 <2), `source-map-js` (>=1.2.2 <2),
-`fast-copy` (>=4.1.0 <5); `@langchain/core` is held at >=1.2.20 <2 (required by
+`fast-copy` (>=4.1.0 <5), `body-parser` (>=2.4.0 <3); `@langchain/core` is held at >=1.2.20 <2 (required by
 `@langchain/openai` 1.6), `fast-uri` at >=4.1.5 and `qs` at >=6.16.0.
 
 An override is a **security floor, not a version bump** — each one is the lowest
@@ -67,18 +68,22 @@ what the dependents declare. `js-yaml` is deliberately capped below `5` because
 
 ### Residual advisories
 
-**As of 2026-10-21**, after the consolidated dependency branch
-`deps/security-2026-10-21`, `npm audit` reports **0 critical / 0 high** in both
-lockfiles (`package-lock.json`, `board/package-lock.json`) and the Trivy image scan
-reports **0 fixable CRITICAL/HIGH**. What remains is **13 moderate** `npm audit` entries in the root lockfile,
-from two advisories:
+**As of 2026-10-24**, after the dependency branch `deps/security-2026-10-24`
+(`body-parser` >=2.4.0, board `undici` >=7.30.1 and `happy-dom` 21), `npm audit` reports
+**0 critical** and one **high** advisory with no fix in the version line that uses it (accepted
+until 2026-12-31, below); the board lockfile has none. Accepted HIGH advisories are listed, with an
+`exp:` date, in `.trivyignore`, which both the Trivy image scan and `scripts/audit-gate.js` read; an
+expired entry fails CI again.
+
+| Severity | Count | Packages | Why it stays |
+| -------- | ----- | -------- | ------------ |
+| High | 9 | `zod` 3.25.76 (GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404: memory exhaustion validating oversized constrained collections), reached only through `kaibanjs` 0.24.2 (the latest release) via `@kaibanjs/workflow`, `@langchain/openai` 0.5, `openai` 4–5 and `@browserbasehq/stagehand`; npm lists each of those packages as a separate entry | No patched zod 3.x exists and these packages declare zod ^3, so the fix needs a `kaibanjs` release on zod 4. Kaiban's own code uses zod 4.6.7 (patched). Exception expires 2026-12-31; re-checked on every `kaibanjs` release. |
+
+The 9 **moderate** entries in the root lockfile come from one advisory:
 
 | Severity | Count | Packages | Why it stays |
 | -------- | ----- | -------- | ------------ |
 | Moderate | 9 | 8 `@opentelemetry/instrumentation-*` (cassandra-driver, knex, mongoose, mysql, mysql2, oracledb, pg, tedious) via `@opentelemetry/auto-instrumentations-node` (GHSA-qqmp-wf37-98f9: database user name recorded as a span attribute) | The fix needs `auto-instrumentations-node` 0.82, a breaking 0.x update taken together with the rest of the OpenTelemetry set in a later release. |
-| Moderate | 4 | `sprintf-js` via `argparse` ← `@microsoft/api-extractor` (GHSA-hp3w-g68c-fv3c); npm lists the three packages that pull it in as separate entries | Development tooling only, not in the runtime image; no fixed `sprintf-js` exists. |
-
-The board lockfile has no open advisories.
 
 Policy: open advisories are addressed on a **dependency branch** (the Dependabot
 pull requests or a consolidated `deps/*` branch), merged after CI and review —
