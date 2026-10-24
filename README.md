@@ -18,6 +18,8 @@
 
 Examples dedicated repository: [kaiban-distributed-examples](https://github.com/andreibesleaga/kaiban-distributed-examples)
 
+Website: [andreibesleaga.github.io/kaiban-distributed](https://andreibesleaga.github.io/kaiban-distributed/)
+
 - While most frameworks treat agents as scripts, Kaiban Distributed treats them as Stateful Actors. By using async Node.js, each agent operates in its own space, communicating via a pluggable Messaging Abstraction Layer (Kafka or BullMQ/Redis), horizontally scaling AI workforce.
 
 - The systems allows creation of Teams of Agents for various Tasks, Systems Integrations, and Data handling/analytics, with scalable AI workflows, from local usage to customizable Enterprise Grade Systems.

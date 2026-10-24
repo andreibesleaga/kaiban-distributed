@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kaiban Distributed</title>
+<meta name="description" content="Kaiban Distributed: an actor-model runtime for multi-agent AI in TypeScript and Node.js, with Redis or Kafka messaging, A2A and MCP, and a Kanban board.">
+<link rel="canonical" href="https://andreibesleaga.github.io/kaiban-distributed/">
+<meta name="author" content="Andrei N. Besleaga">
+<meta name="tdm-reservation" content="1">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kaiban Distributed">
+<meta property="og:title" content="Kaiban Distributed">
+<meta property="og:description" content="An actor-model runtime for multi-agent AI in TypeScript and Node.js, with Redis or Kafka messaging, A2A and MCP, and a Kanban board.">
+<meta property="og:url" content="https://andreibesleaga.github.io/kaiban-distributed/">
+<meta property="og:image" content="https://andreibesleaga.github.io/kaiban-distributed/board.png">
+<meta property="og:image:alt" content="The React board showing agent tasks in Kanban columns">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Kaiban Distributed">
+<meta name="twitter:description" content="An actor-model runtime for multi-agent AI in TypeScript and Node.js, with Redis or Kafka messaging, A2A and MCP, and a Kanban board.">
+<meta name="twitter:image" content="https://andreibesleaga.github.io/kaiban-distributed/board.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "Kaiban Distributed",
+  "description": "An actor-model runtime for multi-agent AI in TypeScript and Node.js, with Redis or Kafka messaging, A2A and MCP, and a Kanban board.",
+  "url": "https://andreibesleaga.github.io/kaiban-distributed/",
+  "codeRepository": "https://github.com/andreibesleaga/kaiban-distributed",
+  "programmingLanguage": "TypeScript",
+  "version": "2.0.2",
+  "license": [
+    "https://github.com/andreibesleaga/kaiban-distributed/blob/main/LICENSE",
+    "https://github.com/andreibesleaga/kaiban-distributed/blob/main/LICENSE-APACHE"
+  ],
+  "author": {
+    "@type": "Person",
+    "name": "Andrei N. Besleaga",
+    "url": "https://andreibesleaga.com/",
+    "sameAs": [
+      "https://github.com/andreibesleaga",
+      "https://orcid.org/0009-0001-3464-5283"
+    ]
+  }
+}
+</script>
+<style>
+:root{--bg:#fff;--fg:#1f2328;--muted:#4b5563;--line:#d8dee4;--accent:#0a58ca;--code:#f3f4f6}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1317;--fg:#e6e9ed;--muted:#a3adb8;--line:#2d343c;--accent:#7db3ff;--code:#1a2027}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.wrap{max-width:42rem;margin:0 auto;padding:3rem 1rem 2rem}
+h1{font-size:1.75rem;line-height:1.2;margin:0 0 .5rem}
+h2{font-size:1.05rem;margin:2.5rem 0 .75rem;padding-top:1rem;border-top:1px solid var(--line)}
+p,li,dd{font-size:.95rem}
+p{margin:.5rem 0}
+.lead{font-size:1.05rem;color:var(--muted)}
+ul{padding-left:1.25rem;margin:.5rem 0}
+li{margin:.35rem 0}
+a{color:var(--accent);text-underline-offset:.15em}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:.75rem 1rem;margin:.75rem 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem;line-height:1.5}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em}
+dl{margin:.5rem 0}
+dt{font-weight:600;font-size:.95rem;margin-top:.75rem}
+dd{margin:.15rem 0 0;color:var(--muted)}
+nav ul{list-style:none;padding:0}
+figure{margin:1.5rem 0 0}
+figure img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+figcaption{font-size:.85rem;color:var(--muted);margin-top:.4rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);font-size:.85rem;color:var(--muted)}
+footer p{font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>Kaiban Distributed</h1>
+<p class="lead">An actor-model runtime for multi-agent AI in TypeScript and Node.js. Each agent runs as its own process and communicates over Redis or Kafka, with a Kanban board for real-time visibility. Current release: v2.0.2.</p>
+</header>
+<main>
+<figure>
+<img src="board.png" width="2542" height="1507" alt="The React board showing agent tasks moving through Kanban columns" decoding="async">
+<figcaption>The React board (<code>board/</code> in the repository).</figcaption>
+</figure>
+
+<section aria-labelledby="what">
+<h2 id="what">What it does</h2>
+<ul>
+<li>Runs agent teams as independently deployed Node.js processes, each agent a stateful actor.</li>
+<li>Agents communicate through a pluggable messaging layer: BullMQ on Redis (default) or Kafka.</li>
+<li>Shows workflows live on a Kanban board, with human-in-the-loop approval as a workflow state.</li>
+<li>Exposes an A2A v0.3 gateway and MCP integration for connecting other agents and services.</li>
+<li>Works with <a href="https://github.com/kaiban-ai/KaibanJS">KaibanJS</a> agents and teams.</li>
+<li>Reports through OpenTelemetry.</li>
+</ul>
+</section>
+
+<section aria-labelledby="start">
+<h2 id="start">Quick start</h2>
+<p>Needs Node.js 22 or later, Docker with Docker Compose, and an LLM API key (OpenAI, OpenRouter or another compatible API). Commands from the README:</p>
+<pre><code>git clone https://github.com/andreibesleaga/kaiban-distributed
+cd kaiban-distributed
+npm install
+cp .env.example .env
+# edit .env: set OPENAI_API_KEY or OPENROUTER_API_KEY,
+# and AGENT_IDS (for example researcher,writer,editor)
+docker compose up -d redis
+npm run build
+AGENT_IDS=gateway PORT=3000 node dist/src/main/index.js</code></pre>
+<p>Then check the gateway:</p>
+<pre><code>curl http://localhost:3000/health
+curl http://localhost:3000/.well-known/agent-card.json</code></pre>
+<p>The README also covers the full multi-node demo (<code>./scripts/blog-team.sh start</code>), configuration and the HTTP API.</p>
+</section>
+
+<section aria-labelledby="concepts">
+<h2 id="concepts">Key concepts</h2>
+<dl>
+<dt>Actor isolation</dt>
+<dd>Each agent runs in its own space and communicates only by messages. Workers are stateless and scale horizontally.</dd>
+<dt>Messaging layer</dt>
+<dd>One interface with BullMQ/Redis and Kafka drivers. Task and result channels are durable; board state travels on Redis Pub/Sub.</dd>
+<dt>Task lifecycle</dt>
+<dd>TODO, DOING, DONE or BLOCKED, plus AWAITING_VALIDATION when a human must approve, revise or reject.</dd>
+<dt>Federation</dt>
+<dd>An edge gateway serves an A2A v0.3 agent card and JSON-RPC (<code>message/send</code>, <code>message/stream</code>, <code>tasks/get</code>, <code>tasks/cancel</code>).</dd>
+</dl>
+</section>
+
+<section aria-labelledby="examples">
+<h2 id="examples">Examples</h2>
+<p>Four examples live in the <a href="https://github.com/andreibesleaga/kaiban-distributed-examples">kaiban-distributed-examples</a> repository:</p>
+<ul>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed-examples/tree/main/trip-planning">trip-planning</a>: sequential three-agent pipeline with human approval.</li>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed-examples/tree/main/social-media-team">social-media-team</a>: fan-out and fan-in of parallel composers.</li>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed-examples/tree/main/rag-knowledge-base">rag-knowledge-base</a>: a single agent with retrieval.</li>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed-examples/tree/main/resume-creation">resume-creation</a>: a minimal two-agent team.</li>
+</ul>
+</section>
+
+<section aria-labelledby="links">
+<h2 id="links">Links</h2>
+<nav aria-label="Project links">
+<ul>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed">Source on GitHub</a></li>
+<li><a href="https://www.npmjs.com/package/kaiban-distributed">npm package <code>kaiban-distributed</code></a></li>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed/tree/main/docs">Documentation on GitHub</a></li>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed/releases">Releases</a> and <a href="https://github.com/andreibesleaga/kaiban-distributed/blob/main/CHANGELOG.md">changelog</a></li>
+<li><a href="https://github.com/andreibesleaga/kaiban-distributed-examples">Examples repository</a></li>
+</ul>
+</nav>
+</section>
+
+<section aria-labelledby="licence">
+<h2 id="licence">Licence</h2>
+<p>The repository's <a href="https://github.com/andreibesleaga/kaiban-distributed/blob/main/LICENSE"><code>LICENSE</code></a> file is the GNU General Public License, version 3. The repository also contains <a href="https://github.com/andreibesleaga/kaiban-distributed/blob/main/LICENSE-APACHE"><code>LICENSE-APACHE</code></a>, the Apache License 2.0, which <a href="https://github.com/andreibesleaga/kaiban-distributed/blob/main/LICENSING.md"><code>LICENSING.md</code></a> assigns to the published npm library. The rest of the repository is GPL-3.0.</p>
+</section>
+</main>
+<footer>
+<p>By <a href="https://andreibesleaga.com/">Andrei N. Besleaga</a>. See also this project on <a href="https://andreibesleaga.com/projects-demos/#kaiban">andreibesleaga.com</a>.</p>
+</footer>
+</div>
+</body>
+</html>

@@ -64,7 +64,7 @@
   "bugs": {
     "url": "https://github.com/andreibesleaga/kaiban-distributed/issues"
   },
-  "homepage": "https://github.com/andreibesleaga/kaiban-distributed#readme",
+  "homepage": "https://andreibesleaga.github.io/kaiban-distributed/",
   "publishConfig": {
     "access": "public",
     "provenance": true
