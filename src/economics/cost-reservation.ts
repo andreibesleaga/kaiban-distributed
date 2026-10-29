@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Pre-exec admission control (master plan §B5.1 Phase E, ADR-019).
  *

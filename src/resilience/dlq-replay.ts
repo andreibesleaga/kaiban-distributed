@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * DLQ replay (master plan §B3 / Phase R, ADR-018).
  *

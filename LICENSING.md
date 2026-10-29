@@ -15,8 +15,9 @@ aggregate remains GPL-3.0.
 - `LICENSE-APACHE` (repo root) — the **verbatim Apache License 2.0** (the published library).
 - **SPDX headers** per file are part of the ADR-011 decision (`SPDX-License-Identifier: Apache-2.0` on
   `src/**`, the published core; `SPDX-License-Identifier: GPL-3.0-only` on `board/**`, `examples/**`,
-  the `infra/` folders and scripts) but are not in the tree yet: no tracked source file carries one
-  (checked 2026-10-29).
+  the `infra/` folders and scripts). Every tracked `.ts`, `.tsx`, `.js`, `.sh`, `.yaml`, `.yml` and
+  `.toml` file in `src/`, `board/`, `examples/` and `scripts/` carries one on its first line (after a
+  shebang); JSON, HTML, CSS and Markdown files carry none.
 - `package.json` `"license": "Apache-2.0"` (the npm package = the library only; `files: ["dist/src", …]`
   excludes the GPL app/board/examples). The npm tarball ships `LICENSE-APACHE`.
 

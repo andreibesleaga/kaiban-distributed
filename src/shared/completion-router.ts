@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * CompletionRouter — single subscription hub that dispatches task results by taskId.
  *

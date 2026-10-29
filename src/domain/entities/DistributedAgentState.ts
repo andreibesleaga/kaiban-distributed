@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 export type AgentStatus = "IDLE" | "THINKING" | "EXECUTING" | "ERROR";
 
 const VALID_AGENT_STATUSES: ReadonlySet<string> = new Set<AgentStatus>([

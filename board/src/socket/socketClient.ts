@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import { io, type Socket } from 'socket.io-client';
 import { useBoardStore } from '../store/boardStore';
 import type { HitlDecision, StateDelta } from '../types/board';

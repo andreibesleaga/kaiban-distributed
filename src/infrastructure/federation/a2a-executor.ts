@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * KaibanAgentExecutor — the @a2a-js/sdk `AgentExecutor` that bridges an incoming
  * A2A task onto the kaiban-distributed actor messaging layer.

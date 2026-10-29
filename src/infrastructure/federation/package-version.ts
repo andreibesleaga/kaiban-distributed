@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * package-version — the version of the installed kaiban-distributed package,
  * read once from its `package.json`, so the agent card and the MCP

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Type augmentation so `expect(...).toHaveNoViolations()` (registered at runtime
 // via `expect.extend(axeMatchers)` in the a11y tests) is known to TypeScript.
 // Mirrors @testing-library/jest-dom's vitest augmentation: vitest 4 resolves

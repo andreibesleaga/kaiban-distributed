@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Reviewer Agent — AI Ethics & Compliance Officer
 # Performs governance review against IEEE AI 7000, EU AI Act, GDPR, OWASP, NIST AI RMF
 apiVersion: apps/v1

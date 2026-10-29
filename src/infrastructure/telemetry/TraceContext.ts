@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { propagation, context, ROOT_CONTEXT } from "@opentelemetry/api";
 
 export function injectTraceContext(carrier: Record<string, string>): void {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { readFileSync } from "fs";
 import type { EconomicsConfig } from "../economics/types";
 import type { GovernanceConfig } from "../governance/types";

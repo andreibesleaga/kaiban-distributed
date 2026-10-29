@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import 'dotenv/config';
 import { Redis } from 'ioredis';
 import { AgentActor, type TaskHandler } from '../../src/application/actor/AgentActor';

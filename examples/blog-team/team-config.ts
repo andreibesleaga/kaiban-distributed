@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 /**
  * Blog Team Configuration — mirrors the kaibanjs-node-demo pattern.
  * Three agents: Ava (Researcher) → Kai (Writer) → Morgan (Editor)

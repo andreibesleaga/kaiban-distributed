@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-only
 #
 # pack-staging.sh — build the Apache-2.0 library tarball from a clean staging dir
 # so the GPL root LICENSE (the *application* license) never leaks into the

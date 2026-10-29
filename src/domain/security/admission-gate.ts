@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Admission-gate port (master plan §B5.1 Phase G hot-path enforcement, ADR-021).
  *

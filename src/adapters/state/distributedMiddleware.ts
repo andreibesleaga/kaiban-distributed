@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { Redis } from "ioredis";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";

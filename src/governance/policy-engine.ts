@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Policy-as-code engine (master plan §B5.1 Phase G, ADR-020).
  *

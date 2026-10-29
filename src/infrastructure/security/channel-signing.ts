@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * HMAC-SHA256 message signing for Redis pub/sub channels.
  *

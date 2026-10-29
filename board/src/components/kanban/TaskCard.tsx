@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import type { TaskDelta, AgentDelta } from '../../types/board';
 import clsx from 'clsx';
 

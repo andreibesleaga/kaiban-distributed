@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-only
 # =============================================================================
 # generate-dev-certs.sh — Self-signed CA + server/client certs for local dev
 # =============================================================================

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /** Minimal payload shape needed for firewall evaluation — no infrastructure import needed. */
 export interface EvaluationPayload {
   taskId: string;

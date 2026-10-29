@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // @vitest-environment jsdom
 //
 // Automated accessibility (a11y) tests using axe-core via vitest-axe.

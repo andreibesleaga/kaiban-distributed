@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * AgentStatusTracker — maintains the last-known status of each agent by
  * subscribing to the `kaiban-state-events` Redis Pub/Sub channel.

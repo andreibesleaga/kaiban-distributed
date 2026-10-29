@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Economics / FinOps shared contract (master plan §B5.1 Phase E, ADR-019).
  *

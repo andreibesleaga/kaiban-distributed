@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * a2a-agent-card — builds the A2A v0.3 `AgentCard` served at
  * `/.well-known/agent-card.json`.

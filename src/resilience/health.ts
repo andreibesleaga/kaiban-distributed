@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Readiness + startup probes (master plan §B5.1 Phase R, ADR-018).
  *

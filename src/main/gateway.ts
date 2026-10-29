@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { createServer } from "http";
 import { randomUUID } from "crypto";
 import { Redis } from "ioredis";

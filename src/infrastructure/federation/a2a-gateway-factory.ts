@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * buildA2AStack — assembles the official `@a2a-js/sdk` server stack for the
  * gateway: the Redis task store, the agent-status tracker, the bridging

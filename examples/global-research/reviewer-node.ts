@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import 'dotenv/config';
 import { startAgentNode } from '../../src/shared';
 import { reviewerConfig, REVIEWER_QUEUE } from './team-config';

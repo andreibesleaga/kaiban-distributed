@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 /**
  * ResearchState defines the lifecycle of the intent
  * as it moves through the Actor mesh.

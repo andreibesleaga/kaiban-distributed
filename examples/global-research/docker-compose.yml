@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Global Research Swarm — Docker Compose (BullMQ/Redis)
 #
 # Start:  docker compose -f examples/global-research/docker-compose.yml --env-file .env up --build

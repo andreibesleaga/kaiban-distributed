@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * A2A JSON-RPC client — shared across all examples.
  *

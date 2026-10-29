@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Blog Team Agent Deployments
 # Apply: kubectl apply -f agents.yaml
 # All three agents share the same container image; the command distinguishes their role.

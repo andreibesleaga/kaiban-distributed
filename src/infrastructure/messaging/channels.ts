@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Canonical channel names shared across messaging layer, state adapters, and gateway.
  * Import from here rather than hardcoding strings to ensure consistency.

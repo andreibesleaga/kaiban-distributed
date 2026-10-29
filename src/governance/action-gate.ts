@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Action Gate — external, non-bypassable enforcement (master plan §B5.1 Phase G,
  * ADR-020).
