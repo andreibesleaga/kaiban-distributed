@@ -24,7 +24,8 @@ aggregate remains GPL-3.0.
 Runtime (prod) dependencies of the published core were scanned for copyleft licenses
 (GPL / AGPL / LGPL / SSPL): **none found** — all permissive (MIT / Apache-2.0 / BSD-2-Clause / ISC).
 ⇒ the Apache-2.0 library can redistribute its runtime deps with no copyleft conflict. The audit was a
-one-off scan; no CI workflow repeats it yet, so a new copyleft dependency would not fail the build.
+one-off scan; the CI security job now repeats it on every push and pull request
+(`license-checker --production --onlyAllow`, permissive licences only), so a new copyleft dependency fails the build.
 
 > Before each release (Phase 4b / Phase 9): re-run the audit, confirm the published surface stays
 > **core-only**, and confirm no GPL-licensed source is compiled into `dist/src`.

@@ -30,8 +30,8 @@ license may be available. Contact the maintainer
 ## Third-party dependencies
 
 Dependency licenses are their own; the published library ships only `dist/src`
-(no examples/board/tests). A CycloneDX SBOM is produced per release; no CI step
-checks dependency licenses yet. See [SECURITY.md](SECURITY.md) for the supply-chain posture.
+(no examples/board/tests). A CycloneDX SBOM is produced per release, and the CI
+security job fails when a production dependency has a licence outside the permissive allow-list (ADR-011). See [SECURITY.md](SECURITY.md) for the supply-chain posture.
 
 > This document is informational and is **not** legal advice. The authoritative
 > terms are in [LICENSE](LICENSE).

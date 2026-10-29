@@ -24,7 +24,8 @@ laptop: the npm trusted publisher and the build provenance need the workflow's O
    `npm run test:coverage`, and `cd board && npm test`.
 3. Open the pull request, wait for CI (see [CONTRIBUTING.md](../CONTRIBUTING.md#ci-workflows)), merge.
 4. Tag the merge commit on `main` with an annotated `vX.Y.Z` tag and push the tag. The tag starts:
-   - `release.yml`: build, unit tests with coverage, CycloneDX SBOM, the Apache-2.0 tarball from
+   - `release.yml`: build, unit tests with coverage, CycloneDX SBOM, the consumer smoke test
+     (`scripts/smoke-consumer.sh`: the packed tarball installs and both entry points import), the Apache-2.0 tarball from
      `scripts/pack-staging.sh`, SLSA provenance, cosign signatures, a GitHub Release with those files,
      and the container image `ghcr.io/andreibesleaga/kaiban-distributed` (signed);
    - `publish-npm.yml`: typecheck, lint and coverage gate, then `scripts/pack-staging.sh --publish`
