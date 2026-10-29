@@ -138,7 +138,7 @@ npx ts-node examples/blog-team/orchestrator.ts
 | `MESSAGING_DRIVER` | `bullmq` | BullMQ over Redis |
 | `PORT` | `3000` | Gateway HTTP port (gateway role only; worker has no HTTP surface) |
 | `SERVICE_NAME` | `kaiban-gateway` | Telemetry label |
-| `AGENT_IDS` | `gateway` | Gateway-role identifier (worker role lists its agent pool, e.g. `researcher,writer`) |
+| `AGENT_IDS` | `researcher,writer,editor` | The agent ids the workers run; on the gateway the agent card advertises one skill per id |
 | `LLM_MODEL` | `gpt-4o-mini` | Override per agent if needed |
 
 > **Role selection (ADR-013).** The single image picks its role at runtime from `ROLE`.

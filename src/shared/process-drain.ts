@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * One drain per worker process. A worker runs one agent node per agent
  * (`runWorker` calls `startAgentNode` once per agent); when each node exited the

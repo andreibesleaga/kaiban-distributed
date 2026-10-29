@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Dispatch a task to an agent's mailbox (the actor-model dispatch primitive).
  *

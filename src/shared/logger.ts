@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Human-readable tagged CLI logger for the examples/demos (separators, headers,
  * terminal banners). This is **intentionally** `console`-based for watchable demo

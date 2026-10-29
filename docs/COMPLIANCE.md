@@ -121,8 +121,8 @@ not fully wired, or deploy-dependent) · ⬜ gap / roadmap (not yet implemented)
 > **Honesty note:** in the source tree only **ASI01 / LLM01** is annotated against actual code
 > (`heuristic-firewall.ts`). The other ASI/LLM mappings below are *conceptual alignments* between a
 > shipped control and the threat it addresses — they are **not** claims of certified coverage, and
-> several controls are opt-in. See the project's own redline (`docs/audit/book-redline.md`) which
-> deliberately softens code-level ASI mappings.
+> several controls are opt-in. Only `ASI01` is annotated in code, so no other row implies a
+> code-level ASI mapping.
 
 | Threat (ATLAS / OWASP) | Control | Status | Evidence | Notes |
 |------------------------|---------|--------|----------|-------|
@@ -168,7 +168,7 @@ The following are **not yet fully wired** and must not be read as active guarant
 - **Signed-AgentCard (JWS) verification is deferred.** The card builder is signature-ready but there is
   no built-in verifier (JWKS/key-rotation) yet ([`ADR-015`](./decisions/ADR-015-a2a-sdk-v0.3.md) §Deferred).
 - **ASI/LLM threat mappings are mostly conceptual.** Only ASI01/LLM01 is annotated in code; treat the
-  other Top-10 rows in §4 as alignment claims, not certified coverage (per `docs/audit/book-redline.md`).
+  other Top-10 rows in §4 as alignment claims, not certified coverage.
 - **Semantic firewall is heuristic (regex) only.** 10 patterns is best-effort prompt-injection defense,
   not a guarantee; the optional LLM deep-analysis hook is unconfigured by default.
 - **Orchestrator HA is not implemented.** Failover is single-active Redis checkpoint→resume, **not**

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 export function ok<T>(value: T): Result<T, never> {

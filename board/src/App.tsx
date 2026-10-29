@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import { useEffect } from 'react';
 import { initSocket } from './socket/socketClient';
 import Header from './components/layout/Header';

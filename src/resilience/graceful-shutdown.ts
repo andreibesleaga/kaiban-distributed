@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Graceful shutdown (master plan §B5.1 Phase R, ADR-018).
  *

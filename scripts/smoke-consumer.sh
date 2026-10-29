@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-only
 # =============================================================================
 # smoke-consumer.sh — pack the Apache-2.0 library tarball and verify a fresh
 # external consumer can import the public surface from BOTH entry points

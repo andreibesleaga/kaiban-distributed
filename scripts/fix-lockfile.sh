@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# SPDX-License-Identifier: GPL-3.0-only
 # scripts/fix-lockfile.sh — rewrite package-lock.json (root and board/) so that `npm ci`
 # accepts it on npm 10 AND npm 11.
 #

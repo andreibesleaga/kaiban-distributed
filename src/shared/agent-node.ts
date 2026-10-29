@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Single-function bootstrap for agent worker nodes — shared across all examples.
  *

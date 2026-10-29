@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { initTelemetry } from "../infrastructure/telemetry/telemetry";
 import { loadConfig } from "./config";
 import { BullMQDriver } from "../infrastructure/messaging/bullmq-driver";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * A2A service-to-service authentication — JWT issue/verify for agent/orchestrator callers.
  *

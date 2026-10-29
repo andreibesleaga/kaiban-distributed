@@ -1229,12 +1229,13 @@ import { KaibanTeamBridge } from '../src/infrastructure/kaibanjs/kaiban-team-bri
 
 const bridge = new KaibanTeamBridge({ name, agents, tasks }, middleware); // a DistributedStateMiddleware, see §10.2
 const team = bridge.getTeam();
-const store = team.getStore();
 
-// Subscribe to workflowLogs — fired for every agent/task state change
-store.subscribe(
-  (state: any) => state.workflowLogs,
-  (newLogs: any[], previousLogs: any[]) => {
+// Subscribe to workflowLogs — fired for every agent/task state change.
+// The typed KaibanJS store (TeamStore) declares no selector form of subscribe()
+// (TS2554); subscribeToChanges passes only the watched properties that changed.
+team.subscribeToChanges(
+  (changes) => {
+    const newLogs = changes['workflowLogs'] as any[];
     const lastLog = newLogs[newLogs.length - 1];
     if (!lastLog) return;
 
@@ -1266,7 +1267,8 @@ store.subscribe(
         }
         break;
     }
-  }
+  },
+  ['workflowLogs'],
 );
 ```
 
@@ -2069,10 +2071,9 @@ team.start({ topic: 'AI Agents' }).then(console.log);
 
 // When agent completes, task status = AWAITING_VALIDATION
 // Subscribe to know when to present to human
-const store = team.getStore();
-store.subscribe(
-  (state: any) => state.tasks,
-  (tasks: any[]) => {
+team.subscribeToChanges(
+  (changes) => {
+    const tasks = changes['tasks'] as any[];
     const awaitingTask = tasks.find((t) => t.status === 'AWAITING_VALIDATION');
     if (awaitingTask) {
       console.log('Task awaiting human decision:', awaitingTask.id);
@@ -2085,7 +2086,8 @@ store.subscribe(
       // team.provideFeedback(awaitingTask.id, 'Please revise section 2 with more examples');
       // → status = REVISE → agent re-executes with feedback
     }
-  }
+  },
+  ['tasks'],
 );
 ```
 
@@ -2193,9 +2195,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "version": "2.0.0",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
-    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" },
-    { "transport": "HTTP+JSON", "url": "http://localhost:3000/a2a/rest" },
-    { "transport": "GRPC", "url": "http://localhost:3000/a2a/grpc" }
+    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }
   ],
   "capabilities": { "streaming": true, "pushNotifications": false, "stateTransitionHistory": false },
   "defaultInputModes": ["text/plain", "application/json"],

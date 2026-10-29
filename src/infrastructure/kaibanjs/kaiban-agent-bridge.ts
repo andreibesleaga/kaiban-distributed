@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { Agent, Task, Team } from "kaibanjs";
 import type { IAgentParams } from "kaibanjs";
 import type { MessagePayload, IMessagingDriver } from "../messaging/interfaces";

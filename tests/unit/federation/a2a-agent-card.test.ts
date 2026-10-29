@@ -41,12 +41,14 @@ describe("buildAgentCard (v0.3)", () => {
     }
   });
 
-  it("advertises JSONRPC + HTTP+JSON + GRPC interfaces", () => {
+  it("advertises only the JSONRPC interface the gateway serves", () => {
     const card = buildAgentCard(base);
+    expect(card.additionalInterfaces).toEqual([
+      { transport: "JSONRPC", url: card.url },
+    ]);
     const transports = (card.additionalInterfaces ?? []).map((i) => i.transport);
-    expect(transports).toContain("JSONRPC");
-    expect(transports).toContain("HTTP+JSON");
-    expect(transports).toContain("GRPC");
+    expect(transports).not.toContain("HTTP+JSON");
+    expect(transports).not.toContain("GRPC");
   });
 
   it("capabilities: streaming on; push-notifications off by default", () => {

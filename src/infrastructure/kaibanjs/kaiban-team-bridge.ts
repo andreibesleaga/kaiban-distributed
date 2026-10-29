@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { Team } from "kaibanjs";
 import type { Agent, Task } from "kaibanjs";
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // ─── Domain types matching kaiban-distributed's state delta schema ──────────
 
 export type WorkflowStatus =

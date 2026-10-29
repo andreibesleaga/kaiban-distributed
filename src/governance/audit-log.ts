@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Hash-chained, tamper-evident audit log (master plan §B5.1 Phase G, ADR-020).
  *

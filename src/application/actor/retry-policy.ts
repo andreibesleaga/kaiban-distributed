@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /** Attempts per task (the first try plus retries). */
 export const RETRY_ATTEMPTS = 3;
 /** Linear back-off: the wait after attempt n is `RETRY_BASE_DELAY_MS * n`. */

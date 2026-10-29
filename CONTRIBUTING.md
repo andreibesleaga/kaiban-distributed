@@ -49,9 +49,9 @@ All workflows are in `.github/workflows/`; the ones that install Node use Node 2
 
 | Workflow | Runs on | What it does |
 | --- | --- | --- |
-| `ci.yml` | push and pull request to `main` and `develop` | **quality**: `npm ci`, lint, typecheck, `lint:arch`, `api:check`, `test:coverage` (coverage report uploaded as the `coverage` artifact); **board**: `npm audit --audit-level=high`, build, tests; **security**: `scripts/audit-gate.js`, CycloneDX SBOM, gitleaks, OSV-Scanner (SARIF to code scanning); **CodeQL**; **docker**: builds the image and fails on a fixable CRITICAL/HIGH Trivy finding |
+| `ci.yml` | push and pull request to `main` and `develop` | **quality**: `npm ci`, lint, typecheck, `lint:arch`, `api:check`, `test:coverage` (coverage report uploaded as the `coverage` artifact); **board**: `npm audit --audit-level=high`, build, tests; **security**: licence check of the production dependencies (`license-checker --onlyAllow`, permissive licences only, ADR-011), `scripts/audit-gate.js`, CycloneDX SBOM, gitleaks, OSV-Scanner (SARIF to code scanning); **CodeQL**; **docker**: builds the image and fails on a fixable CRITICAL/HIGH Trivy finding |
 | `nightly.yml` | daily 02:00 UTC, or by hand | e2e on BullMQ/Redis plus the security suite, e2e on Kafka, the chaos suite, Stryker mutation on the domain layer (fails below 85 %), benchmarks |
-| `release.yml` | a `v*` tag | build, tests, SBOM, Apache-2.0 tarball, SLSA provenance, cosign signatures, GitHub Release, signed image on ghcr.io ([docs/RELEASE.md](docs/RELEASE.md)) |
+| `release.yml` | a `v*` tag | build, tests, SBOM, consumer smoke test (`scripts/smoke-consumer.sh`), Apache-2.0 tarball, SLSA provenance, cosign signatures, GitHub Release, signed image on ghcr.io ([docs/RELEASE.md](docs/RELEASE.md)) |
 | `publish-npm.yml` | a `v*` tag without `-`, or by hand | gate, then publishes the library to npmjs.com through trusted publishing ([docs/RELEASE.md](docs/RELEASE.md)) |
 | `publish-github-packages.yml` | a `v*` tag, or by hand | the same tarball as `@andreibesleaga/kaiban-distributed` on GitHub Packages |
 | `pages.yml` | push to `main` that changes `site/**` or the workflow file, or by hand | deploys `site/` to GitHub Pages |
@@ -83,6 +83,9 @@ from `etc/*.api.md` (`npm run api:update` rewrites the reports for review).
 
 Work on a feature branch; keep commits focused. Conventional-commit prefixes
 (`fix:`, `feat:`, `docs:`, `chore:`) are appreciated.
+
+Some docs and code comments cite `KAIBAN-v2.0-MASTER-PLAN.md` ("the master plan"): it is a private
+planning file, not in this repository, and the ADRs in [`docs/decisions/`](docs/decisions/) are the public record.
 
 ## Security
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * A2A task-input validation (Finding #3 hardening — OOM/DoS guard).
  *

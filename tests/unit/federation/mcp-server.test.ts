@@ -7,6 +7,8 @@
  * front of `dispatch_task` (accept / decline / form-reject / fail-closed).
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
@@ -99,6 +101,16 @@ describe("buildMcpServer — discovery", () => {
 
     const prompts = await client.listPrompts();
     expect(prompts.prompts.map((p) => p.name)).toEqual(["delegate_task"]);
+  });
+
+  it("reports the package.json version by default, or the one it is given", async () => {
+    const pkg = JSON.parse(
+      readFileSync(join(__dirname, "../../../package.json"), "utf8"),
+    ) as { version: string };
+    const { client } = await connect({});
+    expect(client.getServerVersion()?.version).toBe(pkg.version);
+    const custom = await connect({ deps: { version: "9.9.9" } });
+    expect(custom.client.getServerVersion()?.version).toBe("9.9.9");
   });
 
   it("advertises no tool/resource/prompt capabilities when the allow-list is empty", async () => {

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Writer Agent — Fan-In aggregation node
 # Synthesises all search results into a cohesive research report
 apiVersion: apps/v1

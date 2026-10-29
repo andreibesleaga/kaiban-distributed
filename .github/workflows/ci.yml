@@ -91,6 +91,12 @@ jobs:
       - name: Use npm 11.17.0
         run: npm install -g npm@11.17.0
       - run: npm ci
+      # ADR-011: no copyleft licence among the runtime dependencies of the Apache-2.0 library.
+      # The starred names are licence-checker guesses from a LICENSE or README file (each checked:
+      # @browserbasehq/sdk and @mistralai/mistralai are Apache-2.0, @kaibanjs/workflow MIT,
+      # readline BSD); a guessed copyleft licence (for example GPL*) still fails.
+      - name: Licence check (production dependencies)
+        run: npx --yes license-checker@25.0.1 --production --summary --onlyAllow "MIT;MIT*;Apache-2.0;Apache*;ISC;BSD-2-Clause;BSD-3-Clause;BSD*;0BSD;BlueOak-1.0.0;Python-2.0"
       # Fails on HIGH+ except the dated exceptions in .trivyignore (each explained in SECURITY.md).
       - name: Dependency audit (fail on HIGH+; moderates and exceptions triaged in SECURITY.md)
         run: node scripts/audit-gate.js

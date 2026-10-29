@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 export abstract class DomainError extends Error {
   abstract readonly code: string;
 

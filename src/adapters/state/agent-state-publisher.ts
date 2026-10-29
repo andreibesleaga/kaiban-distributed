@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * AgentStatePublisher — publishes agent and task state directly to Redis Pub/Sub.
  *

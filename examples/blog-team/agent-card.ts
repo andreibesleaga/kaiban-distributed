@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 /**
  * AgentCard skill parsing (A2A v0.3, ADR-015).
  *

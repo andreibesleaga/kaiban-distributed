@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import KanbanColumn from '../kanban/KanbanColumn';

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * a2a-agent-card — builds the A2A v0.3 `AgentCard` served at
  * `/.well-known/agent-card.json`.
@@ -87,12 +88,12 @@ function buildBearerScheme(): HTTPAuthSecurityScheme {
   };
 }
 
-function buildInterfaces(rpcUrl: string, baseUrl: string): AgentInterface[] {
-  return [
-    { transport: "JSONRPC", url: rpcUrl },
-    { transport: "HTTP+JSON", url: `${baseUrl}/a2a/rest` },
-    { transport: "GRPC", url: `${baseUrl}/a2a/grpc` },
-  ];
+/**
+ * Only the JSON-RPC transport is mounted by the gateway, so it is the only
+ * interface advertised. Add HTTP+JSON or GRPC here once those are served.
+ */
+function buildInterfaces(rpcUrl: string): AgentInterface[] {
+  return [{ transport: "JSONRPC", url: rpcUrl }];
 }
 
 /**
@@ -112,7 +113,7 @@ export function buildAgentCard(input: AgentCardInput): AgentCard {
     url: rpcUrl,
     version: input.version,
     preferredTransport: "JSONRPC",
-    additionalInterfaces: buildInterfaces(rpcUrl, baseUrl),
+    additionalInterfaces: buildInterfaces(rpcUrl),
     capabilities: {
       streaming: true,
       pushNotifications: input.pushNotifications === true,

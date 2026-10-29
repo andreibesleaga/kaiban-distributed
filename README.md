@@ -22,11 +22,11 @@ Website: [andreibesleaga.github.io/kaiban-distributed](https://andreibesleaga.gi
 
 - While most frameworks treat agents as scripts, Kaiban Distributed treats them as Stateful Actors. By using async Node.js, each agent operates in its own space, communicating via a pluggable Messaging Abstraction Layer (Kafka or BullMQ/Redis), horizontally scaling AI workforce.
 
-- The systems allows creation of Teams of Agents for various Tasks, Systems Integrations, and Data handling/analytics, with scalable AI workflows, from local usage to customizable Enterprise Grade Systems.
+- The system allows creation of Teams of Agents for various Tasks, Systems Integrations, and Data handling/analytics, with scalable AI workflows, from local usage to customizable Enterprise Grade Systems.
 
 - Integrates with existing [KaibanJS](https://github.com/kaiban-ai/KaibanJS) system and agents, external agentic systems, or any service that can publish via A2A / MCP / Redis / Kafka — connecting them into actor-model team flows or peer-to-peer coordination.
 
-- Any Agentic AI Patterns (Loops & Harnesses), Team Archetypes, Workflows, and Human-in-The-Loop (BudgetCheckings) interruptions could be implemented programmatically at any point of the workflow/tasks, given the Actor-Model Isolation, Distributed Node Agents, Custom Orchestrators/Coreography, Messaging Layer - in JS/TS, or via other A2A/MCP comms and agents, or by any other programs and connectors into the messaging layer (visually connected kanban boards and any other display methods connecting directly to the published workflows messages on Redis/Kafka, such as CLI I/O, Enterprise Programs, etc.
+- Any Agentic AI Patterns (Loops & Harnesses), Team Archetypes, Workflows, and Human-in-The-Loop (BudgetCheckings) interruptions could be implemented programmatically at any point of the workflow/tasks, given the Actor-Model Isolation, Distributed Node Agents, Custom Orchestrators/Coreography, Messaging Layer - in JS/TS, or via other A2A/MCP comms and agents, or by any other programs and connectors into the messaging layer (visually connected kanban boards and any other display methods connecting directly to the published workflows messages on Redis/Kafka, such as CLI I/O, Enterprise Programs, etc.)
 
 
 
@@ -654,9 +654,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "version": "2.0.2",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
-    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" },
-    { "transport": "HTTP+JSON", "url": "http://localhost:3000/a2a/rest" },
-    { "transport": "GRPC", "url": "http://localhost:3000/a2a/grpc" }
+    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }
   ],
   "capabilities": { "streaming": true, "pushNotifications": false, "stateTransitionHistory": false },
   "defaultInputModes": ["text/plain", "application/json"],

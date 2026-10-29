@@ -31,7 +31,7 @@ setup-context.sh
 # In-repo audit deliverables — kept locally + mirrored in OpenSourceAudit, not published in the repo
 docs/audit/
 
-AGENTS.md
+# The root AGENTS.md is public; the private GABBE agent file lives in the ignored agents/ folder.
 GEMINI.md
 CHANGES_LOG.md
 CHANGES_GITLOG.md

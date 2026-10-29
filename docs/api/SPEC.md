@@ -111,7 +111,7 @@ interface AgentCard {
   url: string;                        // JSON-RPC URL, e.g. '<baseUrl>/a2a/rpc'
   version: string;
   preferredTransport: 'JSONRPC';
-  additionalInterfaces: Array<{ transport: string; url: string }>;  // JSONRPC + HTTP+JSON + GRPC
+  additionalInterfaces: Array<{ transport: string; url: string }>;  // JSONRPC only (the one transport the gateway serves)
   capabilities: {                     // ← an OBJECT in v0.3 (was a string[] in the old card)
     streaming: boolean;
     pushNotifications: boolean;

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # Example policy-as-code rule set for the Action Gate (master plan §B5.1 Phase G).
 #
 # Reference/example only — NOT compiled. Load it at startup via:

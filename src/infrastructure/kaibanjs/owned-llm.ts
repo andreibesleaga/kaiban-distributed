@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Owned LangChain LLM instance — the abort seam for Finding #2 (ADR-014).
  *

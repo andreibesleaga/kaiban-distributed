@@ -14,17 +14,18 @@ laptop: the npm trusted publisher and the build provenance need the workflow's O
 `npm publish` from the repository root would ship the GPL-3.0 root `LICENSE` in the Apache-2.0 package.
 
 1. On a branch (`main` is protected; changes land through a pull request), set the new version in
-   every place that carries it. The 2.0.2 release (commit `60702e1`) changed: `package.json` and
-   `package-lock.json` (`version`), `src/main/gateway.ts` (the agent card `version`),
-   `src/infrastructure/federation/mcp-server.ts` (`DEFAULT_VERSION`) and the agent-card example in
-   `README.md`; `site/index.html` also names the current release (two places). Move the
+   every place that carries it: `package.json` and `package-lock.json` (`version`) and the
+   agent-card example in `README.md`; `site/index.html` also names the current release (two
+   places). The agent card and the MCP server read their version from `package.json`
+   (`src/infrastructure/federation/package-version.ts`), so no source file needs an edit. Move the
    `CHANGELOG.md` `[Unreleased]` entries under `## [X.Y.Z] — <date>`.
 2. Run `npm run lockfile:check` (CONTRIBUTING asks for it before every release), then the checks CI
    runs: `npm run lint`, `npm run typecheck`, `npm run lint:arch`, `npm run api:check`,
    `npm run test:coverage`, and `cd board && npm test`.
 3. Open the pull request, wait for CI (see [CONTRIBUTING.md](../CONTRIBUTING.md#ci-workflows)), merge.
 4. Tag the merge commit on `main` with an annotated `vX.Y.Z` tag and push the tag. The tag starts:
-   - `release.yml`: build, unit tests with coverage, CycloneDX SBOM, the Apache-2.0 tarball from
+   - `release.yml`: build, unit tests with coverage, CycloneDX SBOM, the consumer smoke test
+     (`scripts/smoke-consumer.sh`: the packed tarball installs and both entry points import), the Apache-2.0 tarball from
      `scripts/pack-staging.sh`, SLSA provenance, cosign signatures, a GitHub Release with those files,
      and the container image `ghcr.io/andreibesleaga/kaiban-distributed` (signed);
    - `publish-npm.yml`: typecheck, lint and coverage gate, then `scripts/pack-staging.sh --publish`
@@ -79,7 +80,7 @@ in-range version** (OpenTelemetry, `zod@4`, `@a2a-js/sdk@0.3` — 1.0 is still a
 - The unit suite **mocks the LLM**, so a green unit gate does **not** verify the real `ChatOpenAI`
   bridge (`src/infrastructure/kaibanjs/owned-llm.ts` + the KaibanJS `Team`). Validating a major
   LangChain bump requires the **`e2e:live`** suite (real OpenAI key, CI/maintainer).
-- Per AGENTS.md §8/§9 (major dependency bump = human decision) this is **deferred**: revisit when
+- A major dependency bump is a human decision, so this is **deferred**: revisit when
   `kaibanjs` moves its LangChain peer to `core@^1.2`, and verify via `npm run test:e2e:live`.
 
 `Langfuse v5` (mentioned in the plan) is **not a current dependency** — no action.

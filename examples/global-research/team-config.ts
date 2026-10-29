@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 /**
  * Global Research Swarm Configuration.
  * Four agents: Zara (Searcher) → Atlas (Writer) → Sage (Reviewer) → Morgan (Editor)

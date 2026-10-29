@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { Server as HttpServer } from "http";
 import { Server as SocketIOServer, type Socket } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * MCP Streamable-HTTP session handler (master plan §B5.1 Phase M, ADR-017).
  *

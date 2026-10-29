@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import { useBoardStore } from '../../store/boardStore';
 import type { ConnectionStatus } from '../../types/board';
 import clsx from 'clsx';

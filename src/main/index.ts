@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import "dotenv/config";
 import { runGateway } from "./gateway";
 import { runWorker } from "./worker";

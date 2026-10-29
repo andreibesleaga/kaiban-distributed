@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
 import { createStructuredLogger } from "../../shared/structured-logger";
 

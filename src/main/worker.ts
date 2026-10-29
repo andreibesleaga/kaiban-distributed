@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { loadConfig } from "./config";
 import { initRuntimeTelemetry } from "./runtime";
 import { buildLLMConfig } from "../shared/build-llm-config";

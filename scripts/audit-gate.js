@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: GPL-3.0-only
 'use strict';
 // CI dependency gate (root lockfile): fail on HIGH/CRITICAL `npm audit` advisories, except the
 // ones listed with an unexpired `exp:` date in .trivyignore — the same list the Trivy image scan

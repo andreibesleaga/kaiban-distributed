@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import { useBoardStore } from '../../store/boardStore';
 import { sendHitlDecision } from '../../socket/socketClient';
 import clsx from 'clsx';

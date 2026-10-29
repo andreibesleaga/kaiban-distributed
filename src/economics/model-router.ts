@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Model routing / right-sizing (master plan §B5.1 Phase E, ADR-019).
  *

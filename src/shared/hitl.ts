@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Human-In-The-Loop decision gate — shared across all examples.
  *

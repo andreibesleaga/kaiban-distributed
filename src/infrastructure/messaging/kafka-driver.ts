@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { Kafka, Producer, Consumer } from "kafkajs";
 import { context as otelContext } from "@opentelemetry/api";
 import { IMessagingDriver, MessagePayload } from "./interfaces";

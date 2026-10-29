@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Spend caps — the single place the budget environment variables are parsed.
  *

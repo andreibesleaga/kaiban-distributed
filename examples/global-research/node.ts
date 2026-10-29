@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 /**
  * Multi-process entry point for Global Research Swarm.
  *
