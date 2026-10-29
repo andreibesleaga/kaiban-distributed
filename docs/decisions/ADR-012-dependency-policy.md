@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
-- **Deciders:** Andrei Besleaga (maintainer), with Claude
+- **Deciders:** Andrei Besleaga (maintainer)
 - **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B7 / §B8 Phase 7eq; maintainer directive 2026-06-18
 
 ## Decision

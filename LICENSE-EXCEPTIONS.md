@@ -1,6 +1,6 @@
 # License notes & exceptions
 
-`kaiban-distributed` is licensed under **GPL-3.0-only** (see [LICENSE](LICENSE)).
+The repository (application, board, examples) is GPL-3.0-only (see [LICENSE](LICENSE)); the published npm library is Apache-2.0 (see [LICENSING.md](LICENSING.md)).
 This note clarifies common questions; it does **not** modify the GPL-3.0 terms.
 
 ## TL;DR
@@ -10,7 +10,7 @@ This note clarifies common questions; it does **not** modify the GPL-3.0 terms.
 | Run it internally / as a SaaS backend (no distribution of the software) | **No copyleft trigger.** GPL-3.0 obligations attach on *distribution* of the software or a derivative, not on running it to provide a network service. (Unlike AGPL-3.0, network use alone is not "distribution".) |
 | Distribute a modified version / bundle it into software you ship | You must release your corresponding source under GPL-3.0. |
 | Embed it in a closed-source product you distribute | Not permitted under GPL-3.0 — see commercial licensing below. |
-| Use the published npm **library** in a GPL-compatible project | Fine under GPL-3.0. |
+| Use the published npm **library** in any project | Apache-2.0. |
 
 ## SaaS / network use
 

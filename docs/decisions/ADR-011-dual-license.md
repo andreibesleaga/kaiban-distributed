@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
-- **Deciders:** Andrei Besleaga (maintainer), with Claude
+- **Deciders:** Andrei Besleaga (maintainer)
 - **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B0 (License), §B7, §B8 BETA.1 Phase 0; `LICENSING.md`
 
 ## Context
