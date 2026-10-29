@@ -1231,8 +1231,8 @@ const bridge = new KaibanTeamBridge({ name, agents, tasks }, middleware); // a D
 const team = bridge.getTeam();
 
 // Subscribe to workflowLogs — fired for every agent/task state change.
-// The KaibanJS store has no selector form of subscribe(); subscribeToChanges
-// passes only the watched properties that changed.
+// The typed KaibanJS store (TeamStore) declares no selector form of subscribe()
+// (TS2554); subscribeToChanges passes only the watched properties that changed.
 team.subscribeToChanges(
   (changes) => {
     const newLogs = changes['workflowLogs'] as any[];

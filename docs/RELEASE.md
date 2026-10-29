@@ -80,7 +80,7 @@ in-range version** (OpenTelemetry, `zod@4`, `@a2a-js/sdk@0.3` — 1.0 is still a
 - The unit suite **mocks the LLM**, so a green unit gate does **not** verify the real `ChatOpenAI`
   bridge (`src/infrastructure/kaibanjs/owned-llm.ts` + the KaibanJS `Team`). Validating a major
   LangChain bump requires the **`e2e:live`** suite (real OpenAI key, CI/maintainer).
-- Per AGENTS.md §8/§9 (major dependency bump = human decision) this is **deferred**: revisit when
+- A major dependency bump is a human decision, so this is **deferred**: revisit when
   `kaibanjs` moves its LangChain peer to `core@^1.2`, and verify via `npm run test:e2e:live`.
 
 `Langfuse v5` (mentioned in the plan) is **not a current dependency** — no action.

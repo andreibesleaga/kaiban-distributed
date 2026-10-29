@@ -6,12 +6,18 @@
  *
  * The file is found by walking up from this module's directory, which works
  * from `src/` (tests), from `dist/src/` (a build) and from
- * `node_modules/kaiban-distributed/dist/src/` (an installed package).
+ * `node_modules/kaiban-distributed/dist/src/` (an installed package). The
+ * GitHub Packages mirror publishes the same tarball as
+ * `@andreibesleaga/kaiban-distributed`, so both names are accepted.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const PACKAGE_NAME = "kaiban-distributed";
+/** The npmjs.com name and the GitHub Packages mirror name of this package. */
+const PACKAGE_NAMES: ReadonlySet<unknown> = new Set([
+  "kaiban-distributed",
+  "@andreibesleaga/kaiban-distributed",
+]);
 
 /** Returned when no kaiban-distributed `package.json` is found. */
 export const UNKNOWN_VERSION = "0.0.0";
@@ -23,7 +29,7 @@ function readVersionAt(dir: string): string | undefined {
     name?: unknown;
     version?: unknown;
   };
-  if (pkg.name !== PACKAGE_NAME || typeof pkg.version !== "string") {
+  if (!PACKAGE_NAMES.has(pkg.name) || typeof pkg.version !== "string") {
     return undefined;
   }
   return pkg.version;

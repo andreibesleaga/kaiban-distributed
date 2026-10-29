@@ -1,4 +1,10 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -38,6 +44,14 @@ describe("package-version", () => {
     const nested = join(root, "dist", "src");
     writePackage(nested, { name: "something-else", version: "1.0.0" });
     expect(findPackageVersion(nested)).toBe("9.8.7");
+  });
+
+  it("accepts the GitHub Packages mirror name", () => {
+    writePackage(root, {
+      name: "@andreibesleaga/kaiban-distributed",
+      version: "4.5.6",
+    });
+    expect(findPackageVersion(root)).toBe("4.5.6");
   });
 
   it("skips a kaiban-distributed package.json without a string version", () => {
