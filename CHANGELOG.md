@@ -7,6 +7,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 - Docs: audit of 29 Oct 2026 — install with `npm ci`, corrected code samples (`KaibanTeamBridge`, single-image example), current test counts, project tree, HTTP routes, release procedure and CI workflow table, licence and advisory status; no code change.
+- Dependencies: @opentelemetry/auto-instrumentations-node ^0.79.0 (fixes GHSA-qqmp-wf37-98f9 in 8 instrumentations); the glob override is capped below 14.
 
 ## [2.0.2] — 2026-10-23
 
@@ -248,7 +249,7 @@ spend-cap work merged earlier (#155–#157), ships as 2.0.1. No public API chang
   osv.sarif" when an earlier gate fails — it is now guarded on the file existing,
   so a failing audit reports one real error instead of two.
 
-## [2.0.0] - in progress (`feat/v2.0`)
+## [2.0.0] — 2026-06-22
 
 Major release — breaking changes are documented in `MIGRATION.md`. Authoritative plan:
 `KAIBAN-v2.0-MASTER-PLAN.md`.
