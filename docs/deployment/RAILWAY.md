@@ -81,7 +81,7 @@ railway up --service gateway
 
 **Environment variables for gateway service:**
 ```
-AGENT_IDS=gateway
+AGENT_IDS=researcher,writer,editor
 MESSAGING_DRIVER=bullmq
 PORT=3000
 SERVICE_NAME=kaiban-gateway
@@ -164,7 +164,7 @@ Suggested start commands:
 
 | Service | Custom Start Command |
 |---------|----------------------|
-| gateway | `node dist/src/main/index.js` (set `AGENT_IDS=gateway`, healthcheck `/health`) |
+| gateway | `node dist/src/main/index.js` (set `AGENT_IDS=researcher,writer,editor`, healthcheck `/health`) |
 | researcher | `node dist/examples/blog-team/researcher-node.js` |
 | writer | `node dist/examples/blog-team/writer-node.js` |
 | editor | `node dist/examples/blog-team/editor-node.js` |
@@ -200,7 +200,7 @@ Set these in Railway **Project → Variables** (shared across all services) or p
 
 | Variable | Value | Notes |
 |----------|-------|-------|
-| `AGENT_IDS` | `gateway` | The gateway service itself doesn't run agents |
+| `AGENT_IDS` | `researcher,writer,editor` | The agent ids the workers run; the gateway runs no agents, but its agent card advertises one skill per id |
 | `PORT` | `3000` | Gateway HTTP port |
 | `SOCKET_CORS_ORIGINS` | `https://<viewer-url>` | **Required in production** — the gateway refuses wildcard CORS, so set this to your viewer URL |
 
@@ -360,7 +360,7 @@ railway logs --service researcher
 Common causes:
 - `REDIS_URL` not set → add Redis plugin
 - `OPENAI_API_KEY` missing → add to project variables
-- `AGENT_IDS` not set for gateway → add `AGENT_IDS=gateway`
+- `AGENT_IDS` not set for gateway → add `AGENT_IDS=researcher,writer,editor` (the worker agent ids)
 
 ### Socket.io connection fails from browser
 

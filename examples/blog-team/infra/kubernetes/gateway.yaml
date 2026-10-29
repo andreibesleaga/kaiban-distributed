@@ -25,7 +25,7 @@ spec:
                 name: kaiban-blog-team-config
           env:
             - name: AGENT_IDS
-              value: "gateway"
+              value: "researcher,writer,editor"
           livenessProbe:
             httpGet:
               path: /health

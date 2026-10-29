@@ -39,7 +39,8 @@ services:
       MESSAGING_DRIVER: bullmq
       PORT: '3000'
       SERVICE_NAME: kaiban-gateway
-      AGENT_IDS: gateway
+      # The agent ids the workers run: one A2A skill each on the agent card.
+      AGENT_IDS: searcher,writer,reviewer,editor
       VALID_HITL_DECISIONS: ${VALID_HITL_DECISIONS:-PUBLISH,REVISE,REJECT}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

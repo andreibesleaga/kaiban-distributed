@@ -179,7 +179,7 @@ localhost:3000  ──►  gateway   (HTTP + Socket.io)
 | Variable | Value | Notes |
 |----------|-------|-------|
 | `ROLE` | `gateway` | Role for the single image (ADR-013): `gateway` or `worker`. Default `gateway`. |
-| `AGENT_IDS` | `gateway` | Gateway-role identifier |
+| `AGENT_IDS` | `researcher,writer` | The agent ids the workers run; the agent card advertises one skill per id |
 | `PORT` | `3000` | HTTP port (gateway role only) |
 | `SERVICE_NAME` | `kaiban-gateway` | Telemetry label |
 
