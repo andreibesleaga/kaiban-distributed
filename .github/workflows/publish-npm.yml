@@ -58,6 +58,10 @@ jobs:
           npm run typecheck
           npm run lint
           npm run test:coverage
+      # Same consumer check as release.yml: release.yml runs in parallel and
+      # cannot stop this job, so the tarball's exports are checked here too.
+      - name: Gate — consumer smoke test (packed tarball installs; both entry points import)
+        run: bash scripts/smoke-consumer.sh
       # pack-staging.sh --publish: build → assemble Apache-2.0-only staging dir
       # (no GPL LICENSE leak) → strip lifecycle scripts/devDeps → publish with
       # provenance + public access. publishConfig in package.json already pins

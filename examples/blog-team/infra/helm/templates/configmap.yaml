@@ -10,7 +10,7 @@ data:
   MESSAGING_DRIVER: {{ .Values.config.MESSAGING_DRIVER | quote }}
   PORT: {{ .Values.gateway.port | quote }}
   SERVICE_NAME: "kaiban-gateway"
-  AGENT_IDS: "gateway"
+  AGENT_IDS: "researcher,writer,editor"
   LLM_MODEL: {{ .Values.config.LLM_MODEL | quote }}
 ---
 apiVersion: v1

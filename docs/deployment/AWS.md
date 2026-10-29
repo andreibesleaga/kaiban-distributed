@@ -152,7 +152,7 @@ eb deploy
 Set env vars:
 
 ```bash
-eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... AGENT_IDS=gateway PORT=8080 SOCKET_CORS_ORIGINS=https://<your-viewer-domain>
+eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... AGENT_IDS=researcher,writer,editor PORT=8080 SOCKET_CORS_ORIGINS=https://<your-viewer-domain>
 ```
 
 ---

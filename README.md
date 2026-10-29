@@ -374,7 +374,7 @@ docker compose up -d redis
 
 ```bash
 npm run build
-AGENT_IDS=gateway PORT=3000 node dist/src/main/index.js
+AGENT_IDS=researcher,writer,editor PORT=3000 node dist/src/main/index.js
 ```
 
 ### 5. Verify
