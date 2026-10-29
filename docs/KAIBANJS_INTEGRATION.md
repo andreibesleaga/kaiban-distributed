@@ -2193,9 +2193,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "version": "2.0.0",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
-    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" },
-    { "transport": "HTTP+JSON", "url": "http://localhost:3000/a2a/rest" },
-    { "transport": "GRPC", "url": "http://localhost:3000/a2a/grpc" }
+    { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }
   ],
   "capabilities": { "streaming": true, "pushNotifications": false, "stateTransitionHistory": false },
   "defaultInputModes": ["text/plain", "application/json"],
