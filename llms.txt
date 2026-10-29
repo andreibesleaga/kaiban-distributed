@@ -1,6 +1,6 @@
 # Kaiban Distributed
 
-> A horizontally-scalable, fault-tolerant **Distributed Actor-Model runtime for agentic AI swarms** (TypeScript). Isolated worker nodes communicate via a pluggable messaging layer (BullMQ/Redis or Kafka), with real-time Kanban visualization, A2A/MCP federation, and OpenTelemetry observability. Companion code for the book *Agentic AI Architectures* (Chapter 9).
+> A horizontally-scalable, fault-tolerant **Distributed Actor-Model runtime for agentic AI swarms** (TypeScript). Isolated worker nodes communicate via a pluggable messaging layer (BullMQ/Redis or Kafka), with real-time Kanban visualization, A2A/MCP federation, and OpenTelemetry observability. Companion code for the book *Agentic AI Architectures*.
 
 Architecture is Clean/DDD: `domain` · `application` · `adapters` · `infrastructure` · `shared`. **Two channels** — durable tasks via the messaging driver (`kaiban-agents-*`, `kaiban-events-*`); ephemeral UI state via Redis Pub/Sub (`kaiban-state-events`); never use Kafka for state events. **Task lifecycle:** TODO → DOING → DONE/BLOCKED, with AWAITING_VALIDATION for human-in-the-loop. Conventions for contributors and AI assistants: strict TypeScript (no `any`; `Result<T,E>` for domain errors), program to the `IMessagingDriver` interface (never hardcode BullMQ/Kafka), keep workers stateless, configure via `process.env` with defaults + update `.env.example`, and keep 100% coverage of `src/**` (CI-enforced). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -16,7 +16,7 @@ Architecture is Clean/DDD: `domain` · `application` · `adapters` · `infrastru
 
 ## Source entry points
 - [Library barrel](src/index.ts): public API exports (published lib surface)
-- [Worker bootstrap](src/main/index.ts): composition root + graceful shutdown
+- [Entry point](src/main/index.ts): picks the gateway or worker role from ROLE; the roles are src/main/gateway.ts and src/main/worker.ts
 - [AgentActor](src/application/actor/AgentActor.ts): retry, DLQ, firewall, breaker, 64 KB cap
 - [Messaging interface](src/infrastructure/messaging/interfaces.ts): `IMessagingDriver`
 - [Channels](src/infrastructure/messaging/channels.ts): canonical channel names
