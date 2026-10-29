@@ -26,7 +26,7 @@ examples/blog-team/infra/helm/
 
 - [Helm 3](https://helm.sh/docs/intro/install/) (`helm version` ≥ 3.0)
 - `kubectl` configured against your target cluster
-- Docker image built and accessible (see [KUBERNETES.md — Step 1](KUBERNETES.md#1-build-and-push-the-docker-image))
+- Docker image built and accessible (see [KUBERNETES.md — Step 1](KUBERNETES.md#step-1--build-and-push-the-docker-image))
 
 ---
 
@@ -247,7 +247,7 @@ helm lint examples/blog-team/infra/helm \
 
 ### Pods not starting — image not found
 
-See [KUBERNETES.md — Build and Push](KUBERNETES.md#1-build-and-push-the-docker-image) to load the image into your cluster.
+See [KUBERNETES.md — Build and Push](KUBERNETES.md#step-1--build-and-push-the-docker-image) to load the image into your cluster.
 
 ### Agents not processing tasks
 

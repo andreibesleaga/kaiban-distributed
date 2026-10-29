@@ -2,6 +2,41 @@
 
 > Status of the non-engineering BETA.3 phases (V/7eq/4b/8eq/Z). The substantive feature phases
 > (M, R, E, G) are committed on `feat/v2.0`. Tagging/publishing `v2.0.0` is a **maintainer** action.
+>
+> **Update (29 Oct 2026):** `v2.0.0` was tagged and published on 2026-06-22, `v2.0.1` and `v2.0.2` on
+> 2026-10-23. The sections below are the v2.0 release-track record; the current procedure is the next
+> section.
+
+## Cutting a 2.0.x release (current procedure)
+
+Publishing runs in CI only. Never run `npm publish` (or `scripts/pack-staging.sh --publish`) from a
+laptop: the npm trusted publisher and the build provenance need the workflow's OIDC token, and a bare
+`npm publish` from the repository root would ship the GPL-3.0 root `LICENSE` in the Apache-2.0 package.
+
+1. On a branch (`main` is protected; changes land through a pull request), set the new version in
+   every place that carries it. The 2.0.2 release (commit `60702e1`) changed: `package.json` and
+   `package-lock.json` (`version`), `src/main/gateway.ts` (the agent card `version`),
+   `src/infrastructure/federation/mcp-server.ts` (`DEFAULT_VERSION`) and the agent-card example in
+   `README.md`; `site/index.html` also names the current release (two places). Move the
+   `CHANGELOG.md` `[Unreleased]` entries under `## [X.Y.Z] — <date>`.
+2. Run `npm run lockfile:check` (CONTRIBUTING asks for it before every release), then the checks CI
+   runs: `npm run lint`, `npm run typecheck`, `npm run lint:arch`, `npm run api:check`,
+   `npm run test:coverage`, and `cd board && npm test`.
+3. Open the pull request, wait for CI (see [CONTRIBUTING.md](../CONTRIBUTING.md#ci-workflows)), merge.
+4. Tag the merge commit on `main` with an annotated `vX.Y.Z` tag and push the tag. The tag starts:
+   - `release.yml`: build, unit tests with coverage, CycloneDX SBOM, the Apache-2.0 tarball from
+     `scripts/pack-staging.sh`, SLSA provenance, cosign signatures, a GitHub Release with those files,
+     and the container image `ghcr.io/andreibesleaga/kaiban-distributed` (signed);
+   - `publish-npm.yml`: typecheck, lint and coverage gate, then `scripts/pack-staging.sh --publish`
+     to npmjs.com with provenance (skipped for a tag with a `-`, such as `v2.0.0-beta`);
+   - `publish-github-packages.yml`: the same tarball as `@andreibesleaga/kaiban-distributed` on
+     GitHub Packages (skipped when that version is already there).
+5. Check the result: `npm view kaiban-distributed version`, the GitHub Release assets, and the image
+   tag on ghcr.io.
+
+To publish a tag again after a failed run: `gh workflow run publish-npm.yml --ref vX.Y.Z` (and
+`publish-github-packages.yml` the same way). npm never accepts the same version twice, so a bad
+release is fixed with a new patch version.
 
 ## Phase 4b — publish from a staging dir (license-correct Apache tarball)
 
@@ -15,7 +50,7 @@ only `LICENSE` is `LICENSE-APACHE`, then packs/publishes from there:
 
 ```bash
 scripts/pack-staging.sh            # build + pack → ./kaiban-distributed-<version>.tgz
-scripts/pack-staging.sh --publish  # build + `npm publish --provenance --access public` from staging
+scripts/pack-staging.sh --publish  # CI only (publish-npm.yml): build + `npm publish --provenance --access public` from staging
 ```
 
 **Verified locally** (`npm pack`): the staged tarball contains `LICENSE` (Apache) + `LICENSE-APACHE`,
@@ -25,6 +60,9 @@ scripts/pack-staging.sh --publish  # build + `npm publish --provenance --access 
 > `npm publish`) changes the release/provenance flow and is left for maintainer approval. The script is
 > drop-in: the release job should run `scripts/pack-staging.sh --publish` instead of `npm publish`.
 > The SLSA provenance / SBOM / cosign steps are unchanged (they operate on the published artifact).
+>
+> **Done since:** `publish-npm.yml` runs `scripts/pack-staging.sh --publish`, and `release.yml` packs
+> its tarball with `scripts/pack-staging.sh`.
 
 ## Phase 7eq — latest-deps re-verify (2026-06-19)
 
@@ -53,6 +91,10 @@ STRIDE / MITRE ATLAS / OWASP LLM-Agentic cross-walk, with candid built / partial
 control (self-assessment, not certification).
 
 ## Remaining for `v2.0.0` (maintainer / CI)
+
+> Record of June 2026; `v2.0.0` has been released since. The board majors are in (`board/package.json`:
+> React 19, Tailwind 4, Zustand 5) and the Phase 4b publish is wired (above). No workflow runs the
+> Playwright visual tests.
 
 - **Phase V** — Playwright visual baselines (built inside the pinned `mcr.microsoft.com/playwright`
   image — **CI-only**, not reproducible on a dev box) + the board framework majors (React 19 /

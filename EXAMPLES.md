@@ -195,7 +195,7 @@ docker compose \
 Services: `redis` · `zookeeper` · `kafka` · `gateway` · `researcher` · `writer` · `editor`
 
 > Kafka takes 30–60 seconds for Zookeeper election + topic leader assignment.
-> Wait until `curl http://localhost:3000/health` returns `{"status":"ok"}`.
+> Wait until `curl http://localhost:3000/health` returns `{"data":{"status":"ok",...},...}`.
 
 **Verify consumer groups joined** (all 4 should appear):
 ```bash
@@ -394,18 +394,32 @@ All 5 instances subscribe to `kaiban-agents-writer`. Each job is processed exact
 
 ---
 
-## Example 3 — Single Docker Container (minimal)
+## Example 3 — One Docker Image, Two Containers (minimal)
+
+The image runs one role per container (`ROLE`, ADR-013): the default `gateway` serves HTTP and A2A
+but runs no agent, so a task needs a second container with `ROLE=worker`.
 
 ```bash
 docker build -t kaiban-distributed:latest .
 
+# Gateway (default ROLE=gateway): HTTP + A2A on :3000
 docker run -p 3000:3000 \
+  -e REDIS_URL=redis://host.docker.internal:6379 \
+  -e AGENT_IDS=researcher,writer,editor \
+  kaiban-distributed:latest
+
+# Worker: one LLM-backed agent per id in AGENT_IDS (no HTTP)
+docker run \
+  -e ROLE=worker \
   -e REDIS_URL=redis://host.docker.internal:6379 \
   -e AGENT_IDS=researcher,writer,editor \
   -e OPENROUTER_API_KEY=sk-or-v1-... \
   -e LLM_MODEL=meta-llama/llama-3.1-8b-instruct:free \
   kaiban-distributed:latest
 ```
+
+The image's `HEALTHCHECK` calls `/health`, which only the gateway serves, so Docker reports the
+worker container as `unhealthy`; the compose files turn the healthcheck off for workers.
 
 Submit tasks (A2A v0.3 `message/send`; target agent in `metadata.agentId`):
 ```bash
@@ -421,7 +435,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 108 unit-test files / 1155 tests, 100% coverage of src (board tests run separately via `cd board && npm test`)
+# → 124 unit-test files / 1400 tests (29 Oct 2026), 100% coverage of src (board tests run separately via `cd board && npm test`)
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e

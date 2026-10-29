@@ -1,7 +1,8 @@
 # `src/shared` — Reusable Orchestration Utilities
 
-Public API shared between all examples in this monorepo.
-Import from the barrel:
+Public API shared between the examples in this repository, and published as the
+`kaiban-distributed/shared` entry point of the npm package.
+Import from the barrel (inside this repository; package users import from `kaiban-distributed/shared`):
 
 ```typescript
 import {
@@ -109,8 +110,18 @@ Subscribes to `kaiban-events-completed` and `kaiban-events-failed`.
 ```typescript
 const client = createRpcClient(GATEWAY_URL);
 client.setToken(issueA2AToken('my-orchestrator')); // optional bearer auth
-const result = await client.call('tasks.create', { agentId: 'writer', ... });
+// A2A v0.3: the gateway answers message/send, message/stream, tasks/get, tasks/cancel
+const result = await client.call('message/send', {
+  message: {
+    kind: 'message', role: 'user', messageId: 'm1',
+    parts: [{ kind: 'text', text: 'Write the article' }],
+    metadata: { agentId: 'writer' },
+  },
+});
 ```
+
+`call` posts any method name; the v1 `tasks.create` method no longer exists (ADR-015). Orchestrators
+that run their own workers dispatch with `dispatchToAgent` instead (below).
 
 ---
 
@@ -181,3 +192,18 @@ startAgentNode({
 ```
 
 Internally: `createDriver` → `buildSecurityDeps` → `AgentStatePublisher` → `wrapHandler` → `AgentActor.start()` → `publishIdle()` → SIGTERM handler.
+
+---
+
+### Other modules
+
+Each file's header comment has the details.
+
+| Module | What it does | Exported from the barrel |
+| --- | --- | --- |
+| `orchestrator.ts` | `WorkflowOrchestrator`: single-active workflow runner over `CompletionRouter`, with Redis checkpoint and resume and `taskId` dedup (ADR-018); not highly available | yes |
+| `dispatch.ts` | `dispatchToAgent(driver, agentId, { instruction, expectedOutput?, context?, inputs? })`: publishes to `kaiban-agents-{id}` and returns the `taskId` to await | yes |
+| `budget.ts` | Parses the four spend caps (`MAX_WORKFLOW_COST_USD`, `MAX_WORKFLOW_TOKENS`, `MAX_TOKEN_BUDGET`, `MAX_TASK_TOKEN_BUDGET`); `BudgetExceededError` | yes |
+| `admission-gate.ts` | `buildAdmissionGate` / `buildWorkerAdmissionGate`: the governance Action Gate as the actor's pre-execution check (ADR-021) | no (root `kaiban-distributed` entry) |
+| `structured-logger.ts` | JSON logger (pino) for workers and infrastructure; `LOG_LEVEL`, `LOG_PRETTY=true` | no |
+| `process-drain.ts` | One drain per worker process: the first SIGTERM or SIGINT drains every agent node, flushes telemetry, then exits once | no (internal) |

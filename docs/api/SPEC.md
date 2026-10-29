@@ -216,11 +216,16 @@ class KaibanTeamBridge {
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/health` | None | Returns `{ data: { status: 'ok', timestamp } }` |
+| `GET` | `/ready` | None | Readiness probe (pings Redis): 200 ready, 503 not ready |
+| `GET` | `/startup` | None | Startup probe: 503 until the HTTP server listens, then 200 |
 | `GET` | `/.well-known/agent-card.json` | None | Agent capabilities |
 | `POST` | `/a2a/rpc` | None (JWT verified when A2A_JWT_SECRET is set) | JSON-RPC 2.0 (requires `Content-Type: application/json`) |
+| `GET` | `/a2a/agents/:agentId/status` | None | Last-known agent status (`AgentStatusTracker`) |
+| `POST` / `GET` / `DELETE` | `/mcp` | As `/a2a/rpc` | MCP Streamable HTTP; mounted only when `MCP_SERVER_ENABLED=true` (path: `MCP_SERVER_PATH`) |
 
-All responses use the envelope: `{ data, meta, errors }`.
-Error responses: `{ data: null, errors: [{ message }] }`.
+The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId/status`, 404) use the
+envelope `{ data, meta, errors }`; error responses: `{ data: null, meta: {}, errors: [{ message }] }`.
+`/a2a/rpc` answers in JSON-RPC 2.0 and the agent card is the bare AgentCard (both from `@a2a-js/sdk`).
 
 ---
 

@@ -47,7 +47,7 @@ Published on npm as [`kaiban-distributed`](https://www.npmjs.com/package/kaiban-
 ```bash
 # 1. Clone and install
 git clone https://github.com/andreibesleaga/kaiban-distributed
-cd kaiban-distributed && npm install
+cd kaiban-distributed && npm ci
 
 # 2. Configure
 cp .env.example .env
@@ -166,7 +166,7 @@ flowchart TB
 │ Worker: researcher│  │ Worker: writer  │  │ Worker: editor         │
 │  AgentActor       │  │  AgentActor     │  │  AgentActor            │
 │  KaibanAgentBridge│  │  KaibanBridge   │  │  KaibanBridge          │
-│  → Agent.workOn() │  │  → Agent.work() │  │  → Agent.work()        │
+│  → team.start()   │  │  → team.start() │  │  → team.start()        │
 │  AgentState       │  │  AgentState     │  │  AgentState            │
 │  Publisher        │  │  Publisher      │  │  Publisher             │
 │  (ioredis pub/sub)│  │  (ioredis)      │  │  (ioredis)             │
@@ -320,8 +320,8 @@ stateDiagram-v2
 | `HeuristicFirewall` | `src/infrastructure/security/` | Regex-based prompt injection detection (ASI01); opt-in via `SEMANTIC_FIREWALL_ENABLED` |
 | `EnvTokenProvider` | `src/infrastructure/security/` | JIT token abstraction (ASI03); reads API keys from env vars; opt-in via `JIT_TOKENS_ENABLED` |
 | `SlidingWindowBreaker` | `src/infrastructure/security/` | Sliding-window circuit breaker (ASI10); opt-in via `CIRCUIT_BREAKER_ENABLED` |
-| `OrchestratorStatePublisher` | `examples/blog-team/orchestrator.ts` | Owns workflow lifecycle (RUNNING→FINISHED/STOPPED/AWAITING) |
-| `CompletionRouter` | `examples/blog-team/orchestrator.ts` | Single BullMQ/Kafka subscriber dispatching completion events by `taskId` |
+| `OrchestratorStatePublisher` | `src/shared/orchestrator-state-publisher.ts` | Owns workflow lifecycle (RUNNING→FINISHED/STOPPED/AWAITING); each example extends it (`examples/*/state-publisher.ts`) |
+| `CompletionRouter` | `src/shared/completion-router.ts` | Single BullMQ/Kafka subscriber dispatching completion events by `taskId` |
 
 ---
 
@@ -340,7 +340,7 @@ stateDiagram-v2
 ```bash
 git clone https://github.com/andreibesleaga/kaiban-distributed
 cd kaiban-distributed
-npm install
+npm ci
 ```
 
 ### 2. Configure
@@ -381,10 +381,11 @@ AGENT_IDS=gateway PORT=3000 node dist/src/main/index.js
 
 ```bash
 curl http://localhost:3000/health
-# → {"data":{"status":"ok","timestamp":"..."}}
+# → {"data":{"status":"ok","timestamp":"..."},"meta":{},"errors":[]}
 
 curl http://localhost:3000/.well-known/agent-card.json
-# → {"protocolVersion":"0.3.0","name":"kaiban-gateway",...,"capabilities":{"streaming":true,...},"skills":[...]}  (A2A v0.3)
+# → {"protocolVersion":"0.3.0","name":"kaiban-worker",...,"capabilities":{"streaming":true,...},"skills":[...]}  (A2A v0.3)
+#   name = SERVICE_NAME (kaiban-worker in .env.example); one skill per id in AGENT_IDS
 ```
 
 ---
@@ -395,7 +396,7 @@ The `board/` subdirectory is a **standalone React + Vite + TypeScript** dashboar
 
 | Feature | Detail |
 |---|---|
-| **Tech stack** | React 18 · Vite · TypeScript · Tailwind CSS · Zustand · Socket.io client |
+| **Tech stack** | React 19 · Vite · TypeScript · Tailwind CSS · Zustand · Socket.io client |
 | **Gateway URL** | `http://localhost:3000` (override with `?gateway=<url>` query param or `VITE_GATEWAY_URL`) |
 | **State source** | `SocketGateway` backend subscribes to Redis `kaiban-state-events` and fans out `state:update` events to all connected boards |
 | **Agent Grid** | Live status badges per agent — IDLE / THINKING / EXECUTING (pulse) / ERROR |
@@ -420,7 +421,7 @@ npm run dev               # → http://localhost:5173
 
 ## Individual Node Pattern
 
-Mirrors the [kaibanjs-node-demo](https://github.com/kaibanjs/kaibanjs-node-demo) pattern — each agent runs as an independent process:
+Mirrors the [kaibanjs-node-demo](https://github.com/kaiban-ai/kaibanjs-node-demo) pattern — each agent runs as an independent process:
 
 ```typescript
 // my-agent-node.ts
@@ -485,7 +486,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 
 ## Integrating with kaiban-board
 
-[kaiban-board](https://github.com/kaibanjs/kaiban-board) is a React component that visualises KaibanJS team execution as a live Kanban board.
+[kaiban-board](https://github.com/kaiban-ai/kaiban-board) is a React component that visualises KaibanJS team execution as a live Kanban board.
 
 ### How state flows to the board
 
@@ -608,13 +609,14 @@ cd board && npm run build    # → board/dist/ (static files, serve anywhere)
 
 ```typescript
 import { Agent, Task } from 'kaibanjs';
-import { BullMQDriver } from './src/infrastructure/messaging/bullmq-driver';
+import { DistributedStateMiddleware } from './src/adapters/state/distributedMiddleware';
 import { KaibanTeamBridge } from './src/infrastructure/kaibanjs/kaiban-team-bridge';
 
 const ava = new Agent({ name: 'Ava', role: 'Researcher', goal: '...', background: '...' });
 const kai = new Agent({ name: 'Kai', role: 'Writer',     goal: '...', background: '...' });
 
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+// The bridge's second argument is the state middleware (publishes to kaiban-state-events)
+const middleware = new DistributedStateMiddleware('redis://localhost:6379');
 
 const bridge = new KaibanTeamBridge({
   name: 'Blog Team',
@@ -623,7 +625,7 @@ const bridge = new KaibanTeamBridge({
     new Task({ description: 'Research {topic}', expectedOutput: 'Summary', agent: ava }),
     new Task({ description: 'Write blog',       expectedOutput: 'Blog post', agent: kai }),
   ],
-}, driver);
+}, middleware);
 
 const result = await bridge.start({ topic: 'AI agents 2025' });
 // State propagates: Redis Pub/Sub → SocketGateway → Socket.io → board
@@ -666,6 +668,7 @@ curl http://localhost:3000/.well-known/agent-card.json
 ```
 
 > `capabilities` is an **object** in v0.3 (it was a `string[]` in the old card); an agent's discrete abilities live in `skills[]` (one skill per agent id).
+> The example above is the card of a gateway started with `SERVICE_NAME=kaiban-gateway` (the value the compose files set) and `AGENT_IDS=researcher`: `name` is `SERVICE_NAME` and `skills[]` has one entry per id in the gateway's `AGENT_IDS`.
 
 ### RPC Methods (A2A v0.3)
 
@@ -810,11 +813,14 @@ Set `MESSAGING_DRIVER=kafka` (or `bullmq`) — the `IMessagingDriver` interface 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | `{ data: { status: 'ok', timestamp } }` |
+| `GET` | `/ready` | Readiness probe: pings Redis; 200 when ready, 503 otherwise |
+| `GET` | `/startup` | Startup probe: 503 until the HTTP server is listening, then 200 |
 | `GET` | `/.well-known/agent-card.json` | A2A agent capabilities |
 | `POST` | `/a2a/rpc` | A2A v0.3 JSON-RPC: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel` |
 | `GET` | `/a2a/agents/:agentId/status` | Real last-known agent status (`AgentStatusTracker`) |
+| `POST` / `GET` / `DELETE` | `/mcp` | MCP server (Streamable HTTP), mounted only when `MCP_SERVER_ENABLED=true`; path from `MCP_SERVER_PATH` (see [docs/federation/MCP.md](docs/federation/MCP.md)) |
 
-All responses: `{ data, meta, errors }` envelope.
+The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId/status` and the 404 reply) answer in a `{ data, meta, errors }` envelope. `/a2a/rpc` answers in JSON-RPC 2.0 and the agent card is the bare A2A AgentCard, both served by `@a2a-js/sdk`.
 
 ### Socket.io Events
 
@@ -839,6 +845,7 @@ All responses: `{ data, meta, errors }` envelope.
 
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
+| `ROLE` | `gateway` | No | `node dist/src/main/index.js` runs as `gateway` (HTTP, Socket.io, A2A; consumes no tasks) or `worker` (runs an agent for every id in `AGENT_IDS`; no HTTP). Worker processes must set `ROLE=worker` (ADR-013) |
 | `AGENT_IDS` | — | **Yes** | Comma-separated agent IDs this node serves |
 | `REDIS_URL` | `redis://localhost:6379` | No | Redis connection URL |
 | `MESSAGING_DRIVER` | `bullmq` | No | `bullmq` or `kafka` |
@@ -861,6 +868,8 @@ All responses: `{ data, meta, errors }` envelope.
 | `ALLOW_INSECURE_PRODUCTION` | — | No | With `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct; `true` lets a missing one through with a warning on every start (a weak or repeated secret is never allowed) |
 
 Only the literal `unlimited` removes a spend cap; `0`, a negative number or text gives the default and logs one warning.
+
+The full list is [`.env.example`](.env.example); it also covers the variables not repeated here (`A2A_PUBLIC_URL`, `VALID_HITL_DECISIONS`, `TRUST_PROXY`, `LOG_LEVEL`, and the `MCP_*`, `ECONOMICS_*` and `GOVERNANCE_*` groups).
 
 #### Stopping a run (2.0.1–2.0.2)
 
@@ -930,12 +939,12 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 |------------|----------------|----------|
 | PII minimisation in logs | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` | GDPR |
 | PII stripping in state deltas | `sanitizeDelta()` strips `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` (applied on both the middleware and worker-publisher paths) | GDPR |
-| Data minimisation | `result` capped at 20,000 chars (20 KB) in state events; outbound data capped at 64 KB in `AgentActor` | GDPR |
+| Data minimisation | `result` capped at 20,000 UTF-8 bytes (≈20 KB) in state events; outbound data capped at 64 KB in `AgentActor` | GDPR |
 | Least-privilege container | Dockerfile non-root `USER kaiban` | SOC 2 (CC6) |
 | Secret hygiene | Secrets via env vars only; `.env` gitignored; `.env.example` placeholders | SOC 2 |
 | Encryption in transit | mTLS for Redis/Kafka; HTTPS to LLM APIs; `scripts/generate-dev-certs.sh` for staging | ISO/IEC 27001 (A.8.24) |
 | Observability / audit trail | OpenTelemetry tracing; W3C `traceparent` across BullMQ/Kafka hops; run-logger decision trail | SOC 2 / ISO 27001 |
-| Supply chain | 0 high/critical advisories (CI-enforced); CycloneDX SBOM; SLSA provenance + Sigstore-signed releases; `overrides` pin patched `@langchain/*`, `axios`, `protobufjs`, etc. — see [SECURITY.md](SECURITY.md) | — |
+| Supply chain | No high/critical advisory outside the dated exceptions in `.trivyignore` (CI-enforced); CycloneDX SBOM; SLSA provenance + Sigstore-signed releases; `overrides` pin patched `@langchain/*`, `axios`, `protobufjs`, etc. — see [SECURITY.md](SECURITY.md) | — |
 
 ---
 
@@ -946,7 +955,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 1194 unit tests (no external deps)
+npm run test           # 1400 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -961,11 +970,15 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 1194 tests, 111 files | None (all mocked) |
+| Unit | `npm test` | 1400 tests, 124 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 69 tests, 11 files | Docker Redis (auto-managed by globalSetup) |
+| Security E2E | `npm run test:e2e:security` | 37 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
-| Board | `cd board && npm test` | React component + Zustand store + a11y tests | happy-dom |
-| Visual (Playwright) | `cd board && npm run test:visual` | board + example-viewer screenshot baselines | board dev server + gateway + chromium |
+| Chaos E2E | `npm run test:e2e:chaos` | 1 test, 1 file (Redis paused mid-flight, zero tasks dropped) | Docker Redis |
+| Board | `cd board && npm test` | 148 tests, 14 files: React component + Zustand store + a11y tests | happy-dom |
+| Visual (Playwright) | `cd board && npm run test:visual` | board screenshot baseline + structural checks of the two example viewers | board dev server + gateway + chromium |
+
+Counts as run on 29 Oct 2026. CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
 
 ### Coverage
 
@@ -988,10 +1001,12 @@ kaiban-distributed/
 │   │   └── security/          # Domain interfaces for security components
 │   │       ├── semantic-firewall.ts  # ISemanticFirewall — evaluates payloads for injection
 │   │       ├── token-provider.ts     # ITokenProvider — JIT token abstraction
-│   │       └── circuit-breaker.ts    # ICircuitBreaker — success/failure tracking
+│   │       ├── circuit-breaker.ts    # ICircuitBreaker — success/failure tracking
+│   │       └── admission-gate.ts     # IAdmissionGate — pre-execution allow/block port (ADR-021)
 │   ├── application/
 │   │   └── actor/
-│   │       └── AgentActor.ts  # Core: retry×3 + linear backoff, DLQ, firewall, circuit breaker
+│   │       ├── AgentActor.ts  # Core: retry×3 + linear backoff, DLQ, firewall, circuit breaker
+│   │       └── retry-policy.ts # Retry count, back-off and the gateway's wait under RETRY_ON_TIMEOUT
 │   ├── adapters/
 │   │   ├── gateway/
 │   │   │   ├── GatewayApp.ts       # Express: /health, agent-card, /a2a/rpc, 404
@@ -1002,30 +1017,48 @@ kaiban-distributed/
 │   ├── infrastructure/
 │   │   ├── messaging/
 │   │   │   ├── interfaces.ts       # IMessagingDriver (publish, subscribe, unsubscribe, disconnect)
-│   │   │   ├── channels.ts         # Canonical channel names (STATE, COMPLETED, DLQ)
+│   │   │   ├── channels.ts         # Canonical channel names (STATE, COMPLETED, DLQ, HITL)
 │   │   │   ├── bullmq-driver.ts    # BullMQ Worker + Queue; optional TLS; no colons in queue names
-│   │   │   └── kafka-driver.ts     # KafkaJS producer + consumer; optional SSL/mTLS
+│   │   │   ├── kafka-driver.ts     # KafkaJS producer + consumer; optional SSL/mTLS
+│   │   │   └── amqp-driver.ts      # MESSAGING_DRIVER=amqp seam — unimplemented, throws on use (ADR-016)
 │   │   ├── federation/
 │   │   │   ├── a2a-executor.ts     # KaibanAgentExecutor: A2A v0.3 message/send → agent mailbox (ADR-015)
 │   │   │   ├── a2a-agent-card.ts   # buildAgentCard: v0.3 AgentCard (capabilities object + skills[])
 │   │   │   ├── a2a-task-store.ts   # RedisTaskStore: persisted tasks for tasks/get, tasks/cancel
+│   │   │   ├── a2a-gateway-factory.ts  # buildA2AStack: executor + task store + status tracker
+│   │   │   ├── a2a-input-validation.ts # validateTaskInput + A2A_INPUT_CAPS (64 KB)
+│   │   │   ├── agent-status-tracker.ts # last-known agent status for /a2a/agents/:agentId/status
+│   │   │   ├── mcp-server.ts / mcp-http.ts  # MCP server over Streamable HTTP (off by default, ADR-017)
 │   │   │   └── mcp-client.ts       # MCPFederationClient via stdio transport
 │   │   ├── kaibanjs/
 │   │   │   ├── kaiban-agent-bridge.ts  # createKaibanTaskHandler; JIT tokens; error detection
-│   │   │   └── kaiban-team-bridge.ts   # KaibanTeamBridge with DistributedStateMiddleware
+│   │   │   ├── kaiban-team-bridge.ts   # KaibanTeamBridge with DistributedStateMiddleware
+│   │   │   └── owned-llm.ts            # the bridge's own LangChain LLM instance: the abort seam for in-flight calls (ADR-014)
 │   │   ├── security/              # Security infrastructure implementations
 │   │   │   ├── heuristic-firewall.ts    # Regex prompt injection detection (10+ patterns)
 │   │   │   ├── env-token-provider.ts    # Env-var backed JIT token provider
-│   │   │   └── sliding-window-breaker.ts # Configurable sliding-window circuit breaker
+│   │   │   ├── sliding-window-breaker.ts # Configurable sliding-window circuit breaker
+│   │   │   ├── board-auth.ts / a2a-auth.ts # board and A2A JWTs (BOARD_JWT_SECRET / A2A_JWT_SECRET)
+│   │   │   └── channel-signing.ts       # HMAC signing of Redis pub/sub messages (CHANNEL_SIGNING_SECRET)
 │   │   └── telemetry/
 │   │       ├── telemetry.ts        # initTelemetry(); recordAnomalyEvent(); OTLP or console
 │   │       ├── telemetry-shutdown.ts # once-only, time-bounded flush on exit (internal)
 │   │       └── TraceContext.ts     # injectTraceContext / extractTraceContext (W3C)
+│   ├── economics/      # Fleet cost control: RateCostLimiter, CostReservation, model routing (off by default, ADR-019)
+│   ├── governance/     # Action Gate, PolicyEngine + policies.yml, AgentRegistry, hash-chained AuditLog (off by default, ADR-020)
+│   ├── memory/         # SecureMemoryStore: tenant keyspaces, provenance tags, retrieval RBAC (ADR-020)
+│   ├── resilience/     # dlq-replay, graceful-shutdown, readiness/startup probes (ADR-018)
+│   ├── shared/         # Published as kaiban-distributed/shared: driver factory, CompletionRouter, HITL,
+│   │                   #   WorkflowOrchestrator, dispatchToAgent, spend caps, startAgentNode (see src/shared/README.md)
+│   ├── index.ts        # Library barrel (the published `kaiban-distributed` entry)
 │   └── main/
-│       ├── index.ts    # Composition root: wires all layers + security deps, starts HTTP + actors
+│       ├── index.ts    # Entry point: picks the gateway or worker role from ROLE (ADR-013)
+│       ├── gateway.ts  # Gateway role: HTTP + Socket.io + A2A (+ MCP when enabled); runs no task actors
+│       ├── worker.ts   # Worker role: one LLM-backed AgentActor per id in AGENT_IDS
+│       ├── runtime.ts  # Messaging driver + telemetry setup shared by both roles
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 1194 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 1400 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
@@ -1033,19 +1066,25 @@ kaiban-distributed/
 │       ├── horizontal-scaling-kafka.test.ts   # Kafka consumer groups scaling
 │       ├── a2a-protocol.test.ts               # HTTP gateway + A2A
 │       ├── kafka-driver.test.ts               # Kafka pub/sub round-trip
+│       ├── …                                  # blog-team / global-research flows, board HITL, event isolation,
+│       │                                      #   completion routing, security (security-*.test.ts), live LLM run
+│       ├── chaos/broker-resilience.test.ts    # Redis paused mid-flight, no task dropped (npm run test:e2e:chaos)
 │       └── setup/
 │           ├── globalSetup.ts             # Docker Redis auto-start; resilient to existing Redis
-│           └── kafkaSetup.ts              # Docker Kafka + Zookeeper + Redis auto-start
+│           ├── kafkaSetup.ts              # Docker Kafka + Zookeeper + Redis auto-start
+│           ├── securitySetup.ts           # Redis for the security suite
+│           └── globalSetup.live.ts        # global-research stack for the live (real LLM) suite
 ├── examples/
 │   └── global-research/                   # Multi-agent distributed researchers pipeline example
 │   └── blog-team/                         # Three-agent editorial pipeline
 │       ├── team-config.ts                 # Agent configs (Ava, Kai, Morgan) + LLM factory
-│       ├── driver-factory.ts              # createDriver(suffix) — BullMQ or Kafka from env
 │       ├── researcher-node.ts             # Ava worker entry point
 │       ├── writer-node.ts                 # Kai worker entry point
 │       ├── editor-node.ts                 # Morgan worker entry point
 │       ├── orchestrator.ts                # Event-driven pipeline + HITL terminal
-│       ├── build-security-deps.ts         # Shared security setup (firewall, breaker, tokens)
+│       ├── phases.ts / state-publisher.ts # Pipeline phases; BlogStatePublisher (extends OrchestratorStatePublisher)
+│       ├── run-logger.ts / agent-card.ts  # Per-run JSON record (runs/); AgentCard skill parsing
+│       ├── infra/                         # kubernetes/ · helm/ · railway/ deployment files
 │       ├── docker-compose.yml             # BullMQ: redis + gateway + 3 workers
 │       ├── docker-compose.kafka.yml       # Kafka: zookeeper + kafka + redis + gateway + 3 workers
 │       └── viewer/
@@ -1054,8 +1093,14 @@ kaiban-distributed/
 │           └── board.css                  # Board styling
 ├── scripts/
 │   ├── blog-team.sh                       # Start/stop orchestration wrapper (all modes)
+│   ├── global-research.sh                 # Start/stop the global-research swarm (--chaos, --searchers N)
+│   ├── run-example.sh                     # Generic start/stop for any examples/<name>
 │   ├── monitor.sh                         # Real-time terminal dashboard (all streams)
-│   └── generate-dev-certs.sh              # Self-signed CA + server/client certs for mTLS
+│   ├── generate-dev-certs.sh              # Self-signed CA + server/client certs for mTLS
+│   ├── fix-lockfile.sh                    # npm run lockfile:check / lockfile:fix (npm 10 + 11)
+│   ├── audit-gate.js                      # CI dependency audit: fails on HIGH+ except the dated .trivyignore entries
+│   ├── pack-staging.sh                    # Apache-2.0 library tarball from a staging dir (used by the release workflows)
+│   └── smoke-consumer.sh                  # Packs the tarball and imports both entry points in a fresh consumer
 ├── board/                                 # React + Vite + TypeScript board app (standalone)
 │   ├── src/
 │   │   ├── main.tsx / App.tsx             # Entry point + root layout
@@ -1063,10 +1108,10 @@ kaiban-distributed/
 │   │   ├── store/boardStore.ts            # Zustand: applyDelta, setConnectionStatus, addLog
 │   │   ├── socket/socketClient.ts         # Socket.io singleton + sendHitlDecision()
 │   │   └── components/                    # layout/ · workflow/ · agents/ · kanban/ · economics/ · log/
-│   ├── package.json                       # React 18, Vite 8, Tailwind, socket.io-client, zustand
+│   ├── package.json                       # React 19, Vite 8, Tailwind, socket.io-client, zustand
 │   └── .env.example                       # VITE_GATEWAY_URL=http://localhost:3000
-├── docker-compose.yml                     # Full root stack (Redis + Kafka + single worker)
-├── Dockerfile                             # Multi-stage: builder (npm install + tsc) → runner (non-root)
+├── docker-compose.yml                     # Full root stack (Redis + Zookeeper + Kafka + one gateway + one worker)
+├── Dockerfile                             # Multi-stage: builder (npm ci + tsc) → runner (non-root)
 └── .env.example                           # All env vars documented with examples
 ```
 

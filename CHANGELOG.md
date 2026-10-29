@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Docs: audit of 29 Oct 2026 — install with `npm ci`, corrected code samples (`KaibanTeamBridge`, single-image example), current test counts, project tree, HTTP routes, release procedure and CI workflow table, licence and advisory status; no code change.
+
 ## [2.0.2] — 2026-10-23
 
 Follow-ups to 2.0.1 that fit a patch: no new channel, no change to a default. One additive public API
