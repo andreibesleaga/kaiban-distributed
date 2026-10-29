@@ -8,7 +8,7 @@
 > Companion reading: [`README.md`](../README.md) · [`EXAMPLES.md`](../EXAMPLES.md) ·
 > [`CHANGELOG.md`](../CHANGELOG.md) · ADRs in [`docs/decisions/`](decisions/) ·
 > [`docs/api/SPEC.md`](api/SPEC.md) · [`docs/architecture/ACTOR_MODEL.md`](architecture/ACTOR_MODEL.md) ·
-> the v2.0 plan [`KAIBAN-v2.0-MASTER-PLAN.md`](../KAIBAN-v2.0-MASTER-PLAN.md).
+> the v2.0 plan `KAIBAN-v2.0-MASTER-PLAN.md` (a private planning file, not in the public repository).
 
 ---
 
@@ -396,9 +396,10 @@ custom A2A connector, an MCP *client*, env-gated security controls, and a full C
   accurate model pricing, NaN-safe config parsing, and a fan-out result↔index mapping fix. **Value:**
   the long-running, human-gated, failure-prone paths behave correctly under real use.
 
-> The published v2.0 surface is verified locally at **108 test files / 1155 unit tests / 100% coverage
-> of `src/**`** (see [`docs/VERIFICATION.md`](VERIFICATION.md)); the e2e (real-broker), mutation,
-> visual, and supply-chain gates run in CI. GA tag/merge to `main` is the maintainer's final step.
+> The published v2.0 surface was verified locally at **108 test files / 1155 unit tests / 100% coverage
+> of `src/**`** (see [`docs/VERIFICATION.md`](VERIFICATION.md)); the e2e (real-broker), mutation and
+> supply-chain gates run in CI (the Playwright visual tests run by hand). `v2.0.0` was tagged and
+> published on 2026-06-22; on 29 Oct 2026 the unit suite is 124 files / 1400 tests.
 
 ---
 
@@ -493,7 +494,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 27. Spend caps on by default: `MAX_WORKFLOW_COST_USD` (0.50) / `MAX_WORKFLOW_TOKENS`, per-agent `MAX_TOKEN_BUDGET` (200 000), per-task `MAX_TASK_TOKEN_BUDGET` (50 000); `unlimited` opts out.
 
 **Observability & board**
-28. React 18 + Vite + Tailwind + Zustand board (agent grid, 5-column Kanban, HITL modal, economics panel, event log), runtime-configurable gateway URL.
+28. React 19 + Vite + Tailwind + Zustand board (agent grid, 5-column Kanban, HITL modal, economics panel, event log), runtime-configurable gateway URL.
 29. Zero-setup static HTML board viewer; custom Socket.io client recipe; `KaibanTeamBridge` local-Team option.
 30. CLI `monitor.sh` (state events, logs, queue depths, Kafka lag).
 31. OpenTelemetry traces + `kaiban.message.{processed,latency}` metrics; anomaly events; structured pino logging.
@@ -506,7 +507,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 34. Clean/hexagonal 4-layer architecture; `Result<T,E>` monad + typed `DomainError`s.
 35. Apache-2.0 CORE-ONLY publish; `.` + `./shared` exports; two-entry api-extractor with committed `etc/*.api.md`; staging-dir pack; `smoke-consumer.sh`.
 36. Strict TypeScript, ESLint zero-warnings (complexity ≤ 10, no `any`), madge no-cycles gate.
-37. **Test/quality posture:** 100% `src/**` coverage (108 files / 1155 unit tests verified), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
+37. **Test/quality posture:** 100% `src/**` coverage (124 files / 1400 unit tests on 29 Oct 2026), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
 38. **Supply chain / SLSA:** CycloneDX SBOM, SLSA provenance, cosign keyless signing, Trivy image scan, gitleaks, OSV-Scanner, CodeQL, OpenSSF Scorecard; `npm audit` blocking on HIGH+.
 39. 21 ADRs (`docs/decisions/ADR-001..021`) recording every significant decision; a `MIGRATION.md`, `COMPLIANCE.md`, `VERIFICATION.md`, and a `docs/roadmap/V2.1-ROADMAP.md`.
 

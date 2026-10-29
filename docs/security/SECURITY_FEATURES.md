@@ -14,7 +14,7 @@
    - [HTTP Gateway Hardening](#31-http-gateway-hardening)
    - [WebSocket Gateway Hardening](#32-websocket-gateway-hardening)
    - [A2A Task-Input Validation](#33-a2a-task-input-validation)
-   - [BullMQ Trace Header Validation](#34-bullmq-trace-header-validation)
+   - [Trace Header Validation](#34-trace-header-validation-shared-by-every-driver)
 4. [Agent Runtime Security](#4-agent-runtime-security)
    - [Semantic Firewall](#41-semantic-firewall)
    - [Circuit Breaker](#42-circuit-breaker)

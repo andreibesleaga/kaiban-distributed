@@ -21,7 +21,7 @@ examples/blog-team/infra/kubernetes/
 ## Prerequisites
 
 - `kubectl` configured and connected to your cluster
-- Docker image built and accessible to the cluster (see [Build the image](#1-build-and-push-the-docker-image))
+- Docker image built and accessible to the cluster (see [Build the image](#step-1--build-and-push-the-docker-image))
 - `OPENAI_API_KEY` (and optionally `OPENROUTER_API_KEY`)
 
 ---

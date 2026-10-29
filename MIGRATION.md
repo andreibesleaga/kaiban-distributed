@@ -1,7 +1,8 @@
 # MIGRATION — v1.x → v2.0
 
 > v2.0 is a **major** release with breaking changes. This guide covers every breaking change.
-> **Status: DRAFT** (in progress on `feat/v2.0`). Entries are added as each §B8 phase lands.
+> **Status:** `v2.0.0` was released on 2026-06-22. This guide was written during development on
+> `feat/v2.0`, one entry per §B8 phase; changes after 2.0.0 are in `CHANGELOG.md`.
 > Authoritative plan: `KAIBAN-v2.0-MASTER-PLAN.md`.
 
 ## Licensing (Phase 0)

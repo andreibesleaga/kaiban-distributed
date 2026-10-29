@@ -41,8 +41,9 @@ What is **opt-in / default-OFF** (set a secret/flag to activate):
 
 **Licensing (ADR-011).** The **published library** (compiled core in `dist/src`) is **Apache-2.0**
 (permissive + patent grant, widest enterprise adoption); the **full application** (board, examples,
-infra, deployment, repo aggregate) is **GPL-3.0** (retained copyleft). CI enforces no copyleft runtime
-dependency in the Apache core and no GPL source compiled into `dist/src`. See
+infra, deployment, repo aggregate) is **GPL-3.0** (retained copyleft). ADR-011 requires CI to enforce no
+copyleft runtime dependency in the Apache core and no GPL source compiled into `dist/src`; no workflow
+does this yet (the 2026-06-18 dependency-licence scan in `LICENSING.md` was a one-off). See
 [`ADR-011`](./decisions/ADR-011-dual-license.md) and [`LICENSING.md`](../LICENSING.md).
 
 **Status legend:** ✅ built (grounded in a real file/ADR) · 🟡 partial (capability shipped/tested but
@@ -172,8 +173,8 @@ The following are **not yet fully wired** and must not be read as active guarant
   not a guarantee; the optional LLM deep-analysis hook is unconfigured by default.
 - **Orchestrator HA is not implemented.** Failover is single-active Redis checkpoint→resume, **not**
   leader-elected HA ([`ADR-018`](./decisions/ADR-018-resilience-orchestrator.md)).
-- **Playwright visual-regression baselines are CI-only.** They guard the board UI in CI; they are not a
-  runtime control.
+- **Playwright visual-regression baselines run by hand** (`cd board && npm run test:visual`); no CI
+  workflow runs them. They are not a runtime control.
 - **AMQP driver is an unimplemented seam** (RabbitMQ descoped in v2.0); BullMQ/Redis + Kafka are the two
   real drivers (master plan §B2 A8).
 

@@ -81,7 +81,8 @@ curl http://localhost:3000/health
 
 # Agent card (A2A v0.3 — `capabilities` is an object; abilities are in `skills[]`)
 curl http://localhost:3000/.well-known/agent-card.json
-# Expected (v0.3): {"protocolVersion":"0.3.0","name":"kaiban-gateway",...,"capabilities":{"streaming":true,...},"skills":[{"id":"researcher","name":"Delegate to researcher",...},...]}
+# Expected (v0.3): {"protocolVersion":"0.3.0","name":"kaiban-gateway",...,"capabilities":{"streaming":true,...},"skills":[{"id":"gateway","name":"Delegate to gateway",...}]}
+# (one skill per id in the gateway's AGENT_IDS; the compose file sets AGENT_IDS=gateway)
 
 # Agent status (A2A v0.3 — now a REST endpoint, not a JSON-RPC method)
 curl http://localhost:3000/a2a/agents/researcher/status
@@ -124,7 +125,7 @@ See [Section 7 — kaiban-board Integration](#7-kaiban-board-integration) for in
 
 In a new terminal, launch the orchestrator — choose one approach:
 
-**Option A — local** (requires Node.js + `npm install`):
+**Option A — local** (requires Node.js + `npm ci`):
 ```bash
 GATEWAY_URL=http://localhost:3000 \
 REDIS_URL=redis://localhost:6379 \
@@ -413,7 +414,7 @@ Once the bridge is running:
 Run the full automated test suite to verify all flows:
 
 ```bash
-# Unit tests (769 tests, 100% coverage)
+# Unit tests (1400 tests on 29 Oct 2026, 100% coverage)
 npm run test:coverage
 
 # BullMQ E2E (requires Docker)
