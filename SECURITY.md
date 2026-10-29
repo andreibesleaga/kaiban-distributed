@@ -83,15 +83,15 @@ expired entry fails CI again.
 | -------- | ----- | -------- | ------------ |
 | High | 9 | `zod` 3.25.76 (GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404: memory exhaustion validating oversized constrained collections), reached only through `kaibanjs` 0.24.2 (the latest release) via `@kaibanjs/workflow`, `@langchain/openai` 0.5, `openai` 4–5 and `@browserbasehq/stagehand`; npm lists each of those packages as a separate entry | No patched zod 3.x exists and these packages declare zod ^3, so the fix needs a `kaibanjs` release on zod 4. Kaiban's own code uses zod 4.6.7 (patched). Exception expires 2026-12-31; re-checked on every `kaibanjs` release. |
 
-The root lockfile also has one **moderate** and one **low** entry:
+The root lockfile also has one **low** entry:
 
 | Severity | Count | Packages | Why it stays |
 | -------- | ----- | -------- | ------------ |
-| Moderate | 1 | `@hono/node-server` 2.0.12, via `@modelcontextprotocol/sdk` 1.32.1 (GHSA-rmxm-3fg6-px4f: `serveStatic` decodes the request path twice, so middleware on static paths can be bypassed) | A fix is in range (>=2.1.3) and has not been taken yet; it belongs on a dependency branch. |
 | Low | 1 | `deepmerge` 4.3.1, via `kaibanjs` → `@langchain/community` → `@browserbasehq/stagehand` (GHSA-gcqx-w48m-w2h4: prototype poisoning in `mergeObject()`) | npm's only fix is a semver-major change of `kaibanjs`. |
 
 The 9 moderate `@opentelemetry/instrumentation-*` entries this section listed before
-(GHSA-qqmp-wf37-98f9) are fixed by `@opentelemetry/auto-instrumentations-node` 0.79.
+(GHSA-qqmp-wf37-98f9) are fixed by `@opentelemetry/auto-instrumentations-node` 0.79, and the
+moderate `@hono/node-server` 2.0.12 entry (GHSA-rmxm-3fg6-px4f) by 2.1.5.
 
 Policy: open advisories are addressed on a **dependency branch** (the Dependabot
 pull requests or a consolidated `deps/*` branch), merged after CI and review —

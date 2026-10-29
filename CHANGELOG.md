@@ -10,6 +10,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Dependencies: @opentelemetry/auto-instrumentations-node ^0.79.0 (fixes GHSA-qqmp-wf37-98f9 in 8 instrumentations); the glob override is capped below 14.
 - Fixed: the A2A agent card advertises only the JSON-RPC interface (`/a2a/rpc`); it no longer lists HTTP+JSON (`/a2a/rest`) and gRPC (`/a2a/grpc`), which the gateway does not serve.
 - Changed: the agent card and the MCP server `Implementation` block read their version from `package.json` instead of a hard-coded `2.0.2`.
+- Dependencies: `@hono/node-server` 2.1.5 (via `@modelcontextprotocol/sdk`; fixes the moderate advisory GHSA-rmxm-3fg6-px4f), lockfile only.
 
 ## [2.0.2] — 2026-10-23
 
