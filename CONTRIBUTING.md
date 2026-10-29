@@ -84,6 +84,9 @@ from `etc/*.api.md` (`npm run api:update` rewrites the reports for review).
 Work on a feature branch; keep commits focused. Conventional-commit prefixes
 (`fix:`, `feat:`, `docs:`, `chore:`) are appreciated.
 
+Some docs and code comments cite `KAIBAN-v2.0-MASTER-PLAN.md` ("the master plan"): it is a private
+planning file, not in this repository, and the ADRs in [`docs/decisions/`](docs/decisions/) are the public record.
+
 ## Security
 
 Do not file security issues publicly — see [SECURITY.md](SECURITY.md).
