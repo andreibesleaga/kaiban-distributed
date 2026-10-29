@@ -269,7 +269,7 @@ LLM_MODEL=meta-llama/llama-3.1-8b-instruct:free \
 
 # Terminal 4 — Gateway
 REDIS_URL=redis://localhost:6379 \
-AGENT_IDS=gateway PORT=3000 \
+AGENT_IDS=researcher,writer,editor PORT=3000 \
   node dist/src/main/index.js
 
 # Terminal 5 — Orchestrator

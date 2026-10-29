@@ -785,7 +785,7 @@ services:
       MESSAGING_DRIVER: bullmq
       PORT: "3000"
       SERVICE_NAME: kaiban-gateway
-      AGENT_IDS: gateway
+      AGENT_IDS: researcher,writer,editor
 
   researcher:
     build: { context: ../.. }

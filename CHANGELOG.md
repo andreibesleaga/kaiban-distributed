@@ -12,6 +12,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Changed: the agent card and the MCP server `Implementation` block read their version from `package.json` instead of a hard-coded `2.0.2`.
 - Dependencies: `@hono/node-server` 2.1.5 (via `@modelcontextprotocol/sdk`; fixes the moderate advisory GHSA-rmxm-3fg6-px4f), lockfile only.
 - Added: SPDX licence headers (Apache-2.0 in `src/`, GPL-3.0-only in `board/`, `examples/` and `scripts/`), a CI licence check of the production dependencies, the consumer smoke test in `release.yml`, and a public `AGENTS.md` for coding agents.
+- Docs: the Helm charts, the AWS, Azure and GCP guides, the README, EXAMPLES and the KaibanJS guide set the gateway's `AGENT_IDS` to the worker agent ids instead of `gateway`.
+- CI: `publish-npm.yml` runs the consumer smoke test before publishing; `release.yml` runs in parallel and could not stop the publish.
 
 ## [2.0.2] — 2026-10-23
 

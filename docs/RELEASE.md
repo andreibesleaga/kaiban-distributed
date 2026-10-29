@@ -28,7 +28,8 @@ laptop: the npm trusted publisher and the build provenance need the workflow's O
      (`scripts/smoke-consumer.sh`: the packed tarball installs and both entry points import), the Apache-2.0 tarball from
      `scripts/pack-staging.sh`, SLSA provenance, cosign signatures, a GitHub Release with those files,
      and the container image `ghcr.io/andreibesleaga/kaiban-distributed` (signed);
-   - `publish-npm.yml`: typecheck, lint and coverage gate, then `scripts/pack-staging.sh --publish`
+   - `publish-npm.yml`: typecheck, lint and coverage gate, the same consumer smoke test, then
+     `scripts/pack-staging.sh --publish`
      to npmjs.com with provenance (skipped for a tag with a `-`, such as `v2.0.0-beta`);
    - `publish-github-packages.yml`: the same tarball as `@andreibesleaga/kaiban-distributed` on
      GitHub Packages (skipped when that version is already there).

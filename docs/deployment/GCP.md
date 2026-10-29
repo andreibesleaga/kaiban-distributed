@@ -104,7 +104,7 @@ gcloud run deploy kaiban-gateway \
   --region=$REGION \
   --port=3000 \
   --allow-unauthenticated \
-  --set-env-vars="PORT=3000,AGENT_IDS=gateway,REDIS_URL=redis://..." \
+  --set-env-vars="PORT=3000,AGENT_IDS=researcher,writer,editor,REDIS_URL=redis://..." \
   --set-secrets="OPENAI_API_KEY=openai-api-key:latest" \
   --project=$PROJECT
 
@@ -136,7 +136,7 @@ gcloud compute instances create-with-container kaiban-vm \
   --container-image=${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/kaiban-distributed:latest \
   --machine-type=e2-medium \
   --zone=${REGION}-a \
-  --container-env="PORT=3000,AGENT_IDS=gateway,REDIS_URL=redis://..." \
+  --container-env="PORT=3000,AGENT_IDS=researcher,writer,editor,REDIS_URL=redis://..." \
   --tags=http-server \
   --project=$PROJECT
 

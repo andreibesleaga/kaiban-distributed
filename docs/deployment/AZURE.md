@@ -112,7 +112,7 @@ az containerapp create \
   --registry-server ${REGISTRY}.azurecr.io \
   --target-port 3000 \
   --ingress external \
-  --env-vars "PORT=3000" "AGENT_IDS=gateway" "REDIS_URL=redis://..." "SOCKET_CORS_ORIGINS=https://<viewer-domain>" \
+  --env-vars "PORT=3000" "AGENT_IDS=researcher,writer,editor" "REDIS_URL=redis://..." "SOCKET_CORS_ORIGINS=https://<viewer-domain>" \
   --secrets "openai-api-key=keyvaultref:<key-vault-uri>,identityref:<mi-id>"
 
 # Worker (no public ingress)
@@ -153,7 +153,7 @@ az webapp config appsettings set \
              REDIS_URL=redis://... \
              PORT=8080 \
              WEBSITES_PORT=8080 \
-             AGENT_IDS=gateway \
+             AGENT_IDS=researcher,writer,editor \
              SOCKET_CORS_ORIGINS=https://<viewer-domain>
 ```
 

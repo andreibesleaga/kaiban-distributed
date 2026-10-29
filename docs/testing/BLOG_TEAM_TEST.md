@@ -81,8 +81,8 @@ curl http://localhost:3000/health
 
 # Agent card (A2A v0.3 — `capabilities` is an object; abilities are in `skills[]`)
 curl http://localhost:3000/.well-known/agent-card.json
-# Expected (v0.3): {"protocolVersion":"0.3.0","name":"kaiban-gateway",...,"capabilities":{"streaming":true,...},"skills":[{"id":"gateway","name":"Delegate to gateway",...}]}
-# (one skill per id in the gateway's AGENT_IDS; the compose file sets AGENT_IDS=gateway)
+# Expected (v0.3): {"protocolVersion":"0.3.0","name":"kaiban-gateway",...,"capabilities":{"streaming":true,...},"skills":[{"id":"researcher","name":"Delegate to researcher",...},{"id":"writer",...},{"id":"editor",...}]}
+# (one skill per id in the gateway's AGENT_IDS; the compose file sets AGENT_IDS=researcher,writer,editor)
 
 # Agent status (A2A v0.3 — now a REST endpoint, not a JSON-RPC method)
 curl http://localhost:3000/a2a/agents/researcher/status
