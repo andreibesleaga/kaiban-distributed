@@ -1,6 +1,6 @@
 # kaiban-distributed — Features & Real-World Value
 
-> **Version 2.0.0** · branch `feat/v2.0` · dual-licensed **Apache-2.0** (published library core)
+> **Version 2.0.x (written for 2.0.0, June 2026)** · dual-licensed **Apache-2.0** (published library core)
 > / **GPL-3.0** (full application, board, examples). This document summarizes what the runtime does
 > and—more importantly—**why each capability matters in practice**. Every feature listed below exists
 > in the repository today; anything not yet built is explicitly labelled **roadmap**.
@@ -532,4 +532,4 @@ and additive:
 
 ---
 
-*Grounded in the kaiban-distributed repository at v2.0.0 (`feat/v2.0`) and the author's *Agentic AI Architectures* book.*
+*Grounded in the kaiban-distributed repository at version 2.0.x (written for 2.0.0, June 2026) and the author's *Agentic AI Architectures* book.*

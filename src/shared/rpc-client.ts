@@ -7,7 +7,13 @@
  * Usage:
  *   const rpc = createRpcClient('http://localhost:3000');
  *   rpc.setToken(issueA2AToken('my-service'));    // optional — called at startup
- *   const result = await rpc.call('tasks.create', { agentId: 'writer', ... });
+ *   const result = await rpc.call('message/send', {
+ *     message: {
+ *       kind: 'message', role: 'user', messageId: 'm1',
+ *       parts: [{ kind: 'text', text: 'Write the article' }],
+ *       metadata: { agentId: 'writer' },
+ *     },
+ *   });
  */
 
 export interface RpcClient {

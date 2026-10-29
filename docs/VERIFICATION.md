@@ -1,5 +1,8 @@
 # v2.0 Verification Record (Phase Z — local)
 
+> **Historical record** of the June 2026 v2.0 verification, kept as written; its numbers and
+> wording describe that run, not the current release.
+
 > Master plan §B8 Phase Z / §B11. This records the **locally-runnable** gate matrix at the current
 > `feat/v2.0` head, the invariant/NFR guard map, and the explicit **CI-only / maintainer-gated**
 > remainder. Anti-hallucination (§B11.2): every PASS below is from a command actually run on this box —
