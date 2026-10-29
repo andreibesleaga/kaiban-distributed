@@ -15,7 +15,7 @@ import {
   beforeAll,
   afterAll,
 } from "vitest";
-import { writeFileSync, mkdtempSync, rmSync } from "fs";
+import { writeFileSync, mkdtempSync, rmSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -128,6 +128,12 @@ vi.mock("../../../src/adapters/gateway/SocketGateway", () => ({
 
 import { runGateway } from "../../../src/main/gateway";
 
+const PACKAGE_VERSION = (
+  JSON.parse(readFileSync(join(__dirname, "../../../package.json"), "utf8")) as {
+    version: string;
+  }
+).version;
+
 const ORIGINAL_ENV = { ...process.env };
 const handlers: Record<string, (...a: unknown[]) => void> = {};
 let exitSpy: ReturnType<typeof vi.spyOn>;
@@ -183,6 +189,10 @@ describe("runGateway", () => {
 
     expect(h.BullMQDriver).toHaveBeenCalledTimes(1);
     expect(h.buildA2AStack).toHaveBeenCalledTimes(1);
+    // The agent card version comes from package.json, not a hard-coded string.
+    expect(
+      (h.buildA2AStack.mock.calls as unknown as [{ version: string }][])[0]![0].version,
+    ).toBe(PACKAGE_VERSION);
     expect(h.a2aStart).toHaveBeenCalledTimes(1);
     expect(h.socketInit).toHaveBeenCalledTimes(1);
     // The critical guard: the gateway role consumes NO task channels.

@@ -14,10 +14,10 @@ laptop: the npm trusted publisher and the build provenance need the workflow's O
 `npm publish` from the repository root would ship the GPL-3.0 root `LICENSE` in the Apache-2.0 package.
 
 1. On a branch (`main` is protected; changes land through a pull request), set the new version in
-   every place that carries it. The 2.0.2 release (commit `60702e1`) changed: `package.json` and
-   `package-lock.json` (`version`), `src/main/gateway.ts` (the agent card `version`),
-   `src/infrastructure/federation/mcp-server.ts` (`DEFAULT_VERSION`) and the agent-card example in
-   `README.md`; `site/index.html` also names the current release (two places). Move the
+   every place that carries it: `package.json` and `package-lock.json` (`version`) and the
+   agent-card example in `README.md`; `site/index.html` also names the current release (two
+   places). The agent card and the MCP server read their version from `package.json`
+   (`src/infrastructure/federation/package-version.ts`), so no source file needs an edit. Move the
    `CHANGELOG.md` `[Unreleased]` entries under `## [X.Y.Z] — <date>`.
 2. Run `npm run lockfile:check` (CONTRIBUTING asks for it before every release), then the checks CI
    runs: `npm run lint`, `npm run typecheck`, `npm run lint:arch`, `npm run api:check`,

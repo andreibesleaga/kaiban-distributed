@@ -11,6 +11,7 @@ import {
   type McpHttpHandler,
 } from "../infrastructure/federation/mcp-http";
 import { validateTaskInput } from "../infrastructure/federation/a2a-input-validation";
+import { packageVersion } from "../infrastructure/federation/package-version";
 import type { AppConfig } from "./config";
 import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import type { AgentStatusTracker } from "../infrastructure/federation/agent-status-tracker";
@@ -141,7 +142,7 @@ export async function runGateway(): Promise<void> {
     router,
     redisUrl: config.redis.url,
     name: config.serviceName,
-    version: "2.0.2",
+    version: packageVersion(),
     baseUrl: process.env["A2A_PUBLIC_URL"] ?? `http://localhost:${config.port}`,
     agentIds: config.agentIds,
     // With RETRY_ON_TIMEOUT the worker may run three timed-out attempts; wait for all of them.

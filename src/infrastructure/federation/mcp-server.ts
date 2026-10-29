@@ -27,6 +27,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 import { z } from "zod";
+import { packageVersion } from "./package-version";
 
 /** Result of handing a task to an agent. */
 export interface McpDispatchResult {
@@ -94,7 +95,6 @@ export interface McpServerDeps {
 }
 
 const DEFAULT_NAME = "kaiban-distributed";
-const DEFAULT_VERSION = "2.0.2";
 const CONSENT_INSTRUCTION_PREVIEW = 200;
 
 /** Whether a capability of `kind`/`name` is permitted by the allow-list. */
@@ -316,7 +316,7 @@ function registerPrompts(server: McpServer, deps: McpServerDeps): void {
 export function buildMcpServer(deps: McpServerDeps): McpServer {
   const server = new McpServer({
     name: deps.name ?? DEFAULT_NAME,
-    version: deps.version ?? DEFAULT_VERSION,
+    version: deps.version ?? packageVersion(),
   });
   registerTools(server, deps);
   registerResources(server, deps);
