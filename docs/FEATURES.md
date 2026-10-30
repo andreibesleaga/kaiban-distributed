@@ -482,7 +482,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 19. Single `ROLE=gateway|worker` image; per-service Docker Compose; K8s/Helm with HPA (in the example infra).
 
 **Security**
-20. Semantic firewall (ASI01), circuit breaker (ASI10), JIT tokens (ASI03), all env-gated via `buildSecurityDeps`.
+20. Semantic firewall (ASI01), circuit breaker (ASI08), JIT tokens (ASI03), all env-gated via `buildSecurityDeps`.
 21. Board/A2A JWT (HS256), HMAC-SHA256 channel signing with 30 s anti-replay + constant-time compare.
 22. Helmet/CSP/HSTS, body/timeout/rate limits, WS origin allowlist, A2A input validation, TLS/mTLS hooks.
 23. Byte-accurate 64 KB / 20 KB data caps, SHA-256-hashed agent IDs in logs, `sanitizeDelta` PII strip.

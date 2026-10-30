@@ -319,7 +319,7 @@ stateDiagram-v2
 | `MCPFederationClient` | `src/infrastructure/federation/` | Connects to any MCP tool server via stdio transport |
 | `HeuristicFirewall` | `src/infrastructure/security/` | Regex-based prompt injection detection (ASI01); opt-in via `SEMANTIC_FIREWALL_ENABLED` |
 | `EnvTokenProvider` | `src/infrastructure/security/` | JIT token abstraction (ASI03); reads API keys from env vars; opt-in via `JIT_TOKENS_ENABLED` |
-| `SlidingWindowBreaker` | `src/infrastructure/security/` | Sliding-window circuit breaker (ASI10); opt-in via `CIRCUIT_BREAKER_ENABLED` |
+| `SlidingWindowBreaker` | `src/infrastructure/security/` | Sliding-window circuit breaker (ASI08); opt-in via `CIRCUIT_BREAKER_ENABLED` |
 | `OrchestratorStatePublisher` | `src/shared/orchestrator-state-publisher.ts` | Owns workflow lifecycle (RUNNING→FINISHED/STOPPED/AWAITING); each example extends it (`examples/*/state-publisher.ts`) |
 | `CompletionRouter` | `src/shared/completion-router.ts` | Single BullMQ/Kafka subscriber dispatching completion events by `taskId` |
 
@@ -918,7 +918,7 @@ For a complete reference of every security feature, configuration option, and de
 | **Semantic Firewall** | `HeuristicFirewall` | ASI01 | `SEMANTIC_FIREWALL_ENABLED=true` |
 | **mTLS** | `KafkaDriver` / `BullMQDriver` | ASI07 | `REDIS_TLS_*` / `KAFKA_SSL_*` |
 | **JIT Token Provider** | `EnvTokenProvider` | ASI03 | `JIT_TOKENS_ENABLED=true` |
-| **Circuit Breaker** | `SlidingWindowBreaker` | ASI10 | `CIRCUIT_BREAKER_ENABLED=true` |
+| **Circuit Breaker** | `SlidingWindowBreaker` | ASI08 | `CIRCUIT_BREAKER_ENABLED=true` |
 | **W3C Traceparent Validation** | `BullMQDriver` | MED-06 | always-on |
 | **HTTP Hardening** | `GatewayApp` (Helmet, rate limit, CSP, HSTS) | MED-04/05 | always-on |
 | **WebSocket Hardening** | `SocketGateway` (buffer limit, ping, HITL validation) | — | always-on |
