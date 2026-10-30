@@ -37,7 +37,7 @@ docker tag kaiban-distributed:latest your-registry/kaiban-distributed:latest
 docker push your-registry/kaiban-distributed:latest
 ```
 
-Update `image` in `configmap.yaml` or patch `agents.yaml` / `gateway.yaml` if using a remote registry.
+Update `image` in `agents.yaml` and `gateway.yaml` if using a remote registry.
 
 For **local clusters** (kind, minikube, k3s):
 
@@ -133,7 +133,6 @@ npx ts-node examples/blog-team/orchestrator.ts
 
 | Key | Value | Notes |
 |-----|-------|-------|
-| `ROLE` | `gateway` | Role for the single image (ADR-013): `gateway` or `worker`. Default `gateway`. |
 | `REDIS_URL` | `redis://kaiban-redis:6379` | Internal cluster DNS |
 | `MESSAGING_DRIVER` | `bullmq` | BullMQ over Redis |
 | `PORT` | `3000` | Gateway HTTP port (gateway role only; worker has no HTTP surface) |
@@ -141,10 +140,11 @@ npx ts-node examples/blog-team/orchestrator.ts
 | `AGENT_IDS` | `researcher,writer,editor` | The agent ids the workers run; on the gateway the agent card advertises one skill per id |
 | `LLM_MODEL` | `gpt-4o-mini` | Override per agent if needed |
 
-> **Role selection (ADR-013).** The single image picks its role at runtime from `ROLE`.
-> Set `ROLE=gateway` on the gateway Deployment (HTTP/`/health`, no task actors) and `ROLE=worker`
-> on a worker Deployment (LLM-backed task pool, no HTTP surface — use a TCP/exec probe, not `/health`).
-> Scale the worker tier independently (`kubectl scale deploy/kaiban-worker --replicas=N`).
+> **Role selection (ADR-013).** The single image picks its role at runtime from `ROLE` (default
+> `gateway`). The shipped `gateway.yaml` relies on that default; the Deployments in `agents.yaml`
+> start each worker with its own command (`dist/examples/blog-team/<agent>-node.js`) and set no `ROLE`.
+> To run the generic worker pool instead, set `ROLE=worker` on a Deployment (LLM-backed task pool, no
+> HTTP surface, so no `/health` probe). Scale a worker with `kubectl scale deployment kaiban-writer --replicas=N`.
 
 Secrets (in the same file, `kind: Secret`):
 

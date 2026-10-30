@@ -17,7 +17,7 @@ traced **and** revived — not just per-node/per-task DLQ. The example orchestra
   deliveries never double-advance. Both examples refactored to consume it. **Single-active per
   workflow** (no leader election); failover = checkpoint, **not** HA (HA = roadmap).
 - **Health + lifecycle (`src/resilience/health.ts`, `graceful-shutdown.ts`):** `/ready` (readiness —
-  Redis + broker reachable) and `/startup` probes wired into the gateway (which already serves
+  Redis reachable) and `/startup` probes wired into the gateway (which already serves
   `/health`); **graceful shutdown** runs ordered, best-effort, deadline-bounded steps (stop intake →
   drain → finish acks → flush → close) so a hung dependency cannot wedge shutdown.
 - **DLQ replay (`src/resilience/dlq-replay.ts`):** respects the §B3 DLQ taxonomy — **skips

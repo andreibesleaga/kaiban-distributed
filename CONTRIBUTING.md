@@ -77,7 +77,7 @@ from `etc/*.api.md` (`npm run api:update` rewrites the reports for review).
       message shapes, ≤5% perf delta, and a non-positive CVE delta.
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`.
 - [ ] Docs updated for any user-visible change (and kept in sync with the code —
-      this repo is the companion code for a published book; accuracy matters).
+      this repo is the companion code for the book *Agentic AI Architectures*; accuracy matters).
 
 ## Commit & branch conventions
 

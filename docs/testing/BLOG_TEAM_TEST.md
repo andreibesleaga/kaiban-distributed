@@ -45,13 +45,14 @@ OPENAI_API_KEY=sk-... docker compose up
 **Expected startup output:**
 
 ```
-kaiban-distributed-redis-1       | Ready to accept connections tcp
-kaiban-distributed-gateway-1    | [kaiban-worker] Listening on port 3000
-kaiban-distributed-gateway-1    | [kaiban-worker] Agents: gateway
-kaiban-distributed-researcher-1 | [Researcher] Node started — subscribed to: kaiban-agents-researcher
-kaiban-distributed-writer-1     | [Writer] Node started — subscribed to: kaiban-agents-writer
-kaiban-distributed-editor-1     | [Editor] Morgan started — subscribed to: kaiban-agents-editor
+blog-team-redis-1       | Ready to accept connections tcp
+blog-team-gateway-1     | {"level":30,...,"service":"kaiban-gateway","port":3000,"msg":"Gateway listening (HTTP/WebSocket/A2A)"}
+blog-team-researcher-1  | {"level":30,...,"label":"[Researcher]","agent":"Ava","queue":"kaiban-agents-researcher","msg":"Agent node started"}
+blog-team-writer-1      | {"level":30,...,"label":"[Writer]","agent":"Kai","queue":"kaiban-agents-writer","msg":"Agent node started"}
+blog-team-editor-1      | {"level":30,...,"label":"[Editor]","agent":"Morgan","queue":"kaiban-agents-editor","msg":"Agent node started"}
 ```
+
+Logs are JSON lines; set `LOG_PRETTY=true` for readable output.
 
 **Verify all services are healthy:**
 
@@ -414,7 +415,7 @@ Once the bridge is running:
 Run the full automated test suite to verify all flows:
 
 ```bash
-# Unit tests (1400 tests on 29 Oct 2026, 100% coverage)
+# Unit tests (1396 tests on 30 Oct 2026, 100% coverage)
 npm run test:coverage
 
 # BullMQ E2E (requires Docker)
