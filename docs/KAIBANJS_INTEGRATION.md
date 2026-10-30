@@ -2407,7 +2407,7 @@ async function researchWithMCP(query: string): Promise<string> {
 ```typescript
 // Brave Search
 new MCPFederationClient('npx', ['-y', '@brave/brave-search-mcp-server', '--transport', 'stdio'])
-// Requires: BRAVE_API_KEY env var
+// Needs BRAVE_API_KEY set where the server process reads it (see note below)
 
 // Redis (query pub/sub, streams, keys)
 new MCPFederationClient('uvx', ['--from', 'redis-mcp-server@latest', 'redis-mcp-server', '--url', 'redis://localhost:6379/0'])
@@ -2418,16 +2418,23 @@ new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-filesystem',
 
 // GitHub
 new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-github'])
-// Requires: GITHUB_PERSONAL_ACCESS_TOKEN env var
+// Needs GITHUB_PERSONAL_ACCESS_TOKEN set where the server process reads it (see note below)
 
 // Slack
 new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-slack'])
-// Requires: SLACK_BOT_TOKEN, SLACK_TEAM_ID env vars
+// Needs SLACK_BOT_TOKEN, SLACK_TEAM_ID set where the server process reads them (see note below)
 
 // Kafka (read/produce messages)
 new MCPFederationClient('npx', ['-y', 'kafka-mcp-server'])
-// Requires: KAFKA_BROKERS env var
+// Needs KAFKA_BROKERS set where the server process reads it (see note below)
 ```
+
+> **Environment variables.** `MCPFederationClient` passes no `env` option to the MCP SDK's
+> `StdioClientTransport`, so it does not forward variables such as `BRAVE_API_KEY` to the spawned
+> server. Without an explicit `env`, the SDK starts the server with only its default inherited
+> variables (`getDefaultEnvironment()`: for example `HOME`, `PATH`, `SHELL`, `USER`), not the full
+> environment of your process. Make each variable available where the server itself reads it, for
+> example in a configuration file the server loads, or run a server that does not need one.
 
 ### 13.4 MCP Tools as KaibanJS Tools
 
