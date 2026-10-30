@@ -64,7 +64,7 @@ cp .env.example .env
 # → Script prints board URLs when the gateway is ready. Open one in a separate terminal/tab.
 
 # 4. Open the board (choose one, in a separate terminal)
-cd board && npm install && npm run dev   # React board → http://localhost:5173
+cd board && npm ci && npm run dev   # React board → http://localhost:5173
 #  — OR —
 # Open examples/blog-team/viewer/board.html in your browser (zero setup)
 
@@ -195,7 +195,7 @@ flowchart TB
 graph TD
     UI[Kanban Board UI<br>Browser] -- WebSockets --> Gateway[Edge Gateway APP<br>Port 3000]
     Gateway -- Pub/Sub (Socket.io) --> RedisPubSub[(Redis Pub/Sub<br>State Stream)]
-    Gateway -- HTTP POST --> A2A[A2A Connector]
+    Gateway -- HTTP POST --> A2A[A2A Executor]
     
     A2A --> Queue[(Message Queue<br>BullMQ / Kafka)]
     
@@ -409,7 +409,7 @@ The `board/` subdirectory is a **standalone React + Vite + TypeScript** dashboar
 ```bash
 cd board
 cp .env.example .env      # optional: set VITE_GATEWAY_URL
-npm install
+npm ci
 npm run dev               # → http://localhost:5173
 ```
 
@@ -565,7 +565,7 @@ to the same Socket.io gateway and adds interactive Human-in-the-Loop controls:
 ```bash
 cd board
 cp .env.example .env        # optional: set VITE_GATEWAY_URL
-npm install
+npm ci
 npm run dev                  # → http://localhost:5173
 ```
 
@@ -722,7 +722,7 @@ Attach any [Model Context Protocol](https://modelcontextprotocol.io) tool server
 ```typescript
 import { MCPFederationClient } from './src/infrastructure/federation/mcp-client';
 
-const mcp = new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-brave-search']);
+const mcp = new MCPFederationClient('npx', ['-y', '@brave/brave-search-mcp-server', '--transport', 'stdio']);
 await mcp.connect();
 const tools = await mcp.listTools();
 const result = await mcp.callTool('brave_web_search', { query: 'AI agents 2025' });
@@ -741,8 +741,8 @@ MCP servers for Redis and Kafka enable AI agents to intercept and query live dat
 // claude_desktop_config.json
 {
   "redis": {
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-redis", "--url", "redis://localhost:6379"]
+    "command": "uvx",
+    "args": ["--from", "redis-mcp-server@latest", "redis-mcp-server", "--url", "redis://localhost:6379/0"]
   }
 }
 ```
@@ -953,7 +953,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 1400 unit tests (no external deps)
+npm run test           # 1396 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -968,7 +968,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 1400 tests, 124 files | None (all mocked) |
+| Unit | `npm test` | 1396 tests, 125 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 69 tests, 11 files | Docker Redis (auto-managed by globalSetup) |
 | Security E2E | `npm run test:e2e:security` | 37 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
@@ -976,7 +976,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 | Board | `cd board && npm test` | 148 tests, 14 files: React component + Zustand store + a11y tests | happy-dom |
 | Visual (Playwright) | `cd board && npm run test:visual` | board screenshot baseline + structural checks of the two example viewers | board dev server + gateway + chromium |
 
-Counts as run on 29 Oct 2026. CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
+Counts as of 30 Oct 2026 (unit and board suites run; E2E counted from the test files). CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
 
 ### Coverage
 
@@ -1033,7 +1033,7 @@ kaiban-distributed/
 │   │   │   ├── kaiban-team-bridge.ts   # KaibanTeamBridge with DistributedStateMiddleware
 │   │   │   └── owned-llm.ts            # the bridge's own LangChain LLM instance: the abort seam for in-flight calls (ADR-014)
 │   │   ├── security/              # Security infrastructure implementations
-│   │   │   ├── heuristic-firewall.ts    # Regex prompt injection detection (10+ patterns)
+│   │   │   ├── heuristic-firewall.ts    # Regex prompt injection detection (10 patterns)
 │   │   │   ├── env-token-provider.ts    # Env-var backed JIT token provider
 │   │   │   ├── sliding-window-breaker.ts # Configurable sliding-window circuit breaker
 │   │   │   ├── board-auth.ts / a2a-auth.ts # board and A2A JWTs (BOARD_JWT_SECRET / A2A_JWT_SECRET)
@@ -1056,7 +1056,7 @@ kaiban-distributed/
 │       ├── runtime.ts  # Messaging driver + telemetry setup shared by both roles
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 1400 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 1396 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
@@ -1173,7 +1173,7 @@ The script prints board URLs when the gateway is ready. Open **one or more** in 
 
 ```bash
 # In a separate terminal, from the kaiban-distributed root:
-cd board && npm install && npm run dev
+cd board && npm ci && npm run dev
 # → http://localhost:5173
 
 # Point to a non-default gateway at runtime (no rebuild needed):

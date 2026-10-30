@@ -130,7 +130,7 @@ Services: `redis` · `gateway` (port 3000) · `researcher` · `writer` · `edito
 *Option A — React board app (interactive HITL, modern UI):*
 ```bash
 # Separate terminal, from kaiban-distributed root:
-cd board && npm install && npm run dev
+cd board && npm ci && npm run dev
 # Open: http://localhost:5173
 ```
 
@@ -321,7 +321,7 @@ kubectl port-forward svc/kaiban-gateway 3000:3000
 ```
 Then open `examples/blog-team/viewer/board.html`, or run the React board:
 ```bash
-cd board && npm install && npm run dev
+cd board && npm ci && npm run dev
 # Open: http://localhost:5173
 ```
 
@@ -435,7 +435,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 124 unit-test files / 1400 tests (29 Oct 2026), 100% coverage of src (board tests run separately via `cd board && npm test`)
+# → 125 unit-test files / 1396 tests (30 Oct 2026), 100% coverage of src (board tests run separately via `cd board && npm test`)
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
@@ -597,7 +597,7 @@ interactive Human-in-the-Loop Approve / Revise / Reject controls.
 ```bash
 cd board
 cp .env.example .env          # optional: set VITE_GATEWAY_URL if gateway is not :3000
-npm install
+npm ci
 npm run dev                    # → http://localhost:5173
 ```
 

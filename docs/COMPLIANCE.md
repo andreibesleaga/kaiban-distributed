@@ -42,8 +42,11 @@ What is **opt-in / default-OFF** (set a secret/flag to activate):
 **Licensing (ADR-011).** The **published library** (compiled core in `dist/src`) is **Apache-2.0**
 (permissive + patent grant, widest enterprise adoption); the **full application** (board, examples,
 infra, deployment, repo aggregate) is **GPL-3.0** (retained copyleft). ADR-011 requires CI to enforce no
-copyleft runtime dependency in the Apache core and no GPL source compiled into `dist/src`; no workflow
-does this yet (the 2026-06-18 dependency-licence scan in `LICENSING.md` was a one-off). See
+copyleft runtime dependency in the Apache core and no GPL source compiled into `dist/src`. The first is
+enforced: the `security` job in `ci.yml` runs `license-checker --production --onlyAllow` (permissive
+licences only). For the second, the consumer smoke test (`scripts/smoke-consumer.sh`, run by
+`release.yml` and `publish-npm.yml`) checks that the packed tarball is core-only with the Apache
+`LICENSE`; no check scans `dist/src` for GPL source. See
 [`ADR-011`](./decisions/ADR-011-dual-license.md) and [`LICENSING.md`](../LICENSING.md).
 
 **Status legend:** ✅ built (grounded in a real file/ADR) · 🟡 partial (capability shipped/tested but
@@ -159,9 +162,11 @@ The following are **not yet fully wired** and must not be read as active guarant
   loses the chain. For EU AI Act Art. 12 record-keeping you must add durable, signed storage.
 - **Security/governance/economics controls are default-OFF (opt-in).** Per invariant #8, an
   out-of-the-box deployment has **zero** of the optional protections (auth, signing, firewall, breaker,
-  mTLS, governance gate, fleet limiter) until the operator sets the secrets/flags. There is currently
-  **no production guard** that *forces* the auth/signing secrets to be set (only CORS throws in prod) —
-  tracked as master-plan item **S3** (throw in `NODE_ENV=production` if core secrets unset).
+  mTLS, governance gate, fleet limiter) until the operator sets the secrets/flags. The one exception is a
+  production guard (since 2.0.1): with `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`,
+  `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct
+  (`ALLOW_INSECURE_PRODUCTION=true` lets a missing one through with a warning); `SOCKET_CORS_ORIGINS`
+  is also required in production.
 - **OAuth 2.1 / PKCE for the MCP server is deferred.** v2.0 MCP auth reuses the env-gated gateway JWT
   (`A2A_JWT_SECRET`); MCP Roots and OAuth 2.1/PKCE are a later beta
   ([`ADR-017`](./decisions/ADR-017-mcp-server.md) §Deferred).

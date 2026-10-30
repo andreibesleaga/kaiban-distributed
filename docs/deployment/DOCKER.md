@@ -174,6 +174,11 @@ localhost:3000  ──►  gateway   (HTTP + Socket.io)
 | `CIRCUIT_BREAKER_THRESHOLD` | `10` | Both BullMQ and Kafka stacks |
 | `CIRCUIT_BREAKER_WINDOW_MS` | `60000` | Both BullMQ and Kafka stacks |
 
+The Gateway and Worker tables below describe the root `docker-compose.yml` (`kaiban-gateway`,
+`kaiban-worker`). In `examples/blog-team/docker-compose.yml` the gateway sets no `ROLE` (default
+`gateway`) and `AGENT_IDS=researcher,writer,editor`, and each worker runs its own command
+(`node dist/examples/blog-team/<agent>-node.js`).
+
 ### Gateway service
 
 | Variable | Value | Notes |

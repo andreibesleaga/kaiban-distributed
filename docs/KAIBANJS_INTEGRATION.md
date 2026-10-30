@@ -2357,7 +2357,7 @@ The gateway applies a sliding-window rate limit: **100 requests per 60 seconds p
 import { MCPFederationClient } from '../src/infrastructure/federation/mcp-client';
 
 // Connect to Brave Search MCP server
-const mcp = new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-brave-search']);
+const mcp = new MCPFederationClient('npx', ['-y', '@brave/brave-search-mcp-server', '--transport', 'stdio']);
 await mcp.connect();
 
 // List available tools
@@ -2383,7 +2383,7 @@ Use MCP tool results to augment KaibanJS agents via the `context` field:
 import { MCPFederationClient } from '../src/infrastructure/federation/mcp-client';
 
 async function researchWithMCP(query: string): Promise<string> {
-  const mcp = new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-brave-search']);
+  const mcp = new MCPFederationClient('npx', ['-y', '@brave/brave-search-mcp-server', '--transport', 'stdio']);
   await mcp.connect();
 
   const searchResult = await mcp.callTool('brave_web_search', { query, count: 5 }) as any;
@@ -2406,12 +2406,12 @@ async function researchWithMCP(query: string): Promise<string> {
 
 ```typescript
 // Brave Search
-new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-brave-search'])
+new MCPFederationClient('npx', ['-y', '@brave/brave-search-mcp-server', '--transport', 'stdio'])
 // Requires: BRAVE_API_KEY env var
 
 // Redis (query pub/sub, streams, keys)
-new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-redis'])
-// Requires: REDIS_URL env var
+new MCPFederationClient('uvx', ['--from', 'redis-mcp-server@latest', 'redis-mcp-server', '--url', 'redis://localhost:6379/0'])
+// Needs uv (uvx) installed
 
 // Filesystem
 new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/dir'])
@@ -2451,7 +2451,7 @@ function mcpToolToLangchain(mcp: MCPFederationClient, toolName: string, descript
 }
 
 // Connect MCP
-const mcp = new MCPFederationClient('npx', ['-y', '@modelcontextprotocol/server-brave-search']);
+const mcp = new MCPFederationClient('npx', ['-y', '@brave/brave-search-mcp-server', '--transport', 'stdio']);
 await mcp.connect();
 
 // Create LangChain-compatible tool

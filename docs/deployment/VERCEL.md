@@ -107,7 +107,7 @@ SOCKET_CORS_ORIGINS=https://kaiban-blog-team-viewer.vercel.app
 
 - **Serverless functions** have a 10-second execution limit (Hobby tier) — not suitable for LLM calls.
 - **No WebSocket support** in serverless functions — Socket.IO requires a separate server.
-- **Managed Redis** is available via Vercel KV (powered by Upstash), but only through the REST API, not the standard Redis protocol. It is **not** compatible with BullMQ.
+- **Redis:** Vercel KV was discontinued in December 2024 (existing stores moved to Upstash Redis); new projects add a Redis integration from the Vercel Marketplace. Vercel does not run a Redis server for BullMQ; use an external Redis (see [RAILWAY.md](RAILWAY.md)).
 
 ---
 

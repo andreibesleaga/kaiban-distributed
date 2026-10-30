@@ -163,6 +163,8 @@ az webapp config appsettings set \
 
 Use **Azure Cache for Redis** (Basic C0 for dev, Standard C1 for production):
 
+Microsoft retires all Azure Cache for Redis tiers (Basic, Standard, Premium) on 30 September 2028 and points to Azure Managed Redis ([retirement FAQ](https://learn.microsoft.com/azure/azure-cache-for-redis/retirement-faq)); check the current offer before you start.
+
 ```bash
 az redis create \
   --resource-group $RESOURCE_GROUP \

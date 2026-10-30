@@ -11,7 +11,7 @@
 | **Validation & sanitization** | Output/state minimization | `sanitizeDelta()` strips PII keys (both state paths); `result` cap 20 KB; outbound cap 64 KB | ✅ |
 | **Authentication** | Authenticate privileged endpoints | JWT (HS256) on A2A RPC (`a2a-auth.ts`) and board Socket.io (`board-auth.ts`); **env-gated** (off by default → opt-in) | 🟡 |
 | **Session management** | Bound token lifetime | Board token 3600 s; A2A token 86400 s; signed + verified server-side | ✅ |
-| **Authorization / access control** | Restrict by role/identity | Agent-card capabilities; gateway routes; rate limits per IP (100/60 s RPC, 5/60 s health) | 🟡 |
+| **Authorization / access control** | Restrict by role/identity | Agent-card capabilities; gateway routes; rate limits per IP (100/60 s RPC, 120/60 s per probe route) | 🟡 |
 | **Cryptography** | Strong, standard primitives | HMAC-SHA256 channel signing with `timingSafeEqual` + 30 s replay window (`channel-signing.ts`); SHA-256 id hashing; mTLS for Redis/Kafka | ✅ |
 | **Error handling & logging** | No sensitive data in logs; audit trail | SHA-256 hashed agent ids in logs; run-logger decision trail; OpenTelemetry spans; W3C traceparent across hops | ✅ |
 | **Data protection** | Minimize & protect sensitive data | PII denylist sanitization; size caps; secrets via env only (never logged) | ✅ |

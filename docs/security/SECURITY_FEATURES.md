@@ -214,7 +214,7 @@ not parse a non-JSON body, and error responses carry the error message in every 
 TRUST_PROXY=true
 
 # Environment
-NODE_ENV=production    # enables error sanitization
+NODE_ENV=production    # production boot checks: signing secrets and CORS allowlist required
 ```
 
 ---
@@ -472,6 +472,7 @@ All services in `docker-compose.yml` declare CPU and memory limits to prevent on
 | `redis` | 0.5 | 256 MB |
 | `zookeeper` | 0.5 | 256 MB |
 | `kafka` | 1.0 | 512 MB |
+| `kaiban-gateway` | 1.0 | 512 MB |
 | `kaiban-worker` | 1.0 | 512 MB |
 
 ---
@@ -508,7 +509,7 @@ All services in `docker-compose.yml` declare CPU and memory limits to prevent on
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDIS_PASSWORD` | Recommended | — | Redis server password. Must match `REDIS_URL` (include in connection string). |
-| `NODE_ENV` | In production | `development` | Set to `production` to enable error sanitization and CORS enforcement. |
+| `NODE_ENV` | In production | `development` | Set to `production` to enforce the signing-secret check at boot and the CORS allowlist (the gateway does not sanitise error messages; see 3.1). |
 | `TRUST_PROXY` | Deployment-specific | `false` | Set `true` when behind a reverse proxy (Railway, K8s Ingress, Nginx) to enable correct `req.ip` derivation. |
 
 ### Transport (mTLS)
