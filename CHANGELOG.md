@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.3] — 2026-10-31
+
+Documentation, licensing and dependency follow-ups to 2.0.2; one behaviour change: the agent card advertises only the JSON-RPC transport the gateway serves. No new channel, no change to a default.
+
+- Docs: the circuit breaker's OWASP category is ASI08 (Cascading Failures) in the README and FEATURES, as in the other documents.
+- Docs: the KaibanJS guide says that `MCPFederationClient` does not forward environment variables to a spawned MCP server.
 - Docs: audit of 29 Oct 2026 — install with `npm ci`, corrected code samples (`KaibanTeamBridge`, single-image example), current test counts, project tree, HTTP routes, release procedure and CI workflow table, licence and advisory status; no code change.
 - Dependencies: @opentelemetry/auto-instrumentations-node ^0.79.0 (fixes GHSA-qqmp-wf37-98f9 in 8 instrumentations); the glob override is capped below 14.
 - Fixed: the A2A agent card advertises only the JSON-RPC interface (`/a2a/rpc`); it no longer lists HTTP+JSON (`/a2a/rest`) and gRPC (`/a2a/grpc`), which the gateway does not serve.
