@@ -10,6 +10,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Documentation, licensing and dependency follow-ups to 2.0.2; one behaviour change: the agent card advertises only the JSON-RPC transport the gateway serves. No new channel, no change to a default.
 
+- Dependencies: `follow-redirects` 1.16.2 (fixes GHSA-mrwp-f3q8-3g9p / CVE-2026-116689, high; transitive through `kaibanjs`); the override floor is now `>=1.16.2 <2`.
 - Docs: the circuit breaker's OWASP category is ASI08 (Cascading Failures) in the README and FEATURES, as in the other documents.
 - Docs: the KaibanJS guide says that `MCPFederationClient` does not forward environment variables to a spawned MCP server.
 - Docs: audit of 29 Oct 2026 — install with `npm ci`, corrected code samples (`KaibanTeamBridge`, single-image example), current test counts, project tree, HTTP routes, release procedure and CI workflow table, licence and advisory status; no code change.

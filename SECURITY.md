@@ -60,7 +60,7 @@ patched versions: `langsmith` (>=0.7.4), `expr-eval` (>=2.0.2), `form-data` (>=4
 `ip-address` (>=10.7.4 <11), `browserslist` (>=4.28.9 <5), `nanoid` (>=3.3.18 <4),
 `socket.io-parser` (>=4.2.7 <5), `glob` (>=10.5.0 <14), `@opentelemetry/exporter-prometheus`
 (>=0.217.0), `postcss` (>=8.5.25), `handlebars` (>=4.7.10 <5), `proxy-addr` (>=2.0.8 <3),
-`follow-redirects` (>=1.16.1 <2), `source-map-js` (>=1.2.2 <2), `fast-copy` (>=4.1.0 <5) and
+`follow-redirects` (>=1.16.2 <2), `source-map-js` (>=1.2.2 <2), `fast-copy` (>=4.1.0 <5) and
 `body-parser` (>=2.4.0 <3). The `madge` entry is not a security floor: it points madge at the
 project's own TypeScript.
 
