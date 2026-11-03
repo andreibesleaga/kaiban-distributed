@@ -483,6 +483,8 @@ export class WorkflowOrchestrator {
     work.catch(() => {}); // the losing side must not become unhandled
     return new Promise<T>((resolve, reject) => {
       const onAbort = (): void => reject(stop.reason as Error);
+      // The producer already ran up to its first await: it may have stopped us.
+      if (stop.aborted) return onAbort();
       stop.addEventListener("abort", onAbort, { once: true });
       work.then(resolve, reject).finally(() =>
         stop.removeEventListener("abort", onAbort),

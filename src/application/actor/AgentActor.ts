@@ -313,6 +313,13 @@ export class AgentActor {
     const start = Date.now();
     let lastError = "Max retries exceeded";
     for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+      // A stop can arrive while the guards decide or during the back-off: no
+      // attempt starts after it (checked right before each one).
+      const interrupted = this.interruption(payload);
+      if (interrupted) {
+        await this.failNonRetryable(payload, interrupted, start);
+        return;
+      }
       try {
         const taskResult = await this.executeTask(payload);
         this.circuitBreaker?.recordSuccess();
@@ -341,15 +348,7 @@ export class AgentActor {
           { agentId: sanitizeId(this.id), attempt, err: lastError },
           "Task attempt failed",
         );
-        if (attempt < RETRY_ATTEMPTS) {
-          await delay(RETRY_BASE_DELAY_MS * attempt);
-          const interrupted = this.interruption(payload);
-          if (interrupted) {
-            // A stop arrived during the back-off: the next attempt never starts.
-            await this.failNonRetryable(payload, interrupted, start);
-            return;
-          }
-        }
+        if (attempt < RETRY_ATTEMPTS) await delay(RETRY_BASE_DELAY_MS * attempt);
       }
     }
 

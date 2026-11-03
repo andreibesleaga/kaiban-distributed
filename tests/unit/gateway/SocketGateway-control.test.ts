@@ -91,11 +91,8 @@ const deliver = (delta: Record<string, unknown>): void => {
 const snapshotOf = (socket: MockSocket): Record<string, unknown> =>
   socket.emit.mock.calls.at(-1)![1] as Record<string, unknown>;
 
-const ingress = (
-  lastStop: Record<string, unknown> | null = null,
-): { stopAll: ReturnType<typeof vi.fn>; lastStop: ReturnType<typeof vi.fn> } => ({
+const ingress = (): { stopAll: ReturnType<typeof vi.fn> } => ({
   stopAll: vi.fn().mockResolvedValue({ ok: true, commandId: "c-1", issuedAt: 5, saved: true }),
-  lastStop: vi.fn().mockResolvedValue(lastStop),
 });
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -114,14 +111,16 @@ describe("SocketGateway — control plane off (ES-7)", () => {
     const socket = connect();
     expect(handlerOf(socket, "control:stop-all")).toBeUndefined();
     expect(socket.emit).not.toHaveBeenCalled(); // empty snapshot, nothing sent
+    sg.noteStop({ commandId: "c", issuedAt: 1, issuedBy: "x" });
+    expect(mockIoEmit).not.toHaveBeenCalledWith("state:update", expect.objectContaining({ controlPlane: expect.anything() }));
   });
 });
 
 describe("SocketGateway — control plane on", () => {
   let sg: SocketGateway;
   let control: ReturnType<typeof ingress>;
-  const make = async (lastStop: Record<string, unknown> | null = null): Promise<void> => {
-    control = ingress(lastStop);
+  const make = async (): Promise<void> => {
+    control = ingress();
     sg = new SocketGateway(createServer(), redisPublisher, redisSubscriber, {
       control: control as unknown as EmergencyStopIngress,
     });
@@ -136,13 +135,23 @@ describe("SocketGateway — control plane on", () => {
     expect(snapshotOf(connect())).toEqual({ controlPlane: { enabled: true, acks: 0 } });
   });
 
-  it("the saved stop read at start is in the snapshot", async () => {
-    await make({ commandId: "c-0", command: "STOP_ALL", issuedBy: "ops", issuedAt: 9, reason: "r" });
-    expect(snapshotOf(connect())["controlPlane"]).toEqual({
-      enabled: true,
-      lastStop: { commandId: "c-0", issuedBy: "ops", issuedAt: 9, reason: "r" },
-      acks: 0,
-    });
+  it("noteStop (control channel, incl. CLI stops) sets the last stop, resets acks, and tells every board", async () => {
+    await make();
+    deliver({ control: { commandId: "a", issuedAt: 10, issuedBy: "x", outcome: "applied" } });
+    sg.noteStop({ commandId: "cli", issuedAt: 20, issuedBy: "cli", reason: "r" });
+    const plane = { enabled: true, lastStop: { commandId: "cli", issuedAt: 20, issuedBy: "cli", reason: "r" }, acks: 0 };
+    expect(mockIoEmit).toHaveBeenCalledWith("state:update", { controlPlane: plane });
+    expect(snapshotOf(connect())["controlPlane"]).toEqual(plane);
+  });
+
+  it("noteStop ignores a stop no newer than the last one (e.g. the saved one after a live ack)", async () => {
+    await make();
+    deliver({ control: { commandId: "live", issuedAt: 50, issuedBy: "ops", outcome: "applied" } });
+    mockIoEmit.mockClear();
+    sg.noteStop({ commandId: "saved", issuedAt: 10, issuedBy: "x" });
+    sg.noteStop({ commandId: "live", issuedAt: 50, issuedBy: "ops" });
+    expect(mockIoEmit).not.toHaveBeenCalled();
+    expect(snapshotOf(connect())["controlPlane"]).toMatchObject({ lastStop: { commandId: "live" }, acks: 1 });
   });
 
   it("the socket event passes the handshake token, payload and address; the ack carries the result", async () => {
@@ -193,20 +202,6 @@ describe("SocketGateway — control plane on", () => {
       lastStop: { commandId: "b", issuedAt: 2, issuedBy: "x", reason: "again" },
       acks: 0,
     });
-  });
-
-  it("a live stop that arrives before the saved one is read wins", async () => {
-    let resolveSaved!: (v: Record<string, unknown>) => void;
-    control = ingress();
-    control.lastStop.mockReturnValue(new Promise((r) => (resolveSaved = r)));
-    sg = new SocketGateway(createServer(), redisPublisher, redisSubscriber, {
-      control: control as unknown as EmergencyStopIngress,
-    });
-    sg.initialize();
-    deliver({ control: { commandId: "live", issuedAt: 50, issuedBy: "ops", outcome: "issued" } });
-    resolveSaved({ commandId: "saved", command: "STOP_ALL", issuedBy: "x", issuedAt: 10 });
-    await flush();
-    expect((snapshotOf(connect())["controlPlane"] as { lastStop: { commandId: string } }).lastStop.commandId).toBe("live");
   });
 
   it("ignores a control delta without a command id or moment; a missing issuer shows as unknown", async () => {

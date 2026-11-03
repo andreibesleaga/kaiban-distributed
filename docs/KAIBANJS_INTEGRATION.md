@@ -322,7 +322,10 @@ console.log(result.status, result.result);
 
 Since 2.1.0, `bridge.start(inputs, signal)` takes an optional `AbortSignal`: when it aborts (for
 example from `createEmergencyStopSignal()`, the emergency STOP ALL), the team is stopped and the
-call rejects with the signal's reason; an already-aborted signal never starts the team.
+call rejects with the signal's reason; an already-aborted signal never starts the team. The team
+stops at its next step: a model call already in flight finishes, because this bridge does not own
+the agents' model instances (tasks run by an `AgentActor` through `createKaibanTaskHandler` are
+cancelled mid-call).
 
 **How `KaibanTeamBridge` works:**
 

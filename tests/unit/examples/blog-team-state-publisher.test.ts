@@ -106,3 +106,27 @@ describe("blog-team BlogStatePublisher", () => {
     expect(ids).toContain("editor");
   });
 });
+
+describe("blog-team BlogStatePublisher — emergency STOP ALL (ADR-025)", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const last = (): Record<string, unknown> =>
+    JSON.parse(mockPublish.mock.calls.at(-1)![1] as string) as Record<string, unknown>;
+
+  it("reviewStopped() marks the pending review task STOPPED, once", () => {
+    const pub = new BlogStatePublisher("redis://localhost:6379");
+    pub.awaitingHITL("edit-1", "Editorial Review", "PUBLISH", "8/10");
+    pub.reviewStopped();
+    expect(last()["tasks"]).toEqual([
+      expect.objectContaining({ taskId: "edit-1", status: "STOPPED", assignedToAgentId: "editor" }),
+    ]);
+    const calls = mockPublish.mock.calls.length;
+    pub.reviewStopped();
+    expect(mockPublish.mock.calls.length).toBe(calls);
+  });
+
+  it("reviewStopped() does nothing when no review is pending", () => {
+    const pub = new BlogStatePublisher("redis://localhost:6379");
+    pub.reviewStopped();
+    expect(mockPublish).not.toHaveBeenCalled();
+  });
+});

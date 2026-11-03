@@ -14,10 +14,8 @@ import { verifyBoardToken } from "../../infrastructure/security/board-auth";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import {
   issueStopAll,
-  readLastStop,
   type ControlAck,
   type ControlPublisher,
-  type ControlReader,
   type StopAllCommand,
 } from "../../infrastructure/control/control-channel";
 import { createStopAllCommand } from "../../shared/emergency-stop";
@@ -57,7 +55,7 @@ export class EmergencyStopIngress {
   private readonly now: () => number;
 
   constructor(
-    private readonly redis: ControlPublisher & ControlReader,
+    private readonly redis: ControlPublisher,
     opts: EmergencyStopIngressOptions = {},
   ) {
     this.now = opts.now ?? Date.now;
@@ -93,15 +91,6 @@ export class EmergencyStopIngress {
     );
     this.announce(cmd);
     return { ok: true, commandId: cmd.commandId, issuedAt: cmd.issuedAt, saved };
-  }
-
-  /** The latest saved stop (null when none, or when Redis cannot be read). */
-  async lastStop(): Promise<StopAllCommand | null> {
-    try {
-      return await readLastStop(this.redis);
-    } catch {
-      return null;
-    }
   }
 
   /** Tell every board at once that a stop was issued (nodes ack separately). */

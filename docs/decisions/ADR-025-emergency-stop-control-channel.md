@@ -25,7 +25,10 @@ emergency stop of everything.
    it runs normally. There is no hold and nothing to release. The latest moment is kept in Redis
    (key `kaiban-control:stopped-at`), written before the message is published; every node reads it
    when it starts and when its Redis connection comes back, so a node that missed the message still
-   refuses the old tasks.
+   refuses the old tasks. With `CHANNEL_SIGNING_SECRET` set the saved command carries a durable
+   HMAC signature (no freshness limit) and an unsigned or altered value is ignored. A node that
+   cannot read the key at start does not start (fail closed); a failed read after a reconnect is
+   retried until it succeeds.
 4. **Worker nodes** (`AgentActor.emergencyStop(stoppedAt)`): every running task sent before the
    moment is aborted with a non-retryable `EmergencyStopError` and settled at once (the actor does not
    wait for the handler); every such task delivered later is refused without running. Both publish a
@@ -41,13 +44,16 @@ emergency stop of everything.
 7. **Default off.** With `CONTROL_PLANE_ENABLED` unset, no subscription, route, socket event or
    status is added; behaviour is that of 2.0.3.
 8. **Acknowledgements** travel on the existing state channel as a `control` delta (`applied` or
-   `noop`, node id, number of aborted tasks); the gateway snapshot carries the latest stop.
+   `noop`, node id, number of aborted tasks). The gateway also subscribes to the control channel, so
+   the snapshot it gives boards carries the latest stop from any source, the CLI included.
 
 ## Consequences
 - One press kills every running model call, task and workflow, including tasks still queued.
 - Every running model call is killed: the owned model instance cancels the provider request
   mid-call (ADR-014), the KaibanJS team is stopped, and the actor settles the task at once even when
-  a custom handler ignores its signal (its late result is discarded).
+  a custom handler ignores its signal (its late result is discarded). This covers every task run by
+  an `AgentActor`. The deprecated in-process `KaibanTeamBridge` only stops its team at the next step
+  when its `start(inputs, signal)` signal aborts; a model call already in flight there finishes.
 - Nothing is resumed: stopped work is replayed from the failure queue, on purpose.
 - The stop moment is compared with each task's send time from the sender's clock, so the hosts'
   clocks must be synchronised (NTP); a task sent within the skew can fall on either side.

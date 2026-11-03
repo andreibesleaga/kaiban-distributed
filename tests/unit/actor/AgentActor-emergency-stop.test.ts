@@ -348,3 +348,46 @@ describe("AgentActor — the stop moment (ES-2, ES-5, ES-8)", () => {
     });
   });
 });
+
+describe("AgentActor — a stop while the guards decide (Copilot finding, PR #178)", () => {
+  it("a task allowed by a slow admission gate after the stop is never run", async () => {
+    const { driver, deliver, published } = makeCapturingDriver();
+    const handler = vi.fn().mockResolvedValue("ok");
+    let allow!: () => void;
+    const actor = new AgentActor("agent-1", driver, "q", handler, {
+      admissionGate: {
+        evaluate: vi.fn(() => new Promise<{ allowed: true }>((r) => (allow = (): void => r({ allowed: true })))),
+      },
+    });
+    await actor.start();
+    const running = deliver({ ...task("t-gated"), timestamp: 1_000 });
+    await Promise.resolve();
+    actor.emergencyStop(2_000);
+    allow();
+    await running;
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(published("kaiban-events-completed")).toHaveLength(0);
+    expect(published("kaiban-events-failed")[0]!.data).toMatchObject({ error: "emergency_stop" });
+  });
+
+  it("stop() while the guards decide: the task is dead-lettered as actor_stopped, not run", async () => {
+    const { driver, deliver, published } = makeCapturingDriver();
+    const handler = vi.fn().mockResolvedValue("ok");
+    let allow!: () => void;
+    const actor = new AgentActor("agent-1", driver, "q", handler, {
+      admissionGate: {
+        evaluate: vi.fn(() => new Promise<{ allowed: true }>((r) => (allow = (): void => r({ allowed: true })))),
+      },
+    });
+    await actor.start();
+    const running = deliver(task("t-gated-2"));
+    await Promise.resolve();
+    await actor.stop();
+    allow();
+    await running;
+    expect(handler).not.toHaveBeenCalled();
+    expect(published("kaiban-events-failed")[0]!.data).toMatchObject({ error: "actor_stopped" });
+  });
+});
+

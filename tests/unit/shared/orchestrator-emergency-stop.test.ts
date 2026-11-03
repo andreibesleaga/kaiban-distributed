@@ -147,6 +147,23 @@ describe("WorkflowOrchestrator — stop signal", () => {
     ).rejects.toThrow("phase failed");
   });
 
+  it("a producer that triggers the stop synchronously still ends the step at once", async () => {
+    const stop = new AbortController();
+    const store = new InMemoryCheckpointStore();
+    const orch = new WorkflowOrchestrator({
+      workflowId: "wf",
+      router: hangingRouter(),
+      store,
+      stopSignal: stop.signal,
+    });
+    const running = orch.memoize("phase", () => {
+      stop.abort(new EmergencyStopError());
+      return new Promise<string>(() => undefined); // never settles on its own
+    });
+    await expect(running).rejects.toBeInstanceOf(EmergencyStopError);
+    expect(await store.load("wf")).toBeNull();
+  });
+
   it("a memoized producer that finishes before any stop is unchanged", async () => {
     const stop = new AbortController();
     const orch = new WorkflowOrchestrator({

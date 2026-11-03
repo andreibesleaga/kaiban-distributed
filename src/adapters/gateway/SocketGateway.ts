@@ -263,12 +263,22 @@ export class SocketGateway {
     else ack?.({ ok: false, error: result.error });
   }
 
-  /** Seed the snapshot with the stop saved before this gateway started. */
-  private async seedLastStop(control: EmergencyStopIngress): Promise<void> {
-    const saved = await control.lastStop();
-    // Set in the constructor whenever `control` is; a live delta may already be newer.
-    const plane = this.snapshot.controlPlane!;
-    if (saved && !plane.lastStop) plane.lastStop = stopOfAck(saved)!;
+  /**
+   * A STOP_ALL seen on the control channel (live, or the saved one replayed on
+   * start and reconnect — so CLI-issued stops count too). A newer stop replaces
+   * the last one and resets the ack count; every board gets the new state.
+   */
+  public noteStop(cmd: {
+    commandId: string;
+    issuedAt: number;
+    issuedBy: string;
+    reason?: string;
+  }): void {
+    const plane = this.snapshot.controlPlane;
+    if (!plane || (plane.lastStop && plane.lastStop.issuedAt >= cmd.issuedAt)) return;
+    plane.lastStop = stopOfAck(cmd)!;
+    plane.acks = 0;
+    this.io?.emit(STATE_EVENT, { controlPlane: { ...plane } });
   }
 
   /**
@@ -378,7 +388,6 @@ export class SocketGateway {
         );
       }
     });
-    if (this.control) void this.seedLastStop(this.control);
 
     this.redisSubscriber.subscribe(STATE_CHANNEL);
     this.redisSubscriber.on("message", (_channel: string, data: string) => {

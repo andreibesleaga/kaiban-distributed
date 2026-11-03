@@ -214,6 +214,7 @@ async function endFailedRun(
   if (err instanceof EmergencyStopError) {
     // Emergency STOP ALL: every task of this run was killed; end STOPPED, start fresh next time.
     pub.workflowStopped(randomUUID(), err.message, ctx);
+    pub.reviewStopped();
     runLog.finish('STOPPED');
     await orch.clear();
     log.info(`\n${err.message} — workflow stopped.\n`);

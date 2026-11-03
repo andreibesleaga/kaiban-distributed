@@ -125,6 +125,18 @@ vi.mock("../../../src/adapters/gateway/GatewayApp", () => ({
 vi.mock("../../../src/adapters/gateway/SocketGateway", () => ({
   SocketGateway: h.SocketGateway,
 }));
+const control = vi.hoisted(() => ({
+  start: vi.fn().mockResolvedValue(undefined),
+  close: vi.fn().mockResolvedValue(undefined),
+  opts: [] as Array<{ redisUrl: string; onStop: (cmd: unknown) => void }>,
+}));
+vi.mock("../../../src/infrastructure/control/control-channel", async (orig) => ({
+  ...(await orig<typeof import("../../../src/infrastructure/control/control-channel")>()),
+  ControlSubscriber: vi.fn(function (opts: { redisUrl: string; onStop: (cmd: unknown) => void }) {
+    control.opts.push(opts);
+    return { start: control.start, close: control.close };
+  }),
+}));
 
 import { runGateway } from "../../../src/main/gateway";
 
@@ -421,12 +433,16 @@ describe("runGateway", () => {
 
 describe("runGateway — emergency STOP ALL (ADR-025)", () => {
   it("control plane off (default): no ingress on the HTTP app or the socket gateway", async () => {
+    control.start.mockClear();
     await runGateway();
     await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
     const appDeps = h.GatewayApp.mock.calls[0]![0] as Record<string, unknown>;
     expect(appDeps["emergencyStop"]).toBeUndefined();
     const socketOpts = (h.SocketGateway.mock.calls[0] as unknown as unknown[])[3] as Record<string, unknown>;
     expect(socketOpts["control"]).toBeUndefined();
+    expect(control.start).not.toHaveBeenCalled();
+    handlers["SIGTERM"]!();
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalled());
   });
 
   it("control plane on: one ingress shared by the HTTP route and the socket event", async () => {
@@ -438,6 +454,14 @@ describe("runGateway — emergency STOP ALL (ADR-025)", () => {
     const socketOpts = (h.SocketGateway.mock.calls[0] as unknown as unknown[])[3] as Record<string, unknown>;
     expect(appDeps["emergencyStop"]).toBeDefined();
     expect(socketOpts["control"]).toBe(appDeps["emergencyStop"]);
+    // The gateway watches the control channel and feeds every stop to the boards.
+    expect(control.start).toHaveBeenCalled();
+    const sg = h.SocketGateway.mock.results[0]!.value as { noteStop?: ReturnType<typeof vi.fn> };
+    sg.noteStop = vi.fn();
+    control.opts.at(-1)!.onStop({ commandId: "c", issuedAt: 1, issuedBy: "x" });
+    expect(sg.noteStop).toHaveBeenCalledWith({ commandId: "c", issuedAt: 1, issuedBy: "x" });
+    handlers["SIGTERM"]!();
+    await vi.waitFor(() => expect(control.close).toHaveBeenCalled());
   });
 
   it("control plane on without BOARD_JWT_SECRET: still mounted, but warns that every stop is refused", async () => {

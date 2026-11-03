@@ -1253,6 +1253,18 @@ describe("10. Emergency STOP ALL: signed control channel + authenticated ingress
     expect(failed.find((p) => p.taskId === `t-${agentId}`)!.data["error"]).toBe("emergency_stop");
   }, 30_000);
 
+  it("an unsigned STOP_ALL written straight into the saved key is ignored by a starting node", async () => {
+    const r = new Redis(getRedisUrl());
+    cleanups.push(() => r.quit());
+    const forged = { commandId: randomUUID(), command: "STOP_ALL", issuedBy: "attacker", issuedAt: Date.now() };
+    await r.set(stopKey, JSON.stringify(forged));
+    // stoppableWorker attaches the control channel (reading the saved key) and sends a task
+    // stamped 1 s earlier: a trusted stop would refuse it; the forged one must not.
+    const { agentId, failed } = await stoppableWorker();
+    await new Promise((res) => setTimeout(res, 1_500));
+    expect(failed.find((p) => p.taskId === `t-${agentId}`)).toBeUndefined();
+  }, 30_000);
+
   it("POST /control/stop-all: 401 without or with a wrong token, 202 with a board token; 404 when the control plane is off", async () => {
     const { EmergencyStopIngress } = await import("../../src/adapters/gateway/emergency-stop-ingress");
     const { issueBoardToken } = await import("../../src/infrastructure/security/board-auth");

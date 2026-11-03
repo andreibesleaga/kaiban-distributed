@@ -63,7 +63,10 @@ export class KaibanTeamBridge {
   /**
    * Start the team. With a `signal`, an abort (an emergency STOP ALL, a
    * timeout, a shutdown) stops the team and rejects with the signal's reason;
-   * an already-aborted signal never starts it.
+   * an already-aborted signal never starts it. The team stops at the agent
+   * loop's next step: unlike tasks run by an `AgentActor` (whose handler owns
+   * the model instance, ADR-014), a model call already in flight here is not
+   * cancelled and finishes, because the agents are built by the caller.
    */
   async start(
     inputs: Record<string, unknown> = {},

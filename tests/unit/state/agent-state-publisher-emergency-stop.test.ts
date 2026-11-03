@@ -108,6 +108,29 @@ describe("AgentStatePublisher — emergency stop", () => {
     expect(publisher.getTotalTokensUsed()).toBe(0);
   });
 
+  it("a late plain failure after an emergency abort shows STOPPED, never BLOCKED/ERROR", async () => {
+    const controller = new AbortController();
+    const wrapped = publisher.wrapHandler(async () => {
+      controller.abort(new EmergencyStopError());
+      throw new Error("provider said no");
+    });
+    await expect(wrapped(payload("t-6"), controller.signal)).rejects.toBeInstanceOf(EmergencyStopError);
+    expect(taskStatuses("t-6")).toEqual(["DOING", "STOPPED"]);
+    expect(lastAgentStatus()).toBe("IDLE");
+  });
+
+  it("a late paid failure after an emergency abort still counts its tokens", async () => {
+    const { FailedAttemptError } = await import("../../../src/domain/errors/DomainError");
+    const controller = new AbortController();
+    const wrapped = publisher.wrapHandler(async () => {
+      controller.abort(new EmergencyStopError());
+      throw new FailedAttemptError("blocked", { inputTokens: 4, outputTokens: 3, estimatedCost: 0 });
+    });
+    await expect(wrapped(payload("t-7"), controller.signal)).rejects.toBeInstanceOf(EmergencyStopError);
+    expect(publisher.getTotalTokensUsed()).toBe(7);
+    expect(taskStatuses("t-7")).not.toContain("BLOCKED");
+  });
+
   it("a late result after a timeout abort is still published as before (unchanged)", async () => {
     const controller = new AbortController();
     const handler = vi.fn(async () => {

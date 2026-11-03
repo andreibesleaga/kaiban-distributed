@@ -174,6 +174,7 @@ export interface ControlSubscriberOptions {
     onStop: (cmd: StopAllCommand, source: StopSource) => void;
     // (undocumented)
     redisUrl: string;
+    retryDelayMs?: number;
 }
 
 // @public

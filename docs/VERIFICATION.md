@@ -163,14 +163,14 @@ of branch `feat/emergency-stop-2.1.0`.
 
 | Check | Result |
 | --- | --- |
-| `npm run test:coverage` | 134 files, 1,532 tests; 100 % statements (2,595), branches (1,508), functions (614), lines (2,401) |
+| `npm run test:coverage` | 134 files, 1,547 tests; 100 % statements (2,649), branches (1,540), functions (625), lines (2,441) |
 | `npm run typecheck` · `npm run lint` · `npm run lint:arch` | clean · 0 warnings · no circular dependency |
 | `npm run api:check` | both reports current (changes are additive) |
 | `npm run lockfile:check` · `npm run build` | ok · ok |
 | `cd board && npx tsc --noEmit && npx vitest run && npm run build` | 16 files, 174 tests (4 new axe tests) · built |
 | `npm run test:e2e` | 12 files, 73 tests (new: `emergency-stop.test.ts`, 4 scenarios) |
 | `npm run test:e2e:kafka` | 3 files, 4 tests (new: `emergency-stop-kafka.test.ts`); files now run one at a time |
-| `npm run test:e2e:security` | 39 tests (new section 10: unsigned and forged commands ignored; HTTP 401 / 401 / 202 / 404) |
+| `npm run test:e2e:security` | 40 tests (new section 10: unsigned and forged commands ignored, on the channel and in the saved key; HTTP 401 / 401 / 202 / 404) |
 | `npm run test:e2e:chaos` | 2 tests (new: a storm of 12 stops over 60 tasks on 3 workers; each task ends exactly once) |
 | `scripts/smoke-consumer.sh` | passed; the new exports resolve from both entry points of the packed tarball |
 | `node scripts/audit-gate.js` | 0 high/critical outside the documented exceptions (same set as 2.0.3) |
@@ -209,9 +209,31 @@ ended `emergency_stop` 57 ms after the stop, with no completion. Cost under USD 
 - Kafka e2e files ran in parallel, and the extra file made the scaling test see a rebalance
   duplicate. The Kafka suite now runs one file at a time, like the BullMQ suite.
 
+## Pull request review (#178), all fixed in one round and re-verified with the gate above
+
+- A stop that arrived while the firewall or admission gate was still deciding was missed: the actor
+  now checks for a stop right before every attempt.
+- The saved stop in Redis was trusted unsigned: with `CHANNEL_SIGNING_SECRET` it now carries a
+  durable HMAC signature and an unsigned or altered value is ignored.
+- `unwrapVerified("null")` threw in signed mode: it returns null, and the control listener catches.
+- A failed read of the saved stop counted as done: a node now does not start without it, and a
+  failed read after a reconnect is retried.
+- The gateway's view of the last stop could go stale, and CLI stops were invisible to it: the gateway
+  now subscribes to the control channel itself.
+- A handler that ignored the stop and failed late showed ERROR/BLOCKED: it shows STOPPED (its paid
+  tokens still count).
+- A memoized producer that triggered the stop synchronously could hang its step: fixed.
+- A stop during a human review left the review card pending in the examples: it is marked STOPPED.
+- The Helm charts did not render `CONTROL_PLANE_ENABLED`: both configmap templates do now
+  (checked with `helm template`).
+- `KaibanTeamBridge` (deprecated, in-process) stops its team at the next step; a model call already
+  in flight there finishes. Documented as a limit (tasks run by an `AgentActor` are cancelled mid-call).
+
 ## Seen, not changed (existing behaviour, same on `main`)
 
 - On a fresh Kafka broker with a model that answers in about 100 ms, the orchestrator's first wait
   can miss the result: the completion consumer joins its group only after the first dispatch
   (roadmap §7.2, completion routing). With a real model's latency the run completes.
 - The Kafka orchestrator prints one Node `TimeoutNegativeWarning`; the same warning appears on `main`.
+- One full unit run (of seven) failed the existing wall-clock test "retry delay increases with
+  backoff" in `AgentActor-edge.test.ts`; it passed in the other six runs and alone.

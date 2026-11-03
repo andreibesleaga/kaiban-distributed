@@ -7,6 +7,7 @@
  * (`kaiban-control:stopped-at`) before it is published, so a node that missed
  * the message, or starts later, reads it on start and on every reconnect.
  */
+import { createHmac, timingSafeEqual } from "crypto";
 import { Redis } from "ioredis";
 import { z } from "zod";
 import { CONTROL_CHANNEL } from "../messaging/channels";
@@ -15,8 +16,15 @@ import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "ControlChannel" });
 
-/** Redis key holding the latest STOP_ALL command (JSON, no TTL). */
+/**
+ * Redis key holding the latest STOP_ALL command (JSON, no TTL). With
+ * CHANNEL_SIGNING_SECRET set the stored command carries a durable `sig`
+ * (HMAC-SHA256, no freshness limit), checked before it is replayed.
+ */
 export const STOP_MOMENT_KEY = "kaiban-control:stopped-at";
+
+/** Separates saved-command signatures from the live channel's envelope signatures. */
+const SAVED_SIGNATURE_DOMAIN = "kaiban-control-saved.";
 
 /** The only command 2.1.0 knows: stop everything sent up to `issuedAt`. */
 export const StopAllCommandSchema = z
@@ -53,6 +61,52 @@ export interface ControlAck {
 export function parseStopAllCommand(value: unknown): StopAllCommand | null {
   const parsed = StopAllCommandSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+function savedSignature(canonical: string, secret: string): string {
+  return createHmac("sha256", secret)
+    .update(SAVED_SIGNATURE_DOMAIN + canonical)
+    .digest("hex");
+}
+
+/**
+ * The value to save under STOP_MOMENT_KEY: the command (in schema key order),
+ * plus a durable signature when CHANNEL_SIGNING_SECRET is set.
+ */
+export function sealStopCommand(cmd: StopAllCommand): string {
+  const canonical = JSON.stringify(StopAllCommandSchema.parse(cmd));
+  const secret = process.env["CHANNEL_SIGNING_SECRET"];
+  if (!secret) return canonical;
+  return JSON.stringify({ ...JSON.parse(canonical), sig: savedSignature(canonical, secret) });
+}
+
+/**
+ * A saved command, or null when it is not valid JSON, not a STOP_ALL, or —
+ * with CHANNEL_SIGNING_SECRET set — unsigned or wrongly signed.
+ */
+export function openSavedStopCommand(raw: string): StopAllCommand | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== "object") return null;
+  const { sig, ...fields } = value as Record<string, unknown>;
+  const cmd = parseStopAllCommand(fields);
+  if (!cmd) return null;
+  const secret = process.env["CHANNEL_SIGNING_SECRET"];
+  if (!secret) return cmd;
+  return typeof sig === "string" && sameHex(sig, savedSignature(JSON.stringify(cmd), secret))
+    ? cmd
+    : null;
+}
+
+/** Constant-time comparison of two hex strings of any length. */
+function sameHex(a: string, b: string): boolean {
+  const x = Buffer.from(a, "hex");
+  const y = Buffer.from(b, "hex");
+  return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 }
 
 /** The Redis calls `issueStopAll` needs (an ioredis client fits). */
@@ -95,23 +149,29 @@ export async function issueStopAll(
     1,
     STOP_MOMENT_KEY,
     String(cmd.issuedAt),
-    JSON.stringify(cmd),
+    sealStopCommand(cmd),
   );
   await redis.publish(CONTROL_CHANNEL, wrapSigned({ ...cmd }));
   return { saved: saved === 1 };
 }
 
-/** The latest saved STOP_ALL, or null when none is saved (or it is unreadable). */
+/**
+ * The latest saved STOP_ALL, or null when none is saved or the saved value is
+ * unreadable or fails verification (logged). A Redis error rejects.
+ */
 export async function readLastStop(
   redis: ControlReader,
 ): Promise<StopAllCommand | null> {
   const raw = await redis.get(STOP_MOMENT_KEY);
   if (raw === null) return null;
-  try {
-    return parseStopAllCommand(JSON.parse(raw));
-  } catch {
-    return null;
+  const cmd = openSavedStopCommand(raw);
+  if (!cmd) {
+    log.warn(
+      { key: STOP_MOMENT_KEY },
+      "Ignored a saved emergency stop that is invalid, unsigned or fails verification",
+    );
   }
+  return cmd;
 }
 
 /** Where a command came from: the channel, or the saved key (start / reconnect). */
@@ -121,12 +181,16 @@ export interface ControlSubscriberOptions {
   redisUrl: string;
   /** Called for each valid STOP_ALL; it must be idempotent (repeats happen). */
   onStop: (cmd: StopAllCommand, source: StopSource) => void;
+  /** Base wait between retries of a failed saved-stop read after a reconnect (default 1 000 ms). */
+  retryDelayMs?: number;
 }
 
 /**
  * Subscribes to the control channel and replays the saved stop on start and on
  * every reconnect. Two connections: a subscriber (pub/sub mode cannot GET) and
- * a reader for the saved key.
+ * a reader for the saved key. `start()` fails closed: it rejects when the
+ * saved stop cannot be read, so a node never takes tasks without the cutoff.
+ * A failed read after a reconnect is retried until it succeeds or `close()`.
  */
 export class ControlSubscriber {
   private subscriber: Redis | null = null;
@@ -150,7 +214,7 @@ export class ControlSubscriber {
     // 'ready' fires again after every reconnect: catch up on a missed stop.
     subscriber.on("ready", () => void this.catchUp());
     await subscriber.subscribe(CONTROL_CHANNEL);
-    await this.catchUp();
+    await this.replaySaved();
   }
 
   async close(): Promise<void> {
@@ -161,7 +225,12 @@ export class ControlSubscriber {
   }
 
   private onMessage(raw: string): void {
-    const payload = unwrapVerified(raw);
+    let payload: Record<string, unknown> | null;
+    try {
+      payload = unwrapVerified(raw);
+    } catch {
+      payload = null; // never let a malformed message escape into ioredis
+    }
     if (!payload) {
       log.warn(
         { channel: CONTROL_CHANNEL },
@@ -177,14 +246,25 @@ export class ControlSubscriber {
     this.deliver(cmd, "channel");
   }
 
-  private async catchUp(): Promise<void> {
+  /** Read the saved stop and deliver it; a Redis error rejects. */
+  private async replaySaved(): Promise<void> {
     /* v8 ignore next — close() raced a reconnect's 'ready' */
     if (!this.reader) return;
-    try {
-      const cmd = await readLastStop(this.reader);
-      if (cmd) this.deliver(cmd, "saved");
-    } catch (err) {
-      log.warn({ err }, "Could not read the saved emergency stop");
+    const cmd = await readLastStop(this.reader);
+    if (cmd) this.deliver(cmd, "saved");
+  }
+
+  /** After a reconnect: replay the saved stop, retrying until it succeeds or close(). */
+  private async catchUp(): Promise<void> {
+    const base = this.opts.retryDelayMs ?? 1_000;
+    for (let attempt = 1; this.reader; attempt++) {
+      try {
+        await this.replaySaved();
+        return;
+      } catch (err) {
+        log.warn({ err, attempt }, "Could not read the saved emergency stop — retrying");
+        await new Promise((r) => setTimeout(r, base * Math.min(attempt, 5)));
+      }
     }
   }
 

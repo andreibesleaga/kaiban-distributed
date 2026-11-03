@@ -495,6 +495,7 @@ export interface ControlSubscriberOptions {
     onStop: (cmd: StopAllCommand, source: StopSource) => void;
     // (undocumented)
     redisUrl: string;
+    retryDelayMs?: number;
 }
 
 // @public
@@ -1442,6 +1443,12 @@ export class SocketGateway {
     });
     // (undocumented)
     initialize(): void;
+    noteStop(cmd: {
+        commandId: string;
+        issuedAt: number;
+        issuedBy: string;
+        reason?: string;
+    }): void;
     // (undocumented)
     shutdown(): Promise<void>;
 }

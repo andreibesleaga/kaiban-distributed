@@ -127,4 +127,6 @@ Nothing to change: every addition is off unless `CONTROL_PLANE_ENABLED=true`, an
    `WorkflowOrchestrator`, and `signal` to `waitForHITLDecision`; catch `EmergencyStopError`.
 5. Code that switches over `TaskStatus` should handle the new member `STOPPED`.
 6. Keep the hosts' clocks synchronised (NTP): the stop moment is compared with each task's send time.
+7. With the control plane on, a node that cannot read the saved stop from Redis at start does not
+   start (fail closed). Helm users set `config.CONTROL_PLANE_ENABLED: "true"`.
 

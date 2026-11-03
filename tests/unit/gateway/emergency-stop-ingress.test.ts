@@ -179,18 +179,3 @@ describe("EmergencyStopIngress.stopAll", () => {
     );
   });
 });
-
-describe("EmergencyStopIngress.lastStop", () => {
-  it("reads the saved stop", async () => {
-    const redis = fakeRedis();
-    const saved = { commandId: "c", command: "STOP_ALL", issuedBy: "x", issuedAt: 3 };
-    redis.get.mockResolvedValue(JSON.stringify(saved));
-    await expect(new EmergencyStopIngress(redis).lastStop()).resolves.toEqual(saved);
-  });
-
-  it("returns null when the read fails", async () => {
-    const redis = fakeRedis();
-    redis.get.mockRejectedValue(new Error("down"));
-    await expect(new EmergencyStopIngress(redis).lastStop()).resolves.toBeNull();
-  });
-});

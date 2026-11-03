@@ -424,10 +424,8 @@ export class AgentStatePublisher {
 
         return result;
       } catch (err) {
-        if (err instanceof EmergencyStopError) {
-          this.publishStopped(payload);
-          throw err;
-        }
+        const stopped = this.endedByEmergencyStop(payload, err, signal);
+        if (stopped) throw stopped;
         // A failed attempt that already spent tokens counts against the caps
         // BEFORE the actor retries; reaching one ends the task non-retryably.
         const failure = this.accountFailedAttempt(payload.taskId, err);
@@ -485,6 +483,23 @@ export class AgentStatePublisher {
   /** Report how this node handled an emergency STOP ALL (ADR-025, ES-9). */
   publishControlAck(ack: ControlAck): void {
     this.publish({ control: ack });
+  }
+
+  /**
+   * The emergency stop that ended this attempt — the error itself, or the
+   * signal's reason when a handler that ignored the stop failed late (its paid
+   * usage still counts). Publishes STOPPED, never ERROR/BLOCKED (ES-12).
+   */
+  private endedByEmergencyStop(
+    payload: MessagePayload,
+    err: unknown,
+    signal?: AbortSignal,
+  ): EmergencyStopError | null {
+    const stop = err instanceof EmergencyStopError ? err : emergencyAbort(signal);
+    if (!stop) return null;
+    if (stop !== err) this.accountFailedAttempt(payload.taskId, err);
+    this.publishStopped(payload);
+    return stop;
   }
 
   /** Count a late result's tokens; a cap it reaches applies to the next task. */
