@@ -18,6 +18,8 @@ import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import type { AgentStatusTracker } from "../infrastructure/federation/agent-status-tracker";
 import { GatewayApp } from "../adapters/gateway/GatewayApp";
 import { SocketGateway } from "../adapters/gateway/SocketGateway";
+import { EmergencyStopIngress } from "../adapters/gateway/emergency-stop-ingress";
+import { controlPlaneEnabled } from "../shared/emergency-stop";
 import { buildReadinessProbe, buildStartupProbe } from "../resilience/health";
 import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "../shared/structured-logger";
@@ -176,6 +178,17 @@ export async function runGateway(): Promise<void> {
     a2a.statusTracker,
   );
 
+  // Emergency STOP ALL (ADR-025): one ingress for the HTTP route and the board
+  // socket event, only with CONTROL_PLANE_ENABLED. It always needs a board token.
+  const emergencyStop = controlPlaneEnabled()
+    ? new EmergencyStopIngress(redisHitlPub)
+    : undefined;
+  if (emergencyStop && !process.env["BOARD_JWT_SECRET"]) {
+    log.warn(
+      "CONTROL_PLANE_ENABLED without BOARD_JWT_SECRET: every emergency stop from the board or HTTP is refused (npm run stop-all still works)",
+    );
+  }
+
   const gateway = new GatewayApp({
     requestHandler: a2a.requestHandler,
     statusTracker: a2a.statusTracker,
@@ -183,6 +196,7 @@ export async function runGateway(): Promise<void> {
     readinessProbe,
     startupProbe,
     ...(mcpHandler ? { mcpHandler, mcpPath: config.mcp.path } : {}),
+    ...(emergencyStop ? { emergencyStop } : {}),
   });
   const httpServer = createServer(gateway.app);
   const socketGateway = new SocketGateway(
@@ -192,6 +206,7 @@ export async function runGateway(): Promise<void> {
     {
       validHitlDecisions: config.validHitlDecisions,
       hitlPublisher: redisHitlPub,
+      ...(emergencyStop ? { control: emergencyStop } : {}),
     },
   );
 

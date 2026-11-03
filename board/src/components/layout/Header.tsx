@@ -2,6 +2,7 @@
 import { useBoardStore } from '../../store/boardStore';
 import { getGatewayUrl } from '../../socket/socketClient';
 import ConnectionBadge from './ConnectionBadge';
+import StopAllButton from '../control/StopAllButton';
 import clsx from 'clsx';
 
 const STATUS_PILL: Record<string, string> = {
@@ -49,6 +50,7 @@ export default function Header() {
           </span>
 
           <ConnectionBadge />
+          <StopAllButton />
         </div>
       </div>
     </header>

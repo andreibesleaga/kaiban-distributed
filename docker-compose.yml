@@ -90,6 +90,10 @@ services:
     environment:
       ROLE: gateway
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      # Board/HTTP stop commands need a board token (unset = board auth off, stop refused).
+      BOARD_JWT_SECRET: ${BOARD_JWT_SECRET:-}
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-gateway
       KAFKA_GROUP_ID: kaiban-group
@@ -125,6 +129,8 @@ services:
     environment:
       ROLE: worker
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-worker
       KAFKA_GROUP_ID: kaiban-group

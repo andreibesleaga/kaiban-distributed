@@ -154,6 +154,14 @@ export interface WorkflowOrchestratorOptions {
    * again for a stop restored from the checkpoint (it was reported already).
    */
   onStopped?: (stop: WorkflowStop) => void;
+  /**
+   * Emergency STOP ALL (ADR-025): when this signal aborts, the current wait
+   * rejects with the signal's reason (an `EmergencyStopError` from
+   * `createEmergencyStopSignal`) and no further step is dispatched or produced.
+   * A `memoize` producer already running is not interrupted from outside: the
+   * step rejects at once and the producer's late value is discarded.
+   */
+  stopSignal?: AbortSignal;
 }
 
 /**
@@ -188,6 +196,7 @@ export class WorkflowOrchestrator {
   private readonly budget: WorkflowBudget;
   private readonly spendOf: (result: unknown) => SpendTotals | undefined;
   private readonly onStopped?: (stop: WorkflowStop) => void;
+  private readonly stopSignal?: AbortSignal;
   /**
    * Running spend of the workflow: what earlier runs saved (restored once on
    * load) plus the steps and `recordSpend` calls of this instance.
@@ -212,6 +221,7 @@ export class WorkflowOrchestrator {
     this.budget = opts.budget ?? workflowBudgetFromEnv();
     this.spendOf = opts.spendOf ?? spendOfHandlerResult;
     this.onStopped = opts.onStopped;
+    this.stopSignal = opts.stopSignal;
   }
 
   /**
@@ -274,6 +284,8 @@ export class WorkflowOrchestrator {
 
   /** Refuse to dispatch (or produce) once the workflow is stopped. */
   private assertDispatchAllowed(): void {
+    // Emergency stop first: throws the signal's reason (EmergencyStopError).
+    this.stopSignal?.throwIfAborted();
     if (this.stop) {
       throw new BudgetExceededError(
         `workflow ${this.workflowId} stopped: ${this.stop.detail}`,
@@ -418,7 +430,7 @@ export class WorkflowOrchestrator {
         taskId,
         opts.timeoutMs,
         opts.label ?? name,
-        opts.signal,
+        this.waitSignal(opts.signal),
       );
       // Account BEFORE the save: if it rejects, the step is cached in memory
       // and a retry replays it for free — so its spend must already count.
@@ -450,12 +462,32 @@ export class WorkflowOrchestrator {
     if (existing) return JSON.parse(existing.result) as T;
 
     this.assertDispatchAllowed();
-    const value = await produce();
+    const value = await this.untilStopped(produce());
 
     cp[name] = { taskId: `memoize:${name}`, result: JSON.stringify(value) };
     this.account(value); // before the save — see runStep
     await this.persist();
     return value;
+  }
+
+  /** The step's own signal, the stop signal, or both combined. */
+  private waitSignal(own?: AbortSignal): AbortSignal | undefined {
+    if (!this.stopSignal) return own;
+    return own ? AbortSignal.any([own, this.stopSignal]) : this.stopSignal;
+  }
+
+  /** Settle with `work`, or reject with the stop reason as soon as a stop arrives. */
+  private untilStopped<T>(work: Promise<T>): Promise<T> {
+    const stop = this.stopSignal;
+    if (!stop) return work;
+    work.catch(() => {}); // the losing side must not become unhandled
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => reject(stop.reason as Error);
+      stop.addEventListener("abort", onAbort, { once: true });
+      work.then(resolve, reject).finally(() =>
+        stop.removeEventListener("abort", onAbort),
+      );
+    });
   }
 
   private findByTaskId(

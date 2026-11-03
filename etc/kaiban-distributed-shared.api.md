@@ -7,6 +7,7 @@
 import type { IAgentParams } from 'kaibanjs';
 import readline from 'readline';
 import { Redis } from 'ioredis';
+import { z } from 'zod';
 
 // @public
 export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
@@ -39,7 +40,9 @@ export class AgentStatePublisher {
     // (undocumented)
     disconnect(): Promise<void>;
     getTotalTokensUsed(): number;
+    publishControlAck(ack: ControlAck): void;
     publishIdle(heartbeatIntervalMs?: number): void;
+    publishStopped(payload: MessagePayload): void;
     wrapHandler(handler: TaskHandler): TaskHandler;
 }
 
@@ -51,6 +54,25 @@ export interface AgentStatePublisherOpts {
 
 // @public
 export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
+
+// @public
+export function attachEmergencyStop(opts: AttachEmergencyStopOptions): Promise<EmergencyStopHandle>;
+
+// @public (undocumented)
+export interface AttachEmergencyStopOptions {
+    actor: {
+        emergencyStop(stoppedAt: number): EmergencyStopResult;
+    };
+    // (undocumented)
+    agentId: string;
+    nodeId?: string;
+    now?: () => number;
+    publisher?: {
+        publishControlAck(ack: ControlAck): void;
+    };
+    // (undocumented)
+    redisUrl: string;
+}
 
 // @public
 export interface AttemptUsage {
@@ -101,16 +123,76 @@ export class CompletionRouter {
 }
 
 // @public
+export interface ControlAck {
+    // (undocumented)
+    aborted: number;
+    // (undocumented)
+    agentId?: string;
+    at: number;
+    // (undocumented)
+    commandId: string;
+    // (undocumented)
+    issuedAt: number;
+    // (undocumented)
+    issuedBy: string;
+    // (undocumented)
+    nodeId: string;
+    // (undocumented)
+    outcome: "applied" | "noop" | "issued";
+    // (undocumented)
+    reason?: string;
+}
+
+// @public
+export function controlPlaneEnabled(env?: Record<string, string | undefined>): boolean;
+
+// @public
+export interface ControlPublisher {
+    // (undocumented)
+    eval(script: string, numKeys: number, ...args: string[]): Promise<unknown>;
+    // (undocumented)
+    publish(channel: string, message: string): Promise<number>;
+}
+
+// @public
+export interface ControlReader {
+    // (undocumented)
+    get(key: string): Promise<string | null>;
+}
+
+// @public
+export class ControlSubscriber {
+    constructor(opts: ControlSubscriberOptions);
+    // (undocumented)
+    close(): Promise<void>;
+    // (undocumented)
+    start(): Promise<void>;
+}
+
+// @public (undocumented)
+export interface ControlSubscriberOptions {
+    onStop: (cmd: StopAllCommand, source: StopSource) => void;
+    // (undocumented)
+    redisUrl: string;
+}
+
+// @public
 export function createAgentStatePublisher(redisUrl: string, agentInfo: AgentInfo, env?: NodeJS.ProcessEnv): AgentStatePublisher;
 
 // @public
 export function createDriver(groupIdSuffix?: string): IMessagingDriver;
+
+// @public
+export function createEmergencyStopSignal(redisUrl: string, startedAt?: number): Promise<EmergencyStopSignal>;
 
 // @public (undocumented)
 export function createLogger(tag: string): Logger;
 
 // @public
 export function createRpcClient(gatewayUrl: string): RpcClient;
+
+// @public
+export function createStopAllCommand(issuedBy: string, reason?: string, now?: number): StopAllCommand;
 
 // @public
 export const DEFAULT_MAX_TASK_TOKEN_BUDGET = 50000;
@@ -141,6 +223,37 @@ export abstract class DomainError extends Error {
 
 // @public (undocumented)
 export type DriverType = "bullmq" | "kafka" | "amqp";
+
+// @public
+export const EMERGENCY_STOP_REASON = "emergency_stop";
+
+// @public
+export class EmergencyStopError extends NonRetryableError {
+    constructor(message?: string);
+    // (undocumented)
+    readonly code = "EMERGENCY_STOP";
+    // (undocumented)
+    readonly reasonCode = "emergency_stop";
+}
+
+// @public
+export interface EmergencyStopHandle {
+    // (undocumented)
+    close(): Promise<void>;
+}
+
+// @public
+export interface EmergencyStopResult {
+    aborted: number;
+    // (undocumented)
+    outcome: "applied" | "noop";
+}
+
+// @public
+export interface EmergencyStopSignal extends EmergencyStopHandle {
+    // (undocumented)
+    signal: AbortSignal;
+}
 
 // @public
 export class FailedAttemptError extends DomainError {
@@ -178,6 +291,7 @@ export interface HitlOptions {
     onView?: () => void;
     redisUrl: string;
     rl: readline.Interface | null;
+    signal?: AbortSignal;
     taskId: string;
 }
 
@@ -190,6 +304,11 @@ export class InMemoryCheckpointStore implements CheckpointStore {
     // (undocumented)
     save(workflowId: string, checkpoint: WorkflowCheckpoint): Promise<void>;
 }
+
+// @public
+export function issueStopAll(redis: ControlPublisher, cmd: StopAllCommand): Promise<{
+    saved: boolean;
+}>;
 
 // @public
 export interface Logger {
@@ -255,6 +374,12 @@ export function parseRecommendation(review: string): string;
 
 // @public
 export function parseScore(review: string, label?: string): string;
+
+// @public
+export function parseStopAllCommand(value: unknown): StopAllCommand | null;
+
+// @public
+export function readLastStop(redis: ControlReader): Promise<StopAllCommand | null>;
 
 // @public
 export class RedisCheckpointStore implements CheckpointStore {
@@ -334,6 +459,24 @@ export interface StepCheckpoint {
 }
 
 // @public
+export const STOP_MOMENT_KEY = "kaiban-control:stopped-at";
+
+// @public (undocumented)
+export type StopAllCommand = z.infer<typeof StopAllCommandSchema>;
+
+// @public
+export const StopAllCommandSchema: z.ZodObject<{
+    commandId: z.ZodString;
+    command: z.ZodLiteral<"STOP_ALL">;
+    issuedBy: z.ZodString;
+    issuedAt: z.ZodNumber;
+    reason: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
+
+// @public
+export type StopSource = "channel" | "saved";
+
+// @public
 export type TaskHandler = (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>;
 
 // @public
@@ -377,6 +520,7 @@ export interface WorkflowOrchestratorOptions {
     onStopped?: (stop: WorkflowStop) => void;
     router: RouterLike;
     spendOf?: (result: unknown) => SpendTotals | undefined;
+    stopSignal?: AbortSignal;
     store: CheckpointStore;
     workflowId: string;
 }

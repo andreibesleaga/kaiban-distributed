@@ -11,6 +11,8 @@
  *   4. Wraps the KaibanJS handler with state tracking.
  *   5. Starts the AgentActor on the configured queue.
  *   6. Registers a SIGTERM handler for graceful shutdown.
+ *   7. With CONTROL_PLANE_ENABLED, subscribes the actor to the emergency
+ *      STOP ALL control channel (ADR-025).
  *
  * Usage:
  *   import 'dotenv/config';
@@ -42,6 +44,11 @@ import { resolveSpendCaps } from "./budget";
 import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "./structured-logger";
 import { registerNodeDrain } from "./process-drain";
+import {
+  attachEmergencyStop,
+  controlPlaneEnabled,
+  type EmergencyStopHandle,
+} from "./emergency-stop";
 
 const log = createStructuredLogger({ component: "agent-node" });
 
@@ -116,8 +123,19 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
     ...actorDeps,
     ...(taskTimeoutMs !== undefined ? { taskTimeoutMs } : {}),
     ...(retryOnTimeout ? { retryOnTimeout } : {}),
+    onEmergencyStop: (payload): void => statePublisher.publishStopped(payload),
   });
 
+  // Attach BEFORE start: the saved stop is read first, so a task sent before an
+  // emergency stop is never run by a node that starts after it (ES-3).
+  const control: EmergencyStopHandle | null = controlPlaneEnabled()
+    ? await attachEmergencyStop({
+        actor,
+        publisher: statePublisher,
+        redisUrl,
+        agentId,
+      })
+    : null;
   await actor.start();
   log.info({ label, agent: displayName, queue }, "Agent node started");
   statePublisher.publishIdle();
@@ -132,6 +150,12 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
       deadlineMs: NODE_SHUTDOWN_DEADLINE_MS,
       steps: [
         { name: "stop-actor", run: (): Promise<void> => actor.stop() },
+        {
+          name: "close-control",
+          run: async (): Promise<void> => {
+            await control?.close();
+          },
+        },
         { name: "close-driver", run: (): Promise<void> => driver.disconnect() },
         { name: "close-publisher", run: (): Promise<void> => statePublisher.disconnect() },
       ],

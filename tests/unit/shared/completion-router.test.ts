@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { CompletionRouter } from "../../../src/shared";
+import { CompletionRouter, EmergencyStopError } from "../../../src/shared";
 import type {
   IMessagingDriver,
   MessagePayload,
@@ -482,5 +482,55 @@ describe("CompletionRouter — the failure text reaches the caller", () => {
     await expect(p).rejects.toThrow(
       "Agent failed: token_budget_exceeded — Token budget exceeded: 600 >= 500",
     );
+  });
+});
+
+describe("CompletionRouter — emergency STOP ALL (ADR-025, ES-4)", () => {
+  const routerWithFailed = (): {
+    router: CompletionRouter;
+    failed: (p: MessagePayload) => Promise<void>;
+  } => {
+    let failed!: (p: MessagePayload) => Promise<void>;
+    const driver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn((q: string, h: (p: MessagePayload) => Promise<void>) => {
+        if (q === "kaiban-events-failed") failed = h;
+        return Promise.resolve();
+      }),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    const router = new CompletionRouter(driver, driver);
+    return { router, failed: (p) => failed(p) };
+  };
+
+  it("a failure record `emergency_stop` rejects with EmergencyStopError", async () => {
+    const { router, failed } = routerWithFailed();
+    const p = router.wait("t-s", 5_000, "step");
+    await failed({
+      taskId: "t-s",
+      agentId: "a",
+      timestamp: 0,
+      data: { status: "failed", error: "emergency_stop", reason: "Emergency stop" },
+    });
+    await expect(p).rejects.toBeInstanceOf(EmergencyStopError);
+    await expect(p).rejects.toThrow("Agent failed: emergency_stop — Emergency stop");
+  });
+
+  it("an abort whose reason is an EmergencyStopError rejects with that error", async () => {
+    const { router } = routerWithFailed();
+    const controller = new AbortController();
+    const p = router.wait("t-a", 5_000, "step", controller.signal);
+    const stop = new EmergencyStopError();
+    controller.abort(stop);
+    await expect(p).rejects.toBe(stop);
+  });
+
+  it("an already-aborted signal with an EmergencyStopError rejects with it at once", async () => {
+    const { router } = routerWithFailed();
+    const controller = new AbortController();
+    const stop = new EmergencyStopError();
+    controller.abort(stop);
+    await expect(router.wait("t-b", 5_000, "step", controller.signal)).rejects.toBe(stop);
   });
 });

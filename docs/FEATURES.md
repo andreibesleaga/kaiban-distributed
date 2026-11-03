@@ -138,6 +138,14 @@ And the design stance that distinguishes it from most JS agent frameworks:
   the terminal, raced fairly ("first to respond wins"); the gateway writes the durable per-task list
   entry **before** the pub/sub publish, and the board is ACK'd only after both succeed. **Value:** a
   missed pub/sub message stays recoverable via the list fallback, so an approval is never silently lost.
+- **Emergency STOP ALL (2.1.0, opt-in).** With `CONTROL_PLANE_ENABLED=true`, one press of the
+  board's STOP ALL button, one `POST /control/stop-all`, or `npm run stop-all` kills every running
+  model call, task and workflow sent up to that moment: model requests are cancelled mid-call,
+  queued tasks are refused, workflows end `STOPPED`, and anything started afterwards runs normally
+  ([ADR-025](decisions/ADR-025-emergency-stop-control-channel.md)). Board and HTTP commands need a
+  board token; every node acknowledges on the state channel. **Value:** an operator can halt a
+  runaway fleet (a looping workflow, a model spending money) with one action, without hunting for
+  processes to signal.
 - **Hardened HITL loop (v2.0 fix).** The terminal prompt no longer re-arms after a decision or stdin
   EOF, fixing a `REVISE` infinite re-prompt spin (100% CPU, unkillable process) and restoring the
   second gate on the revised draft. **Value:** the revise/re-execute cycle is dependable under real
@@ -517,6 +525,11 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 
 From [`docs/roadmap/V2.1-ROADMAP.md`](roadmap/V2.1-ROADMAP.md) — all **PLAN**, opt-in / default-off,
 and additive:
+
+- **Lifecycle controls beyond STOP ALL (§6):** pause with checkpoints and resume; stop, pause or
+  resume one agent, node, model, task or workflow; a command ledger; per-role authorisation; A2A
+  `tasks/cancel` and an MCP control tool on the control channel. (2.1.0 ships only the emergency
+  STOP ALL.)
 
 - **Federation-egress enforcement (ADR-022):** extend the Action Gate to outbound A2A/MCP traffic so
   policy/kill-switch/cost apply symmetrically to what agents emit, not just what they receive.

@@ -27,7 +27,7 @@ interface DistributedAgentState {
 
 ```typescript
 // src/domain/entities/DistributedTask.ts
-type TaskStatus = 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED';
+type TaskStatus = 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED' | 'STOPPED'; // STOPPED: emergency STOP ALL (2.1.0)
 
 interface TaskLog {
   timestamp: number;                 // Unix ms (number, not string)
@@ -222,6 +222,7 @@ class KaibanTeamBridge {
 | `POST` | `/a2a/rpc` | None (JWT verified when A2A_JWT_SECRET is set) | JSON-RPC 2.0 (requires `Content-Type: application/json`) |
 | `GET` | `/a2a/agents/:agentId/status` | None | Last-known agent status (`AgentStatusTracker`) |
 | `POST` / `GET` / `DELETE` | `/mcp` | As `/a2a/rpc` | MCP Streamable HTTP; mounted only when `MCP_SERVER_ENABLED=true` (path: `MCP_SERVER_PATH`) |
+| `POST` | `/control/stop-all` | Board token (`Authorization: Bearer`), always; refused while `BOARD_JWT_SECRET` is unset | Emergency STOP ALL (2.1.0, ADR-025); mounted only when `CONTROL_PLANE_ENABLED=true` (else 404). Body `{ reason?: string }` (≤ 500 chars). 202 `{ commandId, issuedAt, saved }`; 400 bad reason; 401; 429 after 5 per 10 s per client; 500 Redis write failed |
 
 The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId/status`, 404) use the
 envelope `{ data, meta, errors }`; error responses: `{ data: null, meta: {}, errors: [{ message }] }`.
@@ -254,15 +255,38 @@ interface StateDelta {
   tasks?: Array<{
     taskId: string;
     title: string;
-    status: TaskStatus;          // 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED'
+    status: TaskStatus;          // 'TODO' | 'DOING' | 'AWAITING_VALIDATION' | 'DONE' | 'BLOCKED' | 'STOPPED'
     assignedToAgentId: string;
     result?: string;             // capped at 20,000 UTF-8 bytes (≈20 KB), truncated on a codepoint boundary
   }>;
 
   // Workflow lifecycle (set exclusively by the orchestrator — never by workers)
   teamWorkflowStatus?: 'RUNNING' | 'FINISHED' | 'STOPPED' | 'ERRORED';
+
+  // Emergency STOP ALL (2.1.0): how the gateway ('issued') or a node handled a stop
+  control?: {
+    commandId: string; issuedAt: number; issuedBy: string; reason?: string;
+    nodeId: string; agentId?: string;
+    outcome: 'applied' | 'noop' | 'issued';
+    aborted: number;             // running tasks it killed
+    at: number;
+  };
+
+  // Snapshot only, and only with CONTROL_PLANE_ENABLED: the latest stop and node acks for it
+  controlPlane?: {
+    enabled: true;
+    lastStop?: { commandId: string; issuedAt: number; issuedBy: string; reason?: string };
+    acks: number;
+  };
 }
 ```
+
+**Event received from clients (2.1.0, only with `CONTROL_PLANE_ENABLED=true`):**
+`control:stop-all` with `{ reason?: string }`; the ack is `{ ok: true, commandId, issuedAt, saved }`
+or `{ ok: false, error }`. The handshake must carry a board token (`auth.token`), even where the
+board's read-only view runs without one. The control channel itself is `kaiban-control` (Redis
+Pub/Sub, `wrapSigned` envelope) carrying `{ commandId, command: 'STOP_ALL', issuedBy, issuedAt, reason? }`;
+the latest command is also saved under the Redis key `kaiban-control:stopped-at`.
 
 > **Source of deltas:** `AgentStatePublisher.wrapHandler()` emits `EXECUTING → THINKING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. The deprecated `DistributedStateMiddleware` forwards KaibanJS internal state for the in-process `KaibanTeamBridge` path.
 

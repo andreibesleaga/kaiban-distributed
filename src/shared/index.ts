@@ -101,5 +101,37 @@ export {
   DomainError,
   NonRetryableError,
   FailedAttemptError,
+  EmergencyStopError,
+  EMERGENCY_STOP_REASON,
 } from "../domain/errors/DomainError";
 export type { AttemptUsage } from "../domain/errors/DomainError";
+
+// Emergency STOP ALL (ADR-025): off unless CONTROL_PLANE_ENABLED=true.
+export {
+  controlPlaneEnabled,
+  createStopAllCommand,
+  attachEmergencyStop,
+  createEmergencyStopSignal,
+} from "./emergency-stop";
+export type {
+  AttachEmergencyStopOptions,
+  EmergencyStopHandle,
+  EmergencyStopSignal,
+} from "./emergency-stop";
+export {
+  issueStopAll,
+  readLastStop,
+  parseStopAllCommand,
+  ControlSubscriber,
+  StopAllCommandSchema,
+  STOP_MOMENT_KEY,
+} from "../infrastructure/control/control-channel";
+export type {
+  StopAllCommand,
+  ControlAck,
+  ControlPublisher,
+  ControlReader,
+  ControlSubscriberOptions,
+  StopSource,
+} from "../infrastructure/control/control-channel";
+export type { EmergencyStopResult } from "../application/actor/AgentActor";

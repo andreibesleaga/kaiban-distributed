@@ -53,6 +53,23 @@ export abstract class NonRetryableError extends DomainError {
   abstract readonly reasonCode: string;
 }
 
+/** Reason code of every task and workflow ended by an emergency STOP ALL (ADR-025). */
+export const EMERGENCY_STOP_REASON = "emergency_stop";
+
+/**
+ * A task or workflow ended by an emergency STOP ALL (roadmap §6.10, ADR-025).
+ * Never retried; the DLQ record keeps the inputs and its `emergency_stop` code
+ * is replayable, so stopped work can be run again after RELEASE.
+ */
+export class EmergencyStopError extends NonRetryableError {
+  readonly code = "EMERGENCY_STOP";
+  readonly reasonCode = EMERGENCY_STOP_REASON;
+
+  constructor(message = "Emergency stop") {
+    super(message);
+  }
+}
+
 /** Token usage of one paid LLM attempt (the handler-result usage fields). */
 export interface AttemptUsage {
   /** Tokens sent to the model in this attempt. */

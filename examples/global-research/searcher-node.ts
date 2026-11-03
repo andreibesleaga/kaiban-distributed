@@ -4,7 +4,12 @@ import { Redis } from 'ioredis';
 import { AgentActor, type TaskHandler } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import type { MessagePayload } from '../../src/infrastructure/messaging/interfaces';
-import { createDriver, createAgentStatePublisher } from '../../src/shared';
+import {
+  createDriver,
+  createAgentStatePublisher,
+  controlPlaneEnabled,
+  attachEmergencyStop,
+} from '../../src/shared';
 import { searcherConfig, SEARCHER_QUEUE } from './team-config';
 import { buildSecurityDeps } from '../../src/shared';
 
@@ -62,16 +67,25 @@ async function main(): Promise<void> {
     CHAOS_MODE ? wrapWithChaos(baseHandler) : baseHandler
   );
   // Routing ID is 'searcher' (matches agentId in tasks); display ID via statePublisher is SEARCHER_ID
-  const actor = new AgentActor('searcher', driver, SEARCHER_QUEUE, handler, actorDeps);
+  const actor = new AgentActor('searcher', driver, SEARCHER_QUEUE, handler, {
+    ...actorDeps,
+    onEmergencyStop: (payload): void => statePublisher.publishStopped(payload),
+  });
 
   if (CHAOS_MODE) console.log(`[Searcher:${SEARCHER_ID}] CHAOS MODE ENABLED (20% crash rate)`);
+
+  // Emergency STOP ALL (ADR-025), only with CONTROL_PLANE_ENABLED=true. Attached
+  // before start so the saved stop is read before the first task is taken.
+  const control = controlPlaneEnabled()
+    ? await attachEmergencyStop({ actor, publisher: statePublisher, redisUrl: REDIS_URL, agentId: SEARCHER_ID })
+    : null;
 
   await actor.start();
   console.log(`[Searcher:${SEARCHER_ID}] Zara started → ${SEARCHER_QUEUE}${CHAOS_MODE ? ' [CHAOS]' : ''}`);
   statePublisher.publishIdle();
 
   process.on('SIGTERM', async () => {
-    await actor.stop(); await driver.disconnect(); await statePublisher.disconnect(); process.exit(0);
+    await actor.stop(); await control?.close(); await driver.disconnect(); await statePublisher.disconnect(); process.exit(0);
   });
 }
 

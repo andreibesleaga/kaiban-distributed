@@ -43,7 +43,7 @@ One test file: `npx vitest run --config vitest.config.mts tests/unit/<path>.test
   ([docs/RELEASE.md](docs/RELEASE.md)).
 - `main` is protected: work on a branch and open a pull request.
 - No `any`; program to `IMessagingDriver`, never to BullMQ or Kafka directly.
-- The state and HITL channels stay on Redis Pub/Sub whatever `MESSAGING_DRIVER` is.
+- The state, HITL and control channels stay on Redis Pub/Sub whatever `MESSAGING_DRIVER` is.
 - Security controls stay opt-in and default-off. Configuration comes from environment variables;
   document a new one in `.env.example`.
 - A public API change needs `npm run api:update` and the updated `etc/*.api.md` in the same pull request.

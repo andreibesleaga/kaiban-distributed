@@ -130,11 +130,13 @@ export interface RevisionDeps {
   runLog: RunLogger;
   totalTokens: number;
   totalCost: number;
+  /** Emergency STOP ALL signal (CONTROL_PLANE_ENABLED); ends both waits. */
+  signal?: AbortSignal;
 }
 
 export async function runBlogRevision(deps: RevisionDeps): Promise<'PUBLISHED' | 'STOPPED'> {
   const { topic, redisUrl, editTaskId, editorialReview, blogDraft, researchSummary } = deps;
-  const { router, pub, driver, rl, runLog } = deps;
+  const { router, pub, driver, rl, runLog, signal } = deps;
 
   // Budget guard: never dispatch a (costly) revision once cumulative spend has
   // crossed a configured ceiling — stops a runaway instead of draining it.
@@ -153,7 +155,7 @@ export async function runBlogRevision(deps: RevisionDeps): Promise<'PUBLISHED' |
   });
   pub.taskQueued(revTaskId, `Revision: ${topic}`, 'writer');
 
-  const revRaw    = await router.wait(revTaskId, WRITE_WAIT_MS, 'revision');
+  const revRaw    = await router.wait(revTaskId, WRITE_WAIT_MS, 'revision', signal);
   const revParsed = parseHandlerResult(revRaw);
   runLog.logTask('revision', revTaskId, 'writer', { ...revParsed, answer: revParsed.answer });
   pub.publishMetadata({ totalTokens: runLog.totals.totalTokens, estimatedCost: runLog.totals.totalCost });
@@ -161,7 +163,7 @@ export async function runBlogRevision(deps: RevisionDeps): Promise<'PUBLISHED' |
   pub.awaitingHITL(revTaskId, 'Revised Draft — Approve for publication?', 'PUBLISH', 'N/A');
 
   const revDecision = await waitForHITLDecision({
-    taskId: revTaskId, rl, redisUrl,
+    taskId: revTaskId, rl, redisUrl, ...(signal ? { signal } : {}),
     onView: () => { process.stdout.write('\n--- REVISED DRAFT ---\n' + revParsed.answer + '\n---\n'); },
   });
 
@@ -189,10 +191,12 @@ export interface BlogDecisionDeps {
   driver: Pick<IMessagingDriver, 'publish'>;
   rl: readline.Interface;
   runLog: RunLogger;
+  /** Emergency STOP ALL signal (CONTROL_PLANE_ENABLED); ends the review wait. */
+  signal?: AbortSignal;
 }
 
 export async function handleBlogDecision(deps: BlogDecisionDeps): Promise<void> {
-  const { topic, redisUrl, gatewayUrl, research, write, edit, router, pub, driver, rl, runLog } = deps;
+  const { topic, redisUrl, gatewayUrl, research, write, edit, router, pub, driver, rl, runLog, signal } = deps;
 
   pub.awaitingHITL(edit.taskId, 'Editorial Review — Human Decision Required', edit.recommendation, edit.score);
 
@@ -202,7 +206,7 @@ export async function handleBlogDecision(deps: BlogDecisionDeps): Promise<void> 
   process.stdout.write('  (Decide here or click Approve / Revise / Reject on the board)\n');
 
   const decision = await waitForHITLDecision({
-    taskId: edit.taskId, rl, redisUrl,
+    taskId: edit.taskId, rl, redisUrl, ...(signal ? { signal } : {}),
     onView: () => { process.stdout.write('\n--- FULL BLOG DRAFT ---\n' + write.draft + '\n---\n'); },
   });
 
@@ -221,7 +225,7 @@ export async function handleBlogDecision(deps: BlogDecisionDeps): Promise<void> 
     const revOutcome = await runBlogRevision({
       topic, redisUrl, editTaskId: edit.taskId,
       editorialReview: edit.review, blogDraft: write.draft, researchSummary: research.summary,
-      router, pub, driver, rl, runLog, totalTokens, totalCost,
+      router, pub, driver, rl, runLog, totalTokens, totalCost, ...(signal ? { signal } : {}),
     });
     runLog.finish(revOutcome === 'PUBLISHED' ? 'REVISED' : 'STOPPED');
     return;

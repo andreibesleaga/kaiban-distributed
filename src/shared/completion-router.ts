@@ -18,11 +18,23 @@
  */
 import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import { createLogger } from "./logger";
+import {
+  EMERGENCY_STOP_REASON,
+  EmergencyStopError,
+} from "../domain/errors/DomainError";
 
 const COMPLETED_QUEUE = "kaiban-events-completed";
 const FAILED_QUEUE = "kaiban-events-failed";
 
 const log = createLogger("CompletionRouter");
+
+/** An emergency stop rejects with its own error; any other abort as before. */
+function abortError(signal: AbortSignal, label: string): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof EmergencyStopError
+    ? reason
+    : new Error(`Aborted wait for ${label}`);
+}
 
 export class CompletionRouter {
   private pendingResolve = new Map<string, (result: string) => void>();
@@ -79,7 +91,13 @@ export class CompletionRouter {
         const reason = payload.data["reason"];
         const detail =
           typeof reason === "string" && reason ? ` — ${reason}` : "";
-        reject(new Error(`Agent failed: ${errMsg}${detail}`));
+        const message = `Agent failed: ${errMsg}${detail}`;
+        // A task killed by an emergency STOP ALL ends the waiting workflow too.
+        reject(
+          errMsg === EMERGENCY_STOP_REASON
+            ? new EmergencyStopError(message)
+            : new Error(message),
+        );
       }
     });
   }
@@ -120,7 +138,7 @@ export class CompletionRouter {
       }
       if (signal) {
         if (signal.aborted) {
-          reject(new Error(`Aborted wait for ${label}`));
+          reject(abortError(signal, label));
           return;
         }
         signal.addEventListener(
@@ -128,7 +146,7 @@ export class CompletionRouter {
           () => {
             if (this.pendingResolve.has(taskId)) {
               this.clearPending(taskId);
-              reject(new Error(`Aborted wait for ${label}`));
+              reject(abortError(signal, label));
             }
           },
           { once: true },

@@ -295,8 +295,12 @@ stateDiagram-v2
     DOING --> AWAITING_VALIDATION : HITL Required
     AWAITING_VALIDATION --> DOING : Human Approved
 
+    TODO --> STOPPED : Emergency STOP ALL (sent before the stop)
+    DOING --> STOPPED : Emergency STOP ALL (→ kaiban-events-failed)
+
     DONE --> [*]
     BLOCKED --> [*]
+    STOPPED --> [*]
 ```
 
 ---
@@ -651,7 +655,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "name": "kaiban-gateway",
   "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
   "url": "http://localhost:3000/a2a/rpc",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
     { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }
@@ -817,6 +821,7 @@ Set `MESSAGING_DRIVER=kafka` (or `bullmq`) — the `IMessagingDriver` interface 
 | `POST` | `/a2a/rpc` | A2A v0.3 JSON-RPC: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel` |
 | `GET` | `/a2a/agents/:agentId/status` | Real last-known agent status (`AgentStatusTracker`) |
 | `POST` / `GET` / `DELETE` | `/mcp` | MCP server (Streamable HTTP), mounted only when `MCP_SERVER_ENABLED=true`; path from `MCP_SERVER_PATH` (see [docs/federation/MCP.md](docs/federation/MCP.md)) |
+| `POST` | `/control/stop-all` | Emergency STOP ALL (2.1.0), mounted only when `CONTROL_PLANE_ENABLED=true`. Needs `Authorization: Bearer <board token>` (refused while `BOARD_JWT_SECRET` is unset); body `{ "reason"?: string }`; 202 `{ commandId, issuedAt, saved }`, 401, 400, 429 (5 per 10 s per client) |
 
 The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId/status` and the 404 reply) answer in a `{ data, meta, errors }` envelope. `/a2a/rpc` answers in JSON-RPC 2.0 and the agent card is the bare A2A AgentCard, both served by `@a2a-js/sdk`.
 
@@ -826,6 +831,7 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 |-------|-----------|---------|
 | `state:update` | server → client | `StateDelta` (PII-sanitized) |
 | `hitl:decision` | client → server | `{ taskId: string, decision: 'PUBLISH' \| 'REVISE' \| 'REJECT' }` |
+| `control:stop-all` | client → server | `{ reason?: string }`, acked with `{ ok, commandId, issuedAt, saved }` or `{ ok: false, error }` (2.1.0, only with `CONTROL_PLANE_ENABLED=true`; needs the handshake board token) |
 
 ### Internal Channel Names
 
@@ -836,6 +842,7 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 | `kaiban-events-failed` | BullMQ / Kafka | DLQ after 3 retry failures, or after one non-retryable failure (budget breach, timeout, worker stopping); the record keeps the task inputs (up to 64 KB) so it can be replayed |
 | `kaiban-state-events` | Redis Pub/Sub | Agent/workflow state → board |
 | `kaiban-hitl-decisions` | Redis Pub/Sub | Board HITL decisions → orchestrator |
+| `kaiban-control` | Redis Pub/Sub | Emergency STOP ALL → every worker and orchestrator (2.1.0, [ADR-025](docs/decisions/ADR-025-emergency-stop-control-channel.md)); signed with `CHANNEL_SIGNING_SECRET` when set; the latest stop is also kept in the Redis key `kaiban-control:stopped-at` |
 
 ---
 
@@ -863,15 +870,26 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 | `MAX_WORKFLOW_TOKENS` | `unlimited` | No | Token cap per workflow (orchestrator) |
 | `AGENT_TIMEOUT_MS` | `300000` | No | Time limit for one task attempt, on the gateway's wait and (since 2.0.1) on every worker node; a timed-out task is not retried unless `RETRY_ON_TIMEOUT` is on |
 | `RETRY_ON_TIMEOUT` | `false` | No | `true` or `1`: retry a timed-out task (3 attempts, linear back-off) instead of dead-lettering it at once; a hung provider call can then be paid for up to three times. The gateway's wait grows to 3 × `AGENT_TIMEOUT_MS` plus back-off plus 5 s, so set it identically on the gateway and every worker. A stop is never retried |
+| `CONTROL_PLANE_ENABLED` | `false` | No | `true` or `1` on **every** gateway, worker and orchestrator process: turns on the emergency STOP ALL (below). Unset: no subscription, route or socket event is added |
 | `ALLOW_INSECURE_PRODUCTION` | — | No | With `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct; `true` lets a missing one through with a warning on every start (a weak or repeated secret is never allowed) |
 
 Only the literal `unlimited` removes a spend cap; `0`, a negative number or text gives the default and logs one warning.
 
 The full list is [`.env.example`](.env.example); it also covers the variables not repeated here (`A2A_PUBLIC_URL`, `VALID_HITL_DECISIONS`, `TRUST_PROXY`, `LOG_LEVEL`, and the `MCP_*`, `ECONOMICS_*` and `GOVERNANCE_*` groups).
 
+#### Emergency STOP ALL (2.1.0)
+
+With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every running model call, every task and every workflow at once:
+
+- **From the board:** the **STOP ALL** button in the header (shown only when the gateway has the control plane on), then confirm. The board needs `VITE_BOARD_TOKEN`, and the gateway `BOARD_JWT_SECRET`.
+- **Over HTTP:** `curl -X POST http://localhost:3000/control/stop-all -H "Authorization: Bearer <board token>" -H "content-type: application/json" -d '{"reason":"runaway loop"}'`
+- **From a shell:** `npm run build` once, then `npm run stop-all -- --reason "runaway loop"` (in the image: `node dist/src/main/stop-all.js`). It needs only `REDIS_URL` (and `CHANNEL_SIGNING_SECRET` when the deployment signs its channels).
+
+The stop is a moment, not a mode. Every task sent before it ends: a running one has its model request cancelled mid-call and settles at once; a queued one is refused when it is delivered. Every workflow running then ends `STOPPED` (the examples exit with code 2). Anything started after the stop runs normally, so there is nothing to release. Stopped tasks show as `STOPPED` on the board, sit in the dead-letter channel as `emergency_stop` with their inputs, and can be replayed with `replayDlq`. Each node acknowledges on the state channel, and the board shows the last stop with its acknowledgement count. The moment is kept in Redis, so a node that missed the message or restarts still refuses the old tasks. Keep the hosts' clocks synchronised (NTP): a task sent within the clock skew of the stop can fall on either side. Pause, resume and stopping one task, agent or workflow are planned for a later version ([roadmap §6.10](docs/roadmap/V2.1-ROADMAP.md)).
+
 #### Stopping a run (2.0.1–2.0.2)
 
-There is no operator stop command yet (planned for 2.1: stop per task, workflow, node or fleet, plus pause and resume). Since 2.0.1:
+There was no operator stop command before 2.1.0 (see Emergency STOP ALL above). Since 2.0.1, without the control plane:
 
 - **Stop a worker** with SIGTERM or Ctrl-C (SIGINT). It takes no new task, aborts the call in flight, does not retry it, and drains within 25 s; a worker running several agents drains them all together and exits once, after flushing telemetry (at most 3 s more). The interrupted task goes to the dead-letter channel as `actor_stopped`, with its inputs, so it can be replayed.
 - **A task that times out** (`AGENT_TIMEOUT_MS`) is aborted and dead-lettered as `task_timeout`; it is not retried by default, so it is paid for once. With `RETRY_ON_TIMEOUT=true` it is retried up to 3 attempts in all (the last timeout is still dead-lettered as `task_timeout`).
@@ -883,6 +901,7 @@ There is no operator stop command yet (planned for 2.1: stop per task, workflow,
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VITE_GATEWAY_URL` | `http://localhost:3000` | Gateway WebSocket URL (build-time; overridable via `?gateway=` query param at runtime) |
+| `VITE_BOARD_TOKEN` | — | Board token sent in the socket handshake; needed when the gateway sets `BOARD_JWT_SECRET`, and for the STOP ALL button |
 
 #### Security (all opt-in, disabled by default)
 

@@ -376,6 +376,33 @@ docker compose -f examples/blog-team/docker-compose.kafka.yml --env-file .env do
 docker network prune --force
 ```
 
+### 1H — Emergency STOP ALL (2.1.0)
+
+Both examples honour the emergency STOP ALL when every service runs with `CONTROL_PLANE_ENABLED=true`
+(the compose files pass it through). Add to `.env`:
+
+```bash
+CONTROL_PLANE_ENABLED=true
+BOARD_JWT_SECRET=<random 32+ bytes>   # board and HTTP stops need a board token
+```
+
+Start the stack and a run as above, then stop everything that is running, from any of:
+
+```bash
+# the board: the STOP ALL button in the header (start the board with VITE_BOARD_TOKEN=<board token>)
+# HTTP (a board token from issueBoardToken):
+curl -X POST http://localhost:3000/control/stop-all \
+  -H "Authorization: Bearer <board token>" -H "content-type: application/json" \
+  -d '{"reason":"runaway loop"}'
+# a shell (Redis access only):
+npm run build && npm run stop-all -- --reason "runaway loop"
+```
+
+Every running model call is cancelled, the run's tasks show `STOPPED`, and the orchestrator prints
+`Emergency stop: … — workflow stopped.` and exits with code 2. A new run started afterwards works
+normally. Global-research behaves the same way during its fan-out (every searcher's call is
+cancelled).
+
 ---
 
 ## Example 2 — Horizontal Scaling

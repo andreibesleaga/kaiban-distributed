@@ -4,7 +4,8 @@ export type TaskStatus =
   | "DOING"
   | "AWAITING_VALIDATION"
   | "DONE"
-  | "BLOCKED";
+  | "BLOCKED"
+  | "STOPPED";
 
 const VALID_TASK_STATUSES: ReadonlySet<string> = new Set<TaskStatus>([
   "TODO",
@@ -12,6 +13,7 @@ const VALID_TASK_STATUSES: ReadonlySet<string> = new Set<TaskStatus>([
   "AWAITING_VALIDATION",
   "DONE",
   "BLOCKED",
+  "STOPPED",
 ]);
 
 export interface TaskLog {

@@ -4,6 +4,8 @@ import type {
   AgentDelta,
   BoardState,
   ConnectionStatus,
+  ControlAck,
+  ControlPlaneState,
   LogEntry,
   Metadata,
   StateDelta,
@@ -34,7 +36,28 @@ const TASK_ICONS: Record<string, string> = {
   DONE: '✅',
   BLOCKED: '🔴',
   AWAITING_VALIDATION: '⏸',
+  STOPPED: '⏹',
 };
+
+/** A newer stop replaces the last one and resets the count; node acks for it count. */
+function applyControlAck(plane: ControlPlaneState, ack: ControlAck): ControlPlaneState {
+  const { commandId, issuedAt, issuedBy, reason } = ack;
+  const next: ControlPlaneState =
+    !plane.lastStop || issuedAt > plane.lastStop.issuedAt
+      ? { enabled: true, lastStop: { commandId, issuedAt, issuedBy, ...(reason ? { reason } : {}) }, acks: 0 }
+      : { ...plane };
+  if (ack.outcome !== 'issued' && commandId === next.lastStop?.commandId) next.acks++;
+  return next;
+}
+
+/** One event-log line for a control ack. */
+function controlMessage(ack: ControlAck): string {
+  if (ack.outcome === 'issued') {
+    return `🛑 STOP ALL issued by ${ack.issuedBy}${ack.reason ? ` — ${ack.reason}` : ''}`;
+  }
+  const who = ack.agentId ? `${ack.agentId} on ${ack.nodeId}` : ack.nodeId;
+  return `🛑 ${who}: ${ack.outcome}, ${ack.aborted} task(s) killed`;
+}
 
 interface BoardActions {
   applyDelta: (delta: StateDelta) => void;
@@ -51,6 +74,7 @@ const initialState: BoardState = {
   topic: '',
   connectionStatus: 'connecting',
   log: [],
+  controlPlane: null,
 };
 
 export const useBoardStore = create<BoardState & BoardActions>((set) => ({
@@ -103,6 +127,12 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
         next.metadata = { ...(state.metadata ?? {}), ...delta.metadata } as Metadata;
       }
 
+      // Emergency STOP ALL: the snapshot's state, then live acks on top of it
+      if (delta.controlPlane) next.controlPlane = { ...delta.controlPlane };
+      if (delta.control && next.controlPlane) {
+        next.controlPlane = applyControlAck(next.controlPlane, delta.control);
+      }
+
       // Build log entries for this delta
       const newEntries: LogEntry[] = [];
 
@@ -138,6 +168,16 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
         }
       }
 
+      if (delta.control) {
+        newEntries.push({
+          id: ++logIdCounter,
+          time: nowTime(),
+          type: 'CONTROL',
+          message: controlMessage(delta.control),
+          highlight: true,
+        });
+      }
+
       for (const t of delta.tasks ?? []) {
         const icon = TASK_ICONS[t.status] ?? '📋';
         const preview = t.result ? ` — ${t.result.slice(0, 60)}` : '';
@@ -146,7 +186,7 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
           time: nowTime(),
           type: 'TASK',
           message: `${icon} ${(t.title || t.taskId).slice(0, 50)} → ${t.status}${preview}`,
-          highlight: ['DONE', 'BLOCKED', 'AWAITING_VALIDATION'].includes(t.status),
+          highlight: ['DONE', 'BLOCKED', 'AWAITING_VALIDATION', 'STOPPED'].includes(t.status),
         });
       }
 
@@ -192,6 +232,8 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
       // Preserve connectionStatus and log — they track the socket lifecycle, not workflow state
       connectionStatus: state.connectionStatus,
       log: state.log,
+      // The gateway snapshot that follows a (re)connect restores it
+      controlPlane: null,
     }));
   },
 }));

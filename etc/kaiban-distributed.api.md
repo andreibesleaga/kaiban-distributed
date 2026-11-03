@@ -25,6 +25,7 @@ import type { Task } from 'kaibanjs';
 import type { Task as Task_2 } from '@a2a-js/sdk';
 import type { TaskStore } from '@a2a-js/sdk/server';
 import { Team } from 'kaibanjs';
+import { z } from 'zod';
 
 // @public
 export const A2A_INPUT_CAPS: {
@@ -130,6 +131,7 @@ export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
 // @public (undocumented)
 export class AgentActor {
     constructor(id: string, driver: IMessagingDriver, queueName: string, taskHandler?: TaskHandler, deps?: AgentActorDeps);
+    emergencyStop(stoppedAt?: number): EmergencyStopResult;
     // (undocumented)
     start(): Promise<void>;
     // (undocumented)
@@ -143,6 +145,7 @@ export interface AgentActorDeps {
     circuitBreaker?: ICircuitBreaker;
     // (undocumented)
     firewall?: ISemanticFirewall;
+    onEmergencyStop?: (payload: MessagePayload) => void;
     retryOnTimeout?: boolean;
     taskTimeoutMs?: number;
 }
@@ -211,7 +214,9 @@ export class AgentStatePublisher {
     // (undocumented)
     disconnect(): Promise<void>;
     getTotalTokensUsed(): number;
+    publishControlAck(ack: ControlAck): void;
     publishIdle(heartbeatIntervalMs?: number): void;
+    publishStopped(payload: MessagePayload): void;
     wrapHandler(handler: TaskHandler): TaskHandler;
 }
 
@@ -304,6 +309,25 @@ export interface AppConfig {
 
 // @public
 export function assertWithinBudget(totals: SpendTotals, budget: WorkflowBudget): void;
+
+// @public
+export function attachEmergencyStop(opts: AttachEmergencyStopOptions): Promise<EmergencyStopHandle>;
+
+// @public (undocumented)
+export interface AttachEmergencyStopOptions {
+    actor: {
+        emergencyStop(stoppedAt: number): EmergencyStopResult;
+    };
+    // (undocumented)
+    agentId: string;
+    nodeId?: string;
+    now?: () => number;
+    publisher?: {
+        publishControlAck(ack: ControlAck): void;
+    };
+    // (undocumented)
+    redisUrl: string;
+}
 
 // @public
 export interface AttemptUsage {
@@ -414,6 +438,66 @@ export type Classification = "public" | "internal" | "confidential";
 export const COMPLETED_CHANNEL = "kaiban-events-completed";
 
 // @public
+export const CONTROL_CHANNEL = "kaiban-control";
+
+// @public
+export const CONTROL_STOP_ALL_EVENT = "control:stop-all";
+
+// @public
+export interface ControlAck {
+    // (undocumented)
+    aborted: number;
+    // (undocumented)
+    agentId?: string;
+    at: number;
+    // (undocumented)
+    commandId: string;
+    // (undocumented)
+    issuedAt: number;
+    // (undocumented)
+    issuedBy: string;
+    // (undocumented)
+    nodeId: string;
+    // (undocumented)
+    outcome: "applied" | "noop" | "issued";
+    // (undocumented)
+    reason?: string;
+}
+
+// @public
+export function controlPlaneEnabled(env?: Record<string, string | undefined>): boolean;
+
+// @public
+export interface ControlPublisher {
+    // (undocumented)
+    eval(script: string, numKeys: number, ...args: string[]): Promise<unknown>;
+    // (undocumented)
+    publish(channel: string, message: string): Promise<number>;
+}
+
+// @public
+export interface ControlReader {
+    // (undocumented)
+    get(key: string): Promise<string | null>;
+}
+
+// @public
+export class ControlSubscriber {
+    constructor(opts: ControlSubscriberOptions);
+    // (undocumented)
+    close(): Promise<void>;
+    // (undocumented)
+    start(): Promise<void>;
+}
+
+// @public (undocumented)
+export interface ControlSubscriberOptions {
+    onStop: (cmd: StopAllCommand, source: StopSource) => void;
+    // (undocumented)
+    redisUrl: string;
+}
+
+// @public
 export interface CostBreakdown {
     cacheSavings: CostUnits;
     costUnits: CostUnits;
@@ -459,10 +543,16 @@ export function costValidator(reservation: CostReservationLike, scopeFor?: (ctx:
 export function createAgentStatePublisher(redisUrl: string, agentInfo: AgentInfo, env?: NodeJS.ProcessEnv): AgentStatePublisher;
 
 // @public
+export function createEmergencyStopSignal(redisUrl: string, startedAt?: number): Promise<EmergencyStopSignal>;
+
+// @public
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
 
 // @public
 export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
+
+// @public
+export function createStopAllCommand(issuedBy: string, reason?: string, now?: number): StopAllCommand;
 
 // @public
 export const DEFAULT_MAX_TASK_TOKEN_BUDGET = 50000;
@@ -580,6 +670,37 @@ export interface EconomicsConfig {
 export function effectiveCacheHitRate(usage: TokenUsage): number;
 
 // @public
+export const EMERGENCY_STOP_REASON = "emergency_stop";
+
+// @public
+export class EmergencyStopError extends NonRetryableError {
+    constructor(message?: string);
+    // (undocumented)
+    readonly code = "EMERGENCY_STOP";
+    // (undocumented)
+    readonly reasonCode = "emergency_stop";
+}
+
+// @public
+export interface EmergencyStopHandle {
+    // (undocumented)
+    close(): Promise<void>;
+}
+
+// @public
+export interface EmergencyStopResult {
+    aborted: number;
+    // (undocumented)
+    outcome: "applied" | "noop";
+}
+
+// @public
+export interface EmergencyStopSignal extends EmergencyStopHandle {
+    // (undocumented)
+    signal: AbortSignal;
+}
+
+// @public
 export class EnvTokenProvider implements ITokenProvider {
     // (undocumented)
     getToken(service: string, _taskId: string): Promise<string | undefined>;
@@ -681,6 +802,8 @@ export class GatewayApp {
 
 // @public (undocumented)
 export interface GatewayAppDeps {
+    // Warning: (ae-forgotten-export) The symbol "EmergencyStopIngress" needs to be exported by the entry point index.d.ts
+    emergencyStop?: EmergencyStopIngress;
     mcpHandler?: McpHttpHandler;
     mcpPath?: string;
     readinessProbe?: () => Promise<ProbeResult>;
@@ -803,6 +926,11 @@ export function issueA2AToken(serviceId: string, expiresInSeconds?: number): str
 // @public
 export function issueBoardToken(subject: string, expiresInSeconds?: number): string;
 
+// @public
+export function issueStopAll(redis: ControlPublisher, cmd: StopAllCommand): Promise<{
+    saved: boolean;
+}>;
+
 // @public (undocumented)
 export interface ITokenProvider {
     // (undocumented)
@@ -860,8 +988,7 @@ export class KaibanTeamBridge {
     disconnect(): Promise<void>;
     // (undocumented)
     getTeam(): Team;
-    // (undocumented)
-    start(inputs?: Record<string, unknown>): Promise<{
+    start(inputs?: Record<string, unknown>, signal?: AbortSignal): Promise<{
         status: string;
         result: unknown;
         stats: unknown;
@@ -1071,6 +1198,9 @@ export function overBudgetReason(totals: SpendTotals, budget: WorkflowBudget): s
 export function parseCapEnv(name: string, raw: string | undefined, fallback: number): number;
 
 // @public
+export function parseStopAllCommand(value: unknown): StopAllCommand | null;
+
+// @public
 export class PolicyEngine implements GateValidator {
     constructor(policies: PolicySet);
     check(ctx: GateContext): GateVerdict;
@@ -1162,6 +1292,9 @@ export interface ReadinessDeps {
     // (undocumented)
     checks: ProbeCheck[];
 }
+
+// @public
+export function readLastStop(redis: ControlReader): Promise<StopAllCommand | null>;
 
 // @public
 export function recordAnomalyEvent(eventName: string, attributes: Record<string, string | number | boolean>): void;
@@ -1293,7 +1426,7 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
     recordSuccess(): void;
 }
 
-// @public (undocumented)
+// @public
 export class SlidingWindowRateLimiter {
     constructor(windowMs?: number, maxRequests?: number);
     // (undocumented)
@@ -1305,6 +1438,7 @@ export class SocketGateway {
     constructor(httpServer: Server, redisPublisher: Redis, redisSubscriber: Redis, opts?: {
         validHitlDecisions?: string[];
         hitlPublisher?: Redis;
+        control?: EmergencyStopIngress;
     });
     // (undocumented)
     initialize(): void;
@@ -1353,6 +1487,24 @@ export interface StepCheckpoint {
 }
 
 // @public
+export const STOP_MOMENT_KEY = "kaiban-control:stopped-at";
+
+// @public (undocumented)
+export type StopAllCommand = z.infer<typeof StopAllCommandSchema>;
+
+// @public
+export const StopAllCommandSchema: z.ZodObject<{
+    commandId: z.ZodString;
+    command: z.ZodLiteral<"STOP_ALL">;
+    issuedBy: z.ZodString;
+    issuedAt: z.ZodNumber;
+    reason: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
+
+// @public
+export type StopSource = "channel" | "saved";
+
+// @public
 export type TaskHandler = (payload: MessagePayload, signal?: AbortSignal) => Promise<unknown>;
 
 // @public (undocumented)
@@ -1385,7 +1537,7 @@ export interface TaskPayload {
 }
 
 // @public (undocumented)
-export type TaskStatus = "TODO" | "DOING" | "AWAITING_VALIDATION" | "DONE" | "BLOCKED";
+export type TaskStatus = "TODO" | "DOING" | "AWAITING_VALIDATION" | "DONE" | "BLOCKED" | "STOPPED";
 
 // @public (undocumented)
 export interface TelemetryConfig {
@@ -1504,6 +1656,7 @@ export interface WorkflowOrchestratorOptions {
     onStopped?: (stop: WorkflowStop) => void;
     router: RouterLike;
     spendOf?: (result: unknown) => SpendTotals | undefined;
+    stopSignal?: AbortSignal;
     store: CheckpointStore;
     workflowId: string;
 }

@@ -927,3 +927,55 @@ describe("waitForHITLDecision — handleBoardMessage error path", () => {
     warnSpy.mockRestore();
   });
 });
+
+describe("waitForHITLDecision — emergency STOP ALL signal (ADR-025, ES-4)", () => {
+  beforeEach(() => resetHoistedMocks());
+
+  it("an abort rejects with the signal's reason and closes both Redis paths", async () => {
+    const controller = new AbortController();
+    const { rl } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "t-stop",
+      rl,
+      redisUrl: "redis://localhost:6379",
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    const reason = new Error("Emergency stop");
+    controller.abort(reason);
+    await expect(promise).rejects.toBe(reason);
+    expect(mockDisconnect).toHaveBeenCalledTimes(2);
+    // A board decision arriving afterwards changes nothing.
+    state.capturedMessageHandler?.("kaiban-hitl-decisions", boardMsg("t-stop", "PUBLISH"));
+  });
+
+  it("an already-aborted signal rejects at once without opening Redis", async () => {
+    const controller = new AbortController();
+    const reason = new Error("Emergency stop");
+    controller.abort(reason);
+    await expect(
+      waitForHITLDecision({
+        taskId: "t-pre",
+        rl: null,
+        redisUrl: "redis://localhost:6379",
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
+    expect(state.redisCallCount).toBe(0);
+  });
+
+  it("a decision before any abort resolves as before, and a later abort is ignored", async () => {
+    const controller = new AbortController();
+    const promise = waitForHITLDecision({
+      taskId: "t-ok",
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    state.capturedMessageHandler!("kaiban-hitl-decisions", boardMsg("t-ok", "PUBLISH"));
+    await expect(promise).resolves.toBe("PUBLISH");
+    controller.abort(new Error("late"));
+    expect(mockDisconnect).toHaveBeenCalledTimes(2);
+  });
+});

@@ -32,6 +32,9 @@ import {
   workflowBudgetFromEnv,
   assertWithinBudget,
   BudgetExceededError,
+  EmergencyStopError,
+  controlPlaneEnabled,
+  createEmergencyStopSignal,
 } from '../../src/shared';
 import type { ResearchContext } from './types';
 import type { IMessagingDriver } from '../../src/infrastructure/messaging/interfaces';
@@ -73,6 +76,8 @@ interface PipelineDeps {
   driver: Pick<IMessagingDriver, 'publish'>;
   rl: readline.Interface | null;
   runLog: RunLogger;
+  /** Emergency STOP ALL signal (CONTROL_PLANE_ENABLED); ends the review waits. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -101,7 +106,7 @@ function restore(ctx: ResearchContext, snap: CtxSnapshot): void {
 }
 
 async function runPipeline(deps: PipelineDeps): Promise<void> {
-  const { ctx, orch, router, pub, driver, rl, runLog } = deps;
+  const { ctx, orch, router, pub, driver, rl, runLog, signal } = deps;
   const budget = workflowBudgetFromEnv();
 
   pub.workflowStarted(NUM_SEARCHERS);
@@ -177,7 +182,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   await handleDecision({
     ctx, query: QUERY, redisUrl: REDIS_URL, gov, edit,
     writeWaitMs: WRITE_WAIT_MS, autoPub: AUTO_PUBLISH,
-    router, pub, driver, rl, runLog,
+    router, pub, driver, rl, runLog, ...(signal ? { signal } : {}),
   });
 
   // Terminal state reached — wipe the checkpoint so a re-run starts fresh.
@@ -194,7 +199,43 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
 
 // ── Main: setup / teardown only ───────────────────────────────
 
-async function main(): Promise<void> {
+/** Exit code of a run ended by an emergency STOP ALL (ADR-025). */
+const EXIT_EMERGENCY_STOP = 2;
+
+/**
+ * End a run that threw: publish its terminal state and finish the run log.
+ * Returns the exit code for a stop (emergency or budget); rethrows anything else.
+ */
+async function endFailedRun(
+  err: unknown, ctx: ResearchContext, pub: ResearchStatePublisher, runLog: RunLogger,
+  orch: WorkflowOrchestrator,
+): Promise<number> {
+  ctx.metadata.endTime = Date.now();
+  if (err instanceof EmergencyStopError) {
+    // Emergency STOP ALL: every task of this run was killed; end STOPPED, start fresh next time.
+    pub.workflowStopped(randomUUID(), err.message, ctx);
+    runLog.finish('STOPPED');
+    await orch.clear();
+    log.info(`\n${err.message} — workflow stopped.\n`);
+    return EXIT_EMERGENCY_STOP;
+  }
+  if (err instanceof BudgetExceededError) {
+    // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
+    pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, ctx);
+    runLog.finish('STOPPED');
+    await orch.clear();
+    log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
+    return 0;
+  }
+  // Publish a terminal state so the board reflects the failure instead of
+  // hanging on RUNNING forever, then surface the error to the CLI.
+  const msg = err instanceof Error ? err.message : String(err);
+  pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, ctx);
+  runLog.finish('FAILED');
+  throw err;
+}
+
+async function main(): Promise<number> {
   const rl             = AUTO_PUBLISH ? null : readline.createInterface({ input: process.stdin, output: process.stdout });
   const isKafka        = getDriverType() === 'kafka';
   const completedDriver = createDriver('-orchestrator-completed');
@@ -213,7 +254,11 @@ async function main(): Promise<void> {
   // resume a specific run). A restart resumes from the last completed phase.
   const workflowId     = process.env['WORKFLOW_ID'] ?? `research-${ctx.id}`;
   const store          = new RedisCheckpointStore(REDIS_URL);
-  const orch           = new WorkflowOrchestrator({ workflowId, router, store });
+  // Emergency STOP ALL (ADR-025): only with CONTROL_PLANE_ENABLED=true.
+  const stop           = controlPlaneEnabled() ? await createEmergencyStopSignal(REDIS_URL) : null;
+  const orch           = new WorkflowOrchestrator({
+    workflowId, router, store, ...(stop ? { stopSignal: stop.signal } : {}),
+  });
 
   let socket: Socket | null = null;
 
@@ -223,8 +268,10 @@ async function main(): Promise<void> {
     if (isKafka) await failedDriver.disconnect();
     await pub.disconnect();
     await store.disconnect();
+    await stop?.close();
     rl?.close();
   };
+  let exitCode = 0;
 
   try {
     log.header('KAIBAN DISTRIBUTED — GLOBAL RESEARCH SWARM ORCHESTRATOR');
@@ -236,30 +283,18 @@ async function main(): Promise<void> {
     socket = io(GATEWAY_URL, { transports: ['websocket'] });
     socket.on('state:update', onBoardUpdate);
 
-    await runPipeline({ ctx, orch, router, pub, driver: completedDriver, rl, runLog });
+    await runPipeline({
+      ctx, orch, router, pub, driver: completedDriver, rl, runLog, ...(stop ? { signal: stop.signal } : {}),
+    });
 
   } catch (err: unknown) {
-    // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
-    if (err instanceof BudgetExceededError) {
-      ctx.metadata.endTime = Date.now();
-      pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, ctx);
-      runLog.finish('STOPPED');
-      await orch.clear();
-      log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
-    } else {
-      // Publish a terminal state so the board reflects the failure instead of
-      // hanging on RUNNING forever, then surface the error to the CLI.
-      ctx.metadata.endTime = Date.now();
-      const msg = err instanceof Error ? err.message : String(err);
-      pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, ctx);
-      runLog.finish('FAILED');
-      throw err;
-    }
+    exitCode = await endFailedRun(err, ctx, pub, runLog, orch);
   } finally {
     const logPath = await runLog.flush('examples/global-research/runs').catch(() => null);
     if (logPath) log.info(`Run log saved to ${logPath}`);
     await cleanup();
   }
+  return exitCode;
 }
 
 function onBoardUpdate(delta: Record<string, unknown>): void {
@@ -267,7 +302,10 @@ function onBoardUpdate(delta: Record<string, unknown>): void {
   if (status) process.stdout.write(`  Board: ${String(status)}\n`);
 }
 
-main().catch((err: unknown) => {
+main().then((code) => {
+  // An emergency stop leaves the killed phase's wait timers armed: exit now.
+  if (code !== 0) process.exit(code);
+}).catch((err: unknown) => {
   console.error('[GlobalResearch] Fatal error:', err);
   process.exit(1);
 });

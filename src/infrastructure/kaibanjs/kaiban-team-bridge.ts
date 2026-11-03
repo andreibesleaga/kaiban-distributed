@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Team } from "kaibanjs";
 import type { Agent, Task } from "kaibanjs";
+import { startTeam } from "./team-start";
 
 export interface KaibanTeamConfig {
   name: string;
@@ -59,10 +60,16 @@ export class KaibanTeamBridge {
     return this.team;
   }
 
+  /**
+   * Start the team. With a `signal`, an abort (an emergency STOP ALL, a
+   * timeout, a shutdown) stops the team and rejects with the signal's reason;
+   * an already-aborted signal never starts it.
+   */
   async start(
     inputs: Record<string, unknown> = {},
+    signal?: AbortSignal,
   ): Promise<{ status: string; result: unknown; stats: unknown }> {
-    return this.team.start(inputs);
+    return startTeam(this.team, inputs, signal);
   }
 
   subscribeToChanges(

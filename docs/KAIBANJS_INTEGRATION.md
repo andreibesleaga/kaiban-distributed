@@ -320,6 +320,10 @@ const result = await bridge.start({ topic: 'AI Agents in 2025' });
 console.log(result.status, result.result);
 ```
 
+Since 2.1.0, `bridge.start(inputs, signal)` takes an optional `AbortSignal`: when it aborts (for
+example from `createEmergencyStopSignal()`, the emergency STOP ALL), the team is stopped and the
+call rejects with the signal's reason; an already-aborted signal never starts the team.
+
 **How `KaibanTeamBridge` works:**
 
 ```typescript

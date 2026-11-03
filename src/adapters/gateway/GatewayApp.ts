@@ -18,6 +18,11 @@ import type { AgentStatusTracker } from "../../infrastructure/federation/agent-s
 import type { McpHttpHandler } from "../../infrastructure/federation/mcp-http";
 import type { ProbeResult } from "../../resilience/health";
 import { createStructuredLogger } from "../../shared/structured-logger";
+import { SlidingWindowRateLimiter } from "./rate-limiter";
+import type { EmergencyStopIngress } from "./emergency-stop-ingress";
+
+/** HTTP route of the emergency STOP ALL (ADR-025; only with CONTROL_PLANE_ENABLED). */
+export const CONTROL_STOP_ALL_PATH = "/control/stop-all";
 
 const log = createStructuredLogger({ component: "GatewayApp" });
 
@@ -35,39 +40,13 @@ function apiError(message: string): ApiResponse<null> {
   return { data: null, meta: {}, errors: [{ message }] };
 }
 
-// ── In-memory sliding-window rate limiter (zero-dependency) ──────────
+// The in-memory sliding-window rate limiter lives in its own module (the
+// emergency-stop ingress uses it too); re-exported here for API stability.
+export { SlidingWindowRateLimiter } from "./rate-limiter";
 
-export class SlidingWindowRateLimiter {
-  private windows = new Map<string, number[]>();
-
-  constructor(
-    private readonly windowMs = 60_000,
-    private readonly maxRequests = 100,
-  ) {}
-
-  isAllowed(key: string): boolean {
-    const now = Date.now();
-    const cutoff = now - this.windowMs;
-    let timestamps = this.windows.get(key);
-    if (!timestamps) {
-      timestamps = [];
-      this.windows.set(key, timestamps);
-    }
-    // Evict expired entries
-    while (timestamps.length > 0 && timestamps[0]! < cutoff) {
-      timestamps.shift();
-    }
-    // Prune dead keys to prevent unbounded Map growth under IP-spray attacks.
-    // Replace the stale array with a fresh one (also handles brand-new keys correctly).
-    if (timestamps.length === 0) {
-      const fresh = [now];
-      this.windows.set(key, fresh);
-      return true;
-    }
-    if (timestamps.length >= this.maxRequests) return false;
-    timestamps.push(now);
-    return true;
-  }
+/** The client address a rate limit is keyed by. */
+function clientIpOf(req: Request): string {
+  return req.ip ?? req.socket.remoteAddress ?? "unknown";
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -97,6 +76,11 @@ export interface GatewayAppDeps {
   mcpHandler?: McpHttpHandler;
   /** Path the MCP surface is mounted at (defaults to `/mcp`). */
   mcpPath?: string;
+  /**
+   * Emergency STOP ALL ingress (ADR-025). When set, `POST /control/stop-all`
+   * is mounted (board token always required); unset ⇒ 404 (default-off).
+   */
+  emergencyStop?: EmergencyStopIngress;
 }
 
 const READY: ProbeResult = { ready: true, checks: [] };
@@ -126,6 +110,7 @@ export class GatewayApp {
   private readonly startupProbe: () => Promise<ProbeResult>;
   private readonly mcpHandler?: McpHttpHandler;
   private readonly mcpPath: string;
+  private readonly emergencyStop?: EmergencyStopIngress;
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
   // Probe routes: 120/min per route per client (keyed route|ip), so Kubernetes
   // liveness + readiness + startup from one kubelet address never share a bucket,
@@ -140,6 +125,7 @@ export class GatewayApp {
     this.startupProbe = deps.startupProbe ?? alwaysReady;
     this.mcpHandler = deps.mcpHandler;
     this.mcpPath = deps.mcpPath ?? "/mcp";
+    this.emergencyStop = deps.emergencyStop;
     this.app = express();
 
     // Trust proxy — enables correct req.ip behind reverse proxies (Railway, K8s, Nginx).
@@ -207,6 +193,17 @@ export class GatewayApp {
     // MCP Streamable-HTTP surface (Phase M) — only when a handler is provided.
     if (this.mcpHandler) this.registerMcpRoutes(this.mcpHandler);
 
+    // Emergency STOP ALL (ADR-025) — only when the control plane is on.
+    const emergencyStop = this.emergencyStop;
+    if (emergencyStop) {
+      this.app.post(
+        CONTROL_STOP_ALL_PATH,
+        this.rateLimit.bind(this),
+        this.enforceRequestTimeout.bind(this),
+        (req: Request, res: Response) => void this.handleStopAll(emergencyStop, req, res),
+      );
+    }
+
     this.app.use(this.handleNotFound.bind(this));
   }
 
@@ -249,7 +246,7 @@ export class GatewayApp {
   }
 
   private rateLimit(req: Request, res: Response, next: NextFunction): void {
-    const clientIp = req.ip ?? req.socket.remoteAddress ?? "unknown";
+    const clientIp = clientIpOf(req);
     if (!this.rateLimiter.isAllowed(clientIp)) {
       res.status(429).json(apiError("Too Many Requests"));
       return;
@@ -264,7 +261,7 @@ export class GatewayApp {
     res: Response,
     next: NextFunction,
   ): void {
-    const clientIp = req.ip ?? req.socket.remoteAddress ?? "unknown";
+    const clientIp = clientIpOf(req);
     if (!this.healthRateLimiter.isAllowed(`${route}|${clientIp}`)) {
       res.status(429).json(apiError("Too Many Requests"));
       return;
@@ -324,6 +321,32 @@ export class GatewayApp {
         seen: this.statusTracker.hasSeen(agentId),
       }),
     );
+  }
+
+  /** Map the ingress outcome to HTTP: 202 issued, else its refusal status. */
+  private async handleStopAll(
+    ingress: EmergencyStopIngress,
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    const header = req.headers["authorization"];
+    const token =
+      typeof header === "string" && header.startsWith("Bearer ")
+        ? header.slice("Bearer ".length)
+        : undefined;
+    const clientIp = clientIpOf(req);
+    try {
+      const result = await ingress.stopAll(token, req.body, clientIp);
+      if (result.ok) {
+        const { commandId, issuedAt, saved } = result;
+        res.status(202).json(apiOk({ commandId, issuedAt, saved }));
+      } else {
+        res.status(result.status).json(apiError(result.error));
+      }
+    } catch (err) {
+      log.error({ err }, "Emergency stop failed");
+      res.status(500).json(apiError("Emergency stop failed"));
+    }
   }
 
   private handleNotFound(_req: Request, res: Response): void {

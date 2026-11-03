@@ -14,6 +14,7 @@ const STATUS_BADGE: Record<string, string> = {
   DONE:                 'bg-emerald-900 text-emerald-300',
   BLOCKED:              'bg-red-900 text-red-300',
   AWAITING_VALIDATION:  'bg-amber-900 text-amber-300',
+  STOPPED:              'bg-orange-900 text-orange-200',
 };
 
 export default function TaskCard({ task, agent, onClick }: Props) {
@@ -74,7 +75,7 @@ export default function TaskCard({ task, agent, onClick }: Props) {
       {/* Status badge */}
       <div className="flex justify-end">
         <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded', badgeClass)}>
-          {task.status}
+          {task.status === 'STOPPED' ? '⏹ Stopped' : task.status}
         </span>
       </div>
     </div>

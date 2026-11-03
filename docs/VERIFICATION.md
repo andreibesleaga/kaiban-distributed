@@ -150,3 +150,68 @@ consumer smoke — followed by **fixes for every real finding**, then a **full r
    Trivy/CodeQL/SBOM/cosign) + final branch review before `merge to main` + tag `v2.0.0`.
 
 **No source defects remain; all locally-runnable gates are green.**
+
+---
+
+# 2.1.0 verification record — emergency STOP ALL (2026-11-03)
+
+Scope: the emergency STOP ALL ([ADR-025](decisions/ADR-025-emergency-stop-control-channel.md),
+[roadmap §6.10](roadmap/V2.1-ROADMAP.md)). Every line below is from a command run on the final tree
+of branch `feat/emergency-stop-2.1.0`.
+
+## Gate
+
+| Check | Result |
+| --- | --- |
+| `npm run test:coverage` | 134 files, 1,532 tests; 100 % statements (2,595), branches (1,508), functions (614), lines (2,401) |
+| `npm run typecheck` · `npm run lint` · `npm run lint:arch` | clean · 0 warnings · no circular dependency |
+| `npm run api:check` | both reports current (changes are additive) |
+| `npm run lockfile:check` · `npm run build` | ok · ok |
+| `cd board && npx tsc --noEmit && npx vitest run && npm run build` | 16 files, 174 tests (4 new axe tests) · built |
+| `npm run test:e2e` | 12 files, 73 tests (new: `emergency-stop.test.ts`, 4 scenarios) |
+| `npm run test:e2e:kafka` | 3 files, 4 tests (new: `emergency-stop-kafka.test.ts`); files now run one at a time |
+| `npm run test:e2e:security` | 39 tests (new section 10: unsigned and forged commands ignored; HTTP 401 / 401 / 202 / 404) |
+| `npm run test:e2e:chaos` | 2 tests (new: a storm of 12 stops over 60 tasks on 3 workers; each task ends exactly once) |
+| `scripts/smoke-consumer.sh` | passed; the new exports resolve from both entry points of the packed tarball |
+| `node scripts/audit-gate.js` | 0 high/critical outside the documented exceptions (same set as 2.0.3) |
+| `docker build .` + image smoke | gateway healthy; `POST /control/stop-all` without a token → 401; `node dist/src/main/stop-all.js` issued a stop |
+| lychee (offline) on README, CHANGELOG, MIGRATION, EXAMPLES, AGENTS, `docs/` | 274 links, 0 errors |
+
+## Runs of the examples (Docker, mock OpenAI-compatible model)
+
+| Stack | Run | Result |
+| --- | --- | --- |
+| blog-team, BullMQ | normal run, control plane on | published, exit 0 |
+| | STOP ALL over HTTP during a model call | model request aborted 260 ms after the stop; workflow `STOPPED`, exit 2 |
+| | run after the stop | published, exit 0 |
+| | STOP ALL from the board button (Playwright click) | request aborted; exit 2 |
+| | `npm run stop-all` | request aborted; exit 2 |
+| | stop while waiting for the human review | run ended 775 ms after the stop; exit 2 |
+| | control plane off | `POST /control/stop-all` → 404; normal run published, exit 0 |
+| global-research, BullMQ, orchestrator in Docker | normal run (4 searchers) | exit 0 |
+| | stop during the fan-out | all 4 model requests aborted within 672 ms; exit 2 |
+| | run after the stop | exit 0 |
+| blog-team, Kafka | normal run | exit 0 |
+| | stop during a model call | request aborted after 665 ms; exit 2 |
+
+Board: `e2e/board-control.spec.ts` (STOP ALL button, stop banner, confirmation dialog) passes against
+the live gateway, with a new baseline for the dialog.
+
+Live model: one STOP ALL during a real `openai/gpt-4o-mini` call through OpenRouter, via a recording
+proxy. The request was closed by the client mid-generation and never finished upstream; the task
+ended `emergency_stop` 57 ms after the stop, with no completion. Cost under USD 0.01.
+
+## Found and fixed during verification
+
+- A node that starts after a stop could take an old queued task before reading the saved stop. The
+  control channel is now attached before `actor.start()` (in `startAgentNode` and the searcher
+  example); the e2e scenario A3 covers it.
+- Kafka e2e files ran in parallel, and the extra file made the scaling test see a rebalance
+  duplicate. The Kafka suite now runs one file at a time, like the BullMQ suite.
+
+## Seen, not changed (existing behaviour, same on `main`)
+
+- On a fresh Kafka broker with a model that answers in about 100 ms, the orchestrator's first wait
+  can miss the result: the completion consumer joins its group only after the first dispatch
+  (roadmap §7.2, completion routing). With a real model's latency the run completes.
+- The Kafka orchestrator prints one Node `TimeoutNegativeWarning`; the same warning appears on `main`.

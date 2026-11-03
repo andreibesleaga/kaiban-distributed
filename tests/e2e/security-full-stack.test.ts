@@ -1193,3 +1193,96 @@ describe("9. Full Stack: A2A auth + signing + firewall + circuit breaker", () =>
     expect(legit).toBe(true);
   });
 });
+
+// ─── 10. Emergency STOP ALL (ADR-025) ────────────────────────────────────────
+
+describe("10. Emergency STOP ALL: signed control channel + authenticated ingress (production mode)", () => {
+  const stopKey = "kaiban-control:stopped-at";
+  const cleanups: Array<() => Promise<unknown>> = [];
+
+  afterEach(async () => {
+    while (cleanups.length) await cleanups.pop()!().catch(() => undefined);
+    const r = new Redis(getRedisUrl());
+    await r.del(stopKey);
+    await r.quit();
+  });
+
+  async function stoppableWorker(): Promise<{ queue: string; agentId: string; failed: MessagePayloadLike[] }> {
+    const { attachEmergencyStop } = await import("../../src/shared/emergency-stop");
+    const agentId = `sec-stop-${randomUUID().slice(0, 8)}`;
+    const queue = `kaiban-agents-${agentId}`;
+    const driver = new BullMQDriver(makeConnConfig());
+    cleanups.push(() => driver.disconnect());
+    const actor = new AgentActor(agentId, driver, queue, (_p, signal) =>
+      new Promise((_r, reject) => signal?.addEventListener("abort", () => reject(signal.reason as Error))),
+      { taskTimeoutMs: 60_000 },
+    );
+    const control = await attachEmergencyStop({ actor, redisUrl: getRedisUrl(), agentId });
+    cleanups.push(() => control.close());
+    await actor.start();
+    cleanups.push(() => actor.stop());
+    const failed: MessagePayloadLike[] = [];
+    const dlq = new BullMQDriver(makeConnConfig());
+    cleanups.push(() => dlq.disconnect());
+    await dlq.subscribe(DLQ, async (p) => void failed.push(p));
+    const sender = new BullMQDriver(makeConnConfig());
+    cleanups.push(() => sender.disconnect());
+    await sender.publish(queue, { taskId: `t-${agentId}`, agentId, data: {}, timestamp: Date.now() - 1_000 });
+    await new Promise((r) => setTimeout(r, 1_000));
+    return { queue, agentId, failed };
+  }
+
+  it("an unsigned or forged STOP_ALL on the channel is ignored; a signed one stops the task", async () => {
+    const { agentId, failed } = await stoppableWorker();
+    const pub = new Redis(getRedisUrl());
+    cleanups.push(() => pub.quit());
+    const cmd = { commandId: randomUUID(), command: "STOP_ALL", issuedBy: "attacker", issuedAt: Date.now() };
+
+    await pub.publish("kaiban-control", JSON.stringify(cmd)); // unsigned
+    await pub.publish(
+      "kaiban-control",
+      JSON.stringify({ payload: cmd, sig: "0".repeat(64), ts: Date.now() }), // forged
+    );
+    await new Promise((r) => setTimeout(r, 1_500));
+    expect(failed.find((p) => p.taskId === `t-${agentId}`)).toBeUndefined();
+
+    const { issueStopAll } = await import("../../src/infrastructure/control/control-channel");
+    const { createStopAllCommand } = await import("../../src/shared/emergency-stop");
+    await issueStopAll(pub, createStopAllCommand("operator"));
+    await waitFor(() => failed.some((p) => p.taskId === `t-${agentId}`), 8_000);
+    expect(failed.find((p) => p.taskId === `t-${agentId}`)!.data["error"]).toBe("emergency_stop");
+  }, 30_000);
+
+  it("POST /control/stop-all: 401 without or with a wrong token, 202 with a board token; 404 when the control plane is off", async () => {
+    const { EmergencyStopIngress } = await import("../../src/adapters/gateway/emergency-stop-ingress");
+    const { issueBoardToken } = await import("../../src/infrastructure/security/board-auth");
+    const redis = new Redis(getRedisUrl());
+    cleanups.push(() => redis.quit());
+    const serve = async (withControl: boolean): Promise<string> => {
+      const gw = makeA2AGateway(
+        withControl ? { emergencyStop: new EmergencyStopIngress(redis) } : {},
+      );
+      const server = createServer(gw.app);
+      await new Promise<void>((resolve) => server.listen(0, () => resolve()));
+      cleanups.push(() => new Promise<void>((res) => server.close(() => res())));
+      return `http://localhost:${(server.address() as { port: number }).port}`;
+    };
+    const post = (url: string, token?: string): Promise<number> =>
+      fetch(`${url}/control/stop-all`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ reason: "security e2e" }),
+      }).then((r) => r.status);
+
+    const on = await serve(true);
+    expect(await post(on)).toBe(401);
+    expect(await post(on, issueA2AToken("not-a-board-token"))).toBe(401);
+    expect(await post(on, issueBoardToken("operator"))).toBe(202);
+    expect(await redis.get(stopKey)).toContain('"issuedBy":"operator"');
+
+    const off = await serve(false);
+    expect(await post(off, issueBoardToken("operator"))).toBe(404);
+  }, 30_000);
+});
+
+type MessagePayloadLike = { taskId: string; data: Record<string, unknown> };

@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-11-03
+
+One new, opt-in control: the emergency STOP ALL ([ADR-025](docs/decisions/ADR-025-emergency-stop-control-channel.md), [roadmap §6.10](docs/roadmap/V2.1-ROADMAP.md)). Off unless `CONTROL_PLANE_ENABLED=true`; with it unset, behaviour is that of 2.0.3.
+
+### Added
+
+- Emergency STOP ALL: one command kills every running model call, task and workflow sent up to that moment. Running tasks are aborted mid-call and settled at once (even when a handler ignores its abort signal; its late result is discarded); tasks still queued are refused when delivered; workflows end `STOPPED`. Anything started after the stop runs normally. Nothing is resumed: stopped tasks are dead-lettered as `emergency_stop` (replayable) with their inputs.
+- Triggers: the board's **STOP ALL** button (with a confirmation dialog and an optional reason), `POST /control/stop-all` and the socket event `control:stop-all` (both need a board token and are refused while `BOARD_JWT_SECRET` is unset; 5 commands per 10 s per client), and `npm run stop-all` (`node dist/src/main/stop-all.js` in the image).
+- A sixth channel, `kaiban-control` (Redis Pub/Sub for every driver, signed with `CHANNEL_SIGNING_SECRET` when set). The latest stop is kept in the Redis key `kaiban-control:stopped-at` and read by every node at start and on reconnect.
+- Acknowledgements: each node reports `applied` or `noop` and the number of tasks it killed as a `control` delta on the state channel; the gateway snapshot carries `controlPlane: { enabled, lastStop, acks }`, and the board shows the last stop.
+- `TaskStatus` gains `STOPPED`; the board shows such tasks in the Blocked column with a "Stopped" badge.
+- API (additive): `EmergencyStopError`, `EMERGENCY_STOP_REASON`, `AgentActor.emergencyStop(stoppedAt)` and `AgentActorDeps.onEmergencyStop`, `AgentStatePublisher.publishStopped` and `publishControlAck`, `WorkflowOrchestratorOptions.stopSignal`, `HitlOptions.signal`, `KaibanTeamBridge.start(inputs, signal)`, and from both entry points `controlPlaneEnabled`, `createStopAllCommand`, `attachEmergencyStop`, `createEmergencyStopSignal`, `issueStopAll`, `readLastStop`, `parseStopAllCommand`, `ControlSubscriber`, `StopAllCommandSchema`, `STOP_MOMENT_KEY` and their types. `CompletionRouter` rejects a wait with `EmergencyStopError` for an `emergency_stop` record, or when its signal aborts with one.
+- The compose files pass `CONTROL_PLANE_ENABLED` to every service and `BOARD_JWT_SECRET` to the gateway.
+
+### Changed
+
+- `KaibanTeamBridge.start()` stops the team when its new optional signal aborts (the `startTeam` helper moved to `src/infrastructure/kaibanjs/team-start.ts`).
+- `SlidingWindowRateLimiter` moved to `src/adapters/gateway/rate-limiter.ts`; it is still exported from the same entry point.
+- Tests: the Kafka e2e files run one at a time (`fileParallelism: false`), as the BullMQ suite does.
+
 ## [2.0.3] — 2026-10-31
 
 Documentation, licensing and dependency follow-ups to 2.0.2; one behaviour change: the agent card advertises only the JSON-RPC transport the gateway serves. No new channel, no change to a default.

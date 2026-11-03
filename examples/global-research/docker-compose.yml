@@ -37,6 +37,10 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      # Board/HTTP stop commands need a board token (unset = board auth off, stop refused).
+      BOARD_JWT_SECRET: ${BOARD_JWT_SECRET:-}
       MESSAGING_DRIVER: bullmq
       PORT: '3000'
       SERVICE_NAME: kaiban-gateway
@@ -72,6 +76,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -109,6 +115,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       AGENT_ID: writer
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -145,6 +153,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       AGENT_ID: reviewer
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -181,6 +191,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       AGENT_ID: editor
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -222,6 +234,8 @@ services:
     environment:
       GATEWAY_URL: http://gateway:3000
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       MESSAGING_DRIVER: bullmq
       QUERY: ${QUERY:-The Future of AI Agents}
       NUM_SEARCHERS: ${NUM_SEARCHERS:-4}

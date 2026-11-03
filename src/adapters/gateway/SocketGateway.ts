@@ -9,7 +9,9 @@ import {
   STATE_EVENT_REQUEST,
   HITL_CHANNEL,
   HITL_SOCKET_EVENT,
+  CONTROL_STOP_ALL_EVENT,
 } from "../../infrastructure/messaging/channels";
+import type { EmergencyStopIngress } from "./emergency-stop-ingress";
 import { verifyBoardToken } from "../../infrastructure/security/board-auth";
 import {
   unwrapVerified,
@@ -28,6 +30,30 @@ const HITL_MAX_PER_WINDOW = 10;
 const HITL_WINDOW_MS = 10_000;
 
 type HitlAck = (response: { ok: boolean; error?: string }) => void;
+type StopAllAck = (response: Record<string, unknown>) => void;
+
+/** The latest emergency stop as boards see it (ADR-025). */
+interface LastStop {
+  commandId: string;
+  issuedAt: number;
+  issuedBy: string;
+  reason?: string;
+}
+
+/** The latest stop described by a `control` delta, or null when it is malformed. */
+function stopOfAck(ack: unknown): LastStop | null {
+  if (ack === null || typeof ack !== "object") return null;
+  const a = ack as Record<string, unknown>;
+  if (typeof a["commandId"] !== "string" || typeof a["issuedAt"] !== "number") {
+    return null;
+  }
+  return {
+    commandId: a["commandId"],
+    issuedAt: a["issuedAt"],
+    issuedBy: typeof a["issuedBy"] === "string" ? a["issuedBy"] : "unknown",
+    ...(typeof a["reason"] === "string" ? { reason: a["reason"] } : {}),
+  };
+}
 
 /** Why a HITL payload is refused, or null when it is well-formed. */
 function hitlPayloadError(
@@ -58,6 +84,8 @@ interface StateSnapshot {
   tasks: Map<string, Record<string, unknown>>;
   metadata?: Record<string, unknown>;
   inputs?: Record<string, unknown>;
+  /** Present only with the control plane on: the latest stop + node acks for it. */
+  controlPlane?: { enabled: true; lastStop?: LastStop; acks: number };
 }
 
 export class SocketGateway {
@@ -68,6 +96,8 @@ export class SocketGateway {
   /** Dedicated publisher for HITL decisions — separate from the Socket.IO adapter's pubClient */
   private hitlPublisher: Redis;
   private validDecisions: string[];
+  /** Emergency STOP ALL ingress; set only with CONTROL_PLANE_ENABLED (ADR-025). */
+  private control?: EmergencyStopIngress;
 
   /** Running state snapshot — gate truth for reconnecting clients */
   private snapshot: StateSnapshot = { agents: new Map(), tasks: new Map() };
@@ -76,13 +106,19 @@ export class SocketGateway {
     httpServer: HttpServer,
     redisPublisher: Redis,
     redisSubscriber: Redis,
-    opts?: { validHitlDecisions?: string[]; hitlPublisher?: Redis },
+    opts?: {
+      validHitlDecisions?: string[];
+      hitlPublisher?: Redis;
+      control?: EmergencyStopIngress;
+    },
   ) {
     this.httpServer = httpServer;
     this.redisPublisher = redisPublisher;
     this.redisSubscriber = redisSubscriber;
     this.hitlPublisher = opts?.hitlPublisher ?? redisPublisher;
     this.validDecisions = opts?.validHitlDecisions ?? DEFAULT_DECISIONS;
+    this.control = opts?.control;
+    if (this.control) this.snapshot.controlPlane = { enabled: true, acks: 0 };
   }
 
   // ─── Snapshot helpers ────────────────────────────────────────────────────
@@ -119,8 +155,24 @@ export class SocketGateway {
     }
   }
 
+  /** A `control` delta: a newer stop replaces the last one; node acks are counted. */
+  private applyControl(delta: Record<string, unknown>): void {
+    const plane = this.snapshot.controlPlane;
+    const stop = plane ? stopOfAck(delta["control"]) : null;
+    if (!plane || !stop) return;
+    if (!plane.lastStop || stop.issuedAt > plane.lastStop.issuedAt) {
+      plane.lastStop = stop;
+      plane.acks = 0;
+    }
+    const outcome = (delta["control"] as Record<string, unknown>)["outcome"];
+    if (stop.commandId === plane.lastStop.commandId && outcome !== "issued") {
+      plane.acks++;
+    }
+  }
+
   private applyToSnapshot(delta: Record<string, unknown>): void {
     this.applyStatusUpdate(delta);
+    this.applyControl(delta);
     this.applyMapDelta(delta, "agents", "agentId", this.snapshot.agents);
     this.applyMapDelta(delta, "tasks", "taskId", this.snapshot.tasks);
     if (delta["metadata"] !== null && typeof delta["metadata"] === "object") {
@@ -153,6 +205,9 @@ export class SocketGateway {
     }
     if (this.snapshot.inputs !== undefined) {
       out["inputs"] = this.snapshot.inputs;
+    }
+    if (this.snapshot.controlPlane !== undefined) {
+      out["controlPlane"] = { ...this.snapshot.controlPlane };
     }
     return out;
   }
@@ -193,6 +248,27 @@ export class SocketGateway {
       "HITL decision received",
     );
     this.forwardHitlDecision(taskId, decision, ack);
+  }
+
+  /** Board → emergency STOP ALL; the ingress authenticates, limits and issues it. */
+  private async handleStopAll(
+    control: EmergencyStopIngress,
+    socket: Socket,
+    payload: unknown,
+    ack?: StopAllAck,
+  ): Promise<void> {
+    const token = socket.handshake.auth["token"] as string | undefined;
+    const result = await control.stopAll(token, payload, socket.handshake.address);
+    if (result.ok) ack?.({ ...result });
+    else ack?.({ ok: false, error: result.error });
+  }
+
+  /** Seed the snapshot with the stop saved before this gateway started. */
+  private async seedLastStop(control: EmergencyStopIngress): Promise<void> {
+    const saved = await control.lastStop();
+    // Set in the constructor whenever `control` is; a live delta may already be newer.
+    const plane = this.snapshot.controlPlane!;
+    if (saved && !plane.lastStop) plane.lastStop = stopOfAck(saved)!;
   }
 
   /**
@@ -293,7 +369,16 @@ export class SocketGateway {
       socket.on(HITL_SOCKET_EVENT, (payload: unknown, ack?: HitlAck) =>
         this.handleHitlDecision(socket, sentAt, payload, ack),
       );
+
+      // Emergency STOP ALL (ADR-025) — only with the control plane on.
+      const control = this.control;
+      if (control) {
+        socket.on(CONTROL_STOP_ALL_EVENT, (payload: unknown, ack?: StopAllAck) =>
+          void this.handleStopAll(control, socket, payload, ack),
+        );
+      }
     });
+    if (this.control) void this.seedLastStop(this.control);
 
     this.redisSubscriber.subscribe(STATE_CHANNEL);
     this.redisSubscriber.on("message", (_channel: string, data: string) => {

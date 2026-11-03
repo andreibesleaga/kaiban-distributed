@@ -106,3 +106,44 @@ export function sendHitlDecision(taskId: string, decision: HitlDecision): void {
     }
   });
 }
+
+/**
+ * Emergency STOP ALL (ADR-025): ask the gateway to kill every running model
+ * call, task and workflow. The gateway needs a board token (VITE_BOARD_TOKEN)
+ * and CONTROL_PLANE_ENABLED; its answer is logged in the event panel.
+ */
+export function sendStopAll(reason?: string): void {
+  const store = useBoardStore.getState();
+
+  if (!socket?.connected) {
+    store.addLog('ERROR', 'Cannot send STOP ALL — not connected to gateway (run npm run stop-all instead)', true);
+    return;
+  }
+
+  store.addLog('CONTROL', 'Sending STOP ALL…', true);
+  const ACK_TIMEOUT_MS = 8_000;
+  let ackReceived = false;
+  const timer = setTimeout(() => {
+    if (!ackReceived) {
+      useBoardStore.getState().addLog(
+        'ERROR',
+        `STOP ALL not confirmed by the gateway within ${ACK_TIMEOUT_MS / 1000}s — check the gateway, or run npm run stop-all`,
+        true,
+      );
+    }
+  }, ACK_TIMEOUT_MS);
+
+  socket.emit(
+    'control:stop-all',
+    reason ? { reason } : {},
+    (response?: { ok: boolean; error?: string; commandId?: string }) => {
+      ackReceived = true;
+      clearTimeout(timer);
+      if (response?.ok) {
+        useBoardStore.getState().addLog('CONTROL', `STOP ALL issued (command ${String(response.commandId).slice(0, 8)})`, true);
+      } else {
+        useBoardStore.getState().addLog('ERROR', `STOP ALL refused: ${response?.error ?? 'gateway error'}`, true);
+      }
+    },
+  );
+}

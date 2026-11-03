@@ -418,3 +418,36 @@ describe("runGateway", () => {
     });
   });
 });
+
+describe("runGateway — emergency STOP ALL (ADR-025)", () => {
+  it("control plane off (default): no ingress on the HTTP app or the socket gateway", async () => {
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+    const appDeps = h.GatewayApp.mock.calls[0]![0] as Record<string, unknown>;
+    expect(appDeps["emergencyStop"]).toBeUndefined();
+    const socketOpts = (h.SocketGateway.mock.calls[0] as unknown as unknown[])[3] as Record<string, unknown>;
+    expect(socketOpts["control"]).toBeUndefined();
+  });
+
+  it("control plane on: one ingress shared by the HTTP route and the socket event", async () => {
+    process.env["CONTROL_PLANE_ENABLED"] = "true";
+    process.env["BOARD_JWT_SECRET"] = "x".repeat(32);
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+    const appDeps = h.GatewayApp.mock.calls[0]![0] as Record<string, unknown>;
+    const socketOpts = (h.SocketGateway.mock.calls[0] as unknown as unknown[])[3] as Record<string, unknown>;
+    expect(appDeps["emergencyStop"]).toBeDefined();
+    expect(socketOpts["control"]).toBe(appDeps["emergencyStop"]);
+  });
+
+  it("control plane on without BOARD_JWT_SECRET: still mounted, but warns that every stop is refused", async () => {
+    process.env["CONTROL_PLANE_ENABLED"] = "true";
+    delete process.env["BOARD_JWT_SECRET"];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+    const appDeps = h.GatewayApp.mock.calls[0]![0] as Record<string, unknown>;
+    expect(appDeps["emergencyStop"]).toBeDefined();
+    warn.mockRestore();
+  });
+});

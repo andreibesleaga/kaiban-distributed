@@ -109,3 +109,22 @@
       Cost-reservation enforcement is added when a fleet `CostLimiterPort` is injected. See
       `docs/decisions/ADR-021`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)
+
+## 2.0.x → 2.1.0 (emergency STOP ALL, additive)
+
+Nothing to change: every addition is off unless `CONTROL_PLANE_ENABLED=true`, and with it unset
+2.1.0 behaves as 2.0.3. To turn the emergency STOP ALL on ([ADR-025](docs/decisions/ADR-025-emergency-stop-control-channel.md)):
+
+1. Set `CONTROL_PLANE_ENABLED=true` on every gateway, worker and orchestrator process (the compose
+   files pass it through). A process without it neither stops nor refuses old tasks.
+2. Set `BOARD_JWT_SECRET` on the gateway and give the board a token (`VITE_BOARD_TOKEN`): board and
+   HTTP stop commands are refused without one. `npm run stop-all` needs only Redis access.
+3. Custom worker code built on `AgentActor` (instead of `startAgentNode`): call
+   `attachEmergencyStop({ actor, publisher, redisUrl, agentId })` **before** `actor.start()`, and
+   pass `onEmergencyStop: (p) => statePublisher.publishStopped(p)` in the actor deps so the board
+   shows `STOPPED`.
+4. Custom orchestrators: pass `stopSignal` (from `createEmergencyStopSignal(redisUrl)`) to
+   `WorkflowOrchestrator`, and `signal` to `waitForHITLDecision`; catch `EmergencyStopError`.
+5. Code that switches over `TaskStatus` should handle the new member `STOPPED`.
+6. Keep the hosts' clocks synchronised (NTP): the stop moment is compared with each task's send time.
+
