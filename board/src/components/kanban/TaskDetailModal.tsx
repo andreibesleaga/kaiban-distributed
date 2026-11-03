@@ -15,6 +15,7 @@ const STATUS_BADGE: Record<string, string> = {
   DONE:                 'bg-emerald-900 text-emerald-300',
   BLOCKED:              'bg-red-900 text-red-300',
   AWAITING_VALIDATION:  'bg-amber-900 text-amber-300',
+  STOPPED:              'bg-orange-900 text-orange-200',
 };
 
 const AGENT_STATUS_ICON: Record<string, string> = {
@@ -81,7 +82,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
         {/* Status + Agent row */}
         <div className="flex flex-wrap items-center gap-3">
           <span className={clsx('text-xs font-semibold px-2.5 py-1 rounded', badgeClass)}>
-            {task.status}
+            {task.status === 'STOPPED' ? '⏹ Stopped' : task.status}
           </span>
           {agent && (
             <span className="text-xs text-slate-400">

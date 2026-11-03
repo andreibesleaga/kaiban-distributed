@@ -313,3 +313,71 @@ describe('boardStore', () => {
     });
   });
 });
+
+describe('boardStore — emergency STOP ALL (ADR-025)', () => {
+  beforeEach(() => {
+    resetStore();
+    useBoardStore.setState({ controlPlane: null });
+  });
+
+  it('starts with the control plane unknown (null)', () => {
+    expect(useBoardStore.getState().controlPlane).toBeNull();
+  });
+
+  it('takes the control plane state from the gateway snapshot', () => {
+    useBoardStore.getState().applyDelta({
+      controlPlane: { enabled: true, acks: 0 },
+    });
+    expect(useBoardStore.getState().controlPlane).toEqual({ enabled: true, acks: 0 });
+  });
+
+  it('an issued stop becomes the last stop; node acks for it are counted and logged', () => {
+    const { applyDelta } = useBoardStore.getState();
+    applyDelta({ controlPlane: { enabled: true, acks: 0 } });
+    const stop = { commandId: 'c-1', issuedAt: 1_000, issuedBy: 'ops', reason: 'runaway' };
+    applyDelta({ control: { ...stop, nodeId: 'gateway', outcome: 'issued', aborted: 0, at: 1_000 } });
+    applyDelta({ control: { ...stop, nodeId: 'n1', agentId: 'writer', outcome: 'applied', aborted: 2, at: 1_001 } });
+    applyDelta({ control: { ...stop, nodeId: 'n2', outcome: 'noop', aborted: 0, at: 1_002 } });
+
+    expect(useBoardStore.getState().controlPlane).toEqual({ enabled: true, lastStop: stop, acks: 2 });
+    const messages = useBoardStore.getState().log.map((l) => l.message);
+    expect(messages).toContain('🛑 STOP ALL issued by ops — runaway');
+    expect(messages).toContain('🛑 writer on n1: applied, 2 task(s) killed');
+    expect(messages).toContain('🛑 n2: noop, 0 task(s) killed');
+    expect(useBoardStore.getState().log[0]!.highlight).toBe(true);
+  });
+
+  it('an older ack does not replace a newer stop; a newer stop resets the count', () => {
+    const { applyDelta } = useBoardStore.getState();
+    applyDelta({ controlPlane: { enabled: true, lastStop: { commandId: 'b', issuedAt: 20, issuedBy: 'x' }, acks: 3 } });
+    applyDelta({ control: { commandId: 'a', issuedAt: 10, issuedBy: 'x', nodeId: 'n', outcome: 'applied', aborted: 0, at: 11 } });
+    expect(useBoardStore.getState().controlPlane?.acks).toBe(3);
+    applyDelta({ control: { commandId: 'c', issuedAt: 30, issuedBy: 'y', nodeId: 'gateway', outcome: 'issued', aborted: 0, at: 30 } });
+    expect(useBoardStore.getState().controlPlane).toEqual({
+      enabled: true,
+      lastStop: { commandId: 'c', issuedAt: 30, issuedBy: 'y' },
+      acks: 0,
+    });
+  });
+
+  it('a control ack without control-plane state (control plane off) only logs', () => {
+    useBoardStore.getState().applyDelta({
+      control: { commandId: 'a', issuedAt: 1, issuedBy: 'x', nodeId: 'gateway', outcome: 'issued', aborted: 0, at: 1 },
+    });
+    expect(useBoardStore.getState().controlPlane).toBeNull();
+    expect(useBoardStore.getState().log[0]!.message).toBe('🛑 STOP ALL issued by x');
+  });
+
+  it('a STOPPED task gets the stop icon and is highlighted in the log', () => {
+    useBoardStore.getState().applyDelta({ tasks: [tk({ status: 'STOPPED' })] });
+    const entry = useBoardStore.getState().log[0]!;
+    expect(entry.message).toBe('⏹ Write intro → STOPPED');
+    expect(entry.highlight).toBe(true);
+  });
+
+  it('resetState clears the control-plane state (the next snapshot restores it)', () => {
+    useBoardStore.getState().applyDelta({ controlPlane: { enabled: true, acks: 1 } });
+    useBoardStore.getState().resetState();
+    expect(useBoardStore.getState().controlPlane).toBeNull();
+  });
+});

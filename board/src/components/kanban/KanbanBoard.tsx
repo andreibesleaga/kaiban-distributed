@@ -58,7 +58,9 @@ export default function KanbanBoard() {
     tasksByStatus.set(col.status, []);
   }
   for (const task of tasks.values()) {
-    const col = tasksByStatus.get(task.status as TaskStatus);
+    // A task killed by an emergency STOP ALL sits with the blocked ones, with its own badge.
+    const status: TaskStatus = task.status === 'STOPPED' ? 'BLOCKED' : task.status;
+    const col = tasksByStatus.get(status);
     if (col) col.push(task);
   }
 

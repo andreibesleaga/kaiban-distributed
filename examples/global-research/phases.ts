@@ -232,10 +232,12 @@ export interface RevisionDeps {
   driver: Pick<IMessagingDriver, 'publish'>;
   rl: readline.Interface | null;
   runLog: RunLogger;
+  /** Emergency STOP ALL signal (CONTROL_PLANE_ENABLED); ends the waits. */
+  signal?: AbortSignal;
 }
 
 export async function runRevisionPhase(deps: RevisionDeps): Promise<void> {
-  const { ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog } = deps;
+  const { ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog, signal } = deps;
 
   // Budget guard: never dispatch a (costly) revision once the cumulative spend
   // has crossed a configured ceiling — stops a runaway instead of draining it.
@@ -249,7 +251,7 @@ export async function runRevisionPhase(deps: RevisionDeps): Promise<void> {
     inputs: { topic: query, contextId: ctx.id },
     context: `--- EDITORIAL FEEDBACK ---\n${edit.text}\n\n--- GOVERNANCE NOTES ---\n${gov.text}\n\n--- ORIGINAL REPORT ---\n${ctx.consolidatedDraft}`,
   });
-  const raw    = await router.wait(taskId, writeWaitMs, 'revision');
+  const raw    = await router.wait(taskId, writeWaitMs, 'revision', signal);
   const parsed = parseHandlerResult(raw);
   ctx.metadata.totalTokens   += parsed.inputTokens + parsed.outputTokens;
   ctx.metadata.estimatedCost += parsed.estimatedCost;
@@ -260,7 +262,7 @@ export async function runRevisionPhase(deps: RevisionDeps): Promise<void> {
   pub.awaitingHITL(taskId, 'PUBLISH', 'N/A');
 
   const decision = autoPub ? 'PUBLISH' : await waitForHITLDecision({
-    taskId, rl, redisUrl,
+    taskId, rl, redisUrl, ...(signal ? { signal } : {}),
     onView: () => { process.stdout.write('\n' + '-'.repeat(70) + '\n' + (ctx.consolidatedDraft ?? '') + '\n' + '-'.repeat(70) + '\n\n'); },
   });
 
@@ -291,13 +293,15 @@ export interface DecisionDeps {
   driver: Pick<IMessagingDriver, 'publish'>;
   rl: readline.Interface | null;
   runLog: RunLogger;
+  /** Emergency STOP ALL signal (CONTROL_PLANE_ENABLED); ends the waits. */
+  signal?: AbortSignal;
 }
 
 export async function handleDecision(deps: DecisionDeps): Promise<void> {
-  const { ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog } = deps;
+  const { ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog, signal } = deps;
 
   const decision = autoPub ? 'PUBLISH' : await waitForHITLDecision({
-    taskId: edit.taskId, rl, redisUrl,
+    taskId: edit.taskId, rl, redisUrl, ...(signal ? { signal } : {}),
     onView: () => {
       process.stdout.write('\n' + '-'.repeat(70) + '\n' + (ctx.consolidatedDraft || '') + '\n' + '-'.repeat(70) + '\n\n');
     },
@@ -311,7 +315,10 @@ export async function handleDecision(deps: DecisionDeps): Promise<void> {
     runLog.finish('PUBLISHED');
 
   } else if (decision === 'REVISE') {
-    await runRevisionPhase({ ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog });
+    await runRevisionPhase({
+      ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog,
+      ...(signal ? { signal } : {}),
+    });
 
   } else {
     ctx.status = 'FAILED';

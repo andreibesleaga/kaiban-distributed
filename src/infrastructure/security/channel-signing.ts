@@ -21,6 +21,13 @@ interface SignedEnvelope {
   ts: number;
 }
 
+/** True when the parsed value has the signed-envelope shape (any JSON may arrive). */
+function isEnvelope(value: unknown): value is SignedEnvelope {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Partial<SignedEnvelope>;
+  return Boolean(v.payload) && typeof v.sig === "string" && typeof v.ts === "number";
+}
+
 /**
  * Wrap a state delta in a signed envelope.
  * Returns plain JSON when CHANNEL_SIGNING_SECRET is not set.
@@ -55,20 +62,14 @@ export function unwrapVerified(raw: string): Record<string, unknown> | null {
     }
   }
 
-  let envelope: Partial<SignedEnvelope>;
+  let envelope: unknown;
   try {
-    envelope = JSON.parse(raw) as Partial<SignedEnvelope>;
+    envelope = JSON.parse(raw);
   } catch {
     return null;
   }
 
-  if (
-    !envelope.payload ||
-    typeof envelope.sig !== "string" ||
-    typeof envelope.ts !== "number"
-  ) {
-    return null;
-  }
+  if (!isEnvelope(envelope)) return null;
 
   // Replay protection: reject messages older than MAX_CLOCK_SKEW_MS
   if (Math.abs(Date.now() - envelope.ts) > MAX_CLOCK_SKEW_MS) return null;

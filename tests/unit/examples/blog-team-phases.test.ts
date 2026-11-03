@@ -532,3 +532,52 @@ describe("handleBlogDecision()", () => {
     stdoutSpy.mockRestore();
   });
 });
+
+describe("blog-team — emergency STOP ALL signal (ADR-025)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("handleBlogDecision passes the stop signal to both review waits and the revision wait", async () => {
+    const { driver, mockRouter, mockPub, mockRunLog } = makeMocks();
+    const signal = new AbortController().signal;
+    mockWaitForHITL.mockResolvedValueOnce("REVISE").mockResolvedValueOnce("PUBLISH");
+    mockRouter.wait.mockResolvedValue(parsedResult("revised"));
+
+    await handleBlogDecision({
+      topic: "topic",
+      redisUrl: "redis://localhost:6379",
+      gatewayUrl: "http://localhost:4000",
+      research: { taskId: "r", summary: "s", tokens: 0, cost: 0 },
+      write: { taskId: "w", draft: "d", tokens: 0, cost: 0 },
+      edit: { taskId: "e", review: "x", recommendation: "REVISE", score: "5/10", tokens: 0, cost: 0 },
+      router: mockRouter as never,
+      pub: mockPub as never,
+      driver,
+      rl: { question: vi.fn(), write: vi.fn(), close: vi.fn() } as never,
+      runLog: mockRunLog as never,
+      signal,
+    });
+
+    expect(mockWaitForHITL).toHaveBeenNthCalledWith(1, expect.objectContaining({ signal }));
+    expect(mockWaitForHITL).toHaveBeenNthCalledWith(2, expect.objectContaining({ signal }));
+    expect(mockRouter.wait).toHaveBeenCalledWith(expect.any(String), expect.any(Number), "revision", signal);
+  });
+
+  it("without a signal, the waits get none (unchanged)", async () => {
+    const { driver, mockRouter, mockPub, mockRunLog } = makeMocks();
+    mockWaitForHITL.mockResolvedValue("PUBLISH");
+    await handleBlogDecision({
+      topic: "topic",
+      redisUrl: "redis://localhost:6379",
+      gatewayUrl: "http://localhost:4000",
+      research: { taskId: "r", summary: "s", tokens: 0, cost: 0 },
+      write: { taskId: "w", draft: "d", tokens: 0, cost: 0 },
+      edit: { taskId: "e", review: "x", recommendation: "PUBLISH", score: "9/10", tokens: 0, cost: 0 },
+      router: mockRouter as never,
+      pub: mockPub as never,
+      driver,
+      rl: { question: vi.fn(), write: vi.fn(), close: vi.fn() } as never,
+      runLog: mockRunLog as never,
+    });
+    expect(mockWaitForHITL.mock.calls[0]![0]).not.toHaveProperty("signal");
+  });
+});

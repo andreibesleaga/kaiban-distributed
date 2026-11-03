@@ -11,7 +11,11 @@ import {
 import type { ISemanticFirewall } from "../../domain/security/semantic-firewall";
 import type { ICircuitBreaker } from "../../domain/security/circuit-breaker";
 import type { IAdmissionGate } from "../../domain/security/admission-gate";
-import { NonRetryableError } from "../../domain/errors/DomainError";
+import {
+  EMERGENCY_STOP_REASON,
+  EmergencyStopError,
+  NonRetryableError,
+} from "../../domain/errors/DomainError";
 import {
   recordAnomalyEvent,
   recordMessageProcessed,
@@ -102,6 +106,13 @@ class ControlAbortError extends NonRetryableError {
 const stoppedError = (): ControlAbortError =>
   new ControlAbortError("actor_stopped", "Actor stopping");
 
+/** What `emergencyStop()` did: `noop` for a stop no later than one already applied (ES-8). */
+export interface EmergencyStopResult {
+  outcome: "applied" | "noop";
+  /** Running tasks it aborted. */
+  aborted: number;
+}
+
 export interface AgentActorDeps {
   firewall?: ISemanticFirewall;
   circuitBreaker?: ICircuitBreaker;
@@ -121,6 +132,13 @@ export interface AgentActorDeps {
    * dead-letters as `task_timeout`.
    */
   retryOnTimeout?: boolean;
+  /**
+   * Called for each task an emergency stop ends — a running task it aborted or
+   * a task sent before the stop and delivered after it — after the task's
+   * `emergency_stop` DLQ record is published (ADR-025). The worker node uses it
+   * to publish task `STOPPED`.
+   */
+  onEmergencyStop?: (payload: MessagePayload) => void;
 }
 
 export class AgentActor {
@@ -133,10 +151,16 @@ export class AgentActor {
   private admissionGate?: IAdmissionGate;
   private taskTimeoutMs: number;
   private retryOnTimeout: boolean;
-  /** In-flight task abort controllers, so stop() can cancel running work. */
-  private readonly inFlight = new Set<AbortController>();
+  /** In-flight tasks by abort controller, so a stop can cancel running work. */
+  private readonly inFlight = new Map<AbortController, MessagePayload>();
   /** Set by stop(): no attempt starts or is retried after it. */
   private stopping = false;
+  /**
+   * The latest emergency stop (epoch ms): a task sent at or before it is never
+   * run. `-Infinity` until the first stop.
+   */
+  private stoppedAt = Number.NEGATIVE_INFINITY;
+  private readonly onEmergencyStop?: (payload: MessagePayload) => void;
 
   constructor(
     id: string,
@@ -154,6 +178,7 @@ export class AgentActor {
     this.admissionGate = deps?.admissionGate;
     this.taskTimeoutMs = deps?.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
     this.retryOnTimeout = deps?.retryOnTimeout === true;
+    this.onEmergencyStop = deps?.onEmergencyStop;
   }
 
   public async start(): Promise<void> {
@@ -180,6 +205,17 @@ export class AgentActor {
         { agentId: sanitizeId(this.id), target: payload.agentId },
         "Ignored task for a different agent",
       );
+      return;
+    }
+
+    if (this.sentBeforeStop(payload)) {
+      // Sent before an emergency stop and delivered after it: not run (ES-2).
+      await this.publishToDlq(
+        payload,
+        EMERGENCY_STOP_REASON,
+        "Sent before an emergency stop",
+      );
+      this.onEmergencyStop?.(payload);
       return;
     }
 
@@ -277,6 +313,13 @@ export class AgentActor {
     const start = Date.now();
     let lastError = "Max retries exceeded";
     for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+      // A stop can arrive while the guards decide or during the back-off: no
+      // attempt starts after it (checked right before each one).
+      const interrupted = this.interruption(payload);
+      if (interrupted) {
+        await this.failNonRetryable(payload, interrupted, start);
+        return;
+      }
       try {
         const taskResult = await this.executeTask(payload);
         this.circuitBreaker?.recordSuccess();
@@ -295,7 +338,7 @@ export class AgentActor {
         recordMessageLatency(Date.now() - start, "completed");
         return;
       } catch (err) {
-        const final = this.finalError(err, attempt);
+        const final = this.finalError(err, attempt, payload);
         if (final) {
           await this.failNonRetryable(payload, final, start);
           return;
@@ -305,14 +348,7 @@ export class AgentActor {
           { agentId: sanitizeId(this.id), attempt, err: lastError },
           "Task attempt failed",
         );
-        if (attempt < RETRY_ATTEMPTS) {
-          await delay(RETRY_BASE_DELAY_MS * attempt);
-          if (this.stopping) {
-            // stop() arrived during the back-off: the next attempt never starts.
-            await this.failNonRetryable(payload, stoppedError(), start);
-            return;
-          }
-        }
+        if (attempt < RETRY_ATTEMPTS) await delay(RETRY_BASE_DELAY_MS * attempt);
       }
     }
 
@@ -350,17 +386,33 @@ export class AgentActor {
     if (err.reasonCode === "task_timeout") this.circuitBreaker?.recordFailure();
     recordMessageLatency(Date.now() - start, "failed");
     await this.publishToDlq(payload, err.reasonCode, err.message);
+    if (err instanceof EmergencyStopError) this.onEmergencyStop?.(payload);
+  }
+
+  /** Why no further attempt may start: an emergency stop, then a drain, else null. */
+  private interruption(payload: MessagePayload): NonRetryableError | null {
+    if (this.sentBeforeStop(payload)) return new EmergencyStopError();
+    return this.stopping ? stoppedError() : null;
+  }
+
+  /** True when the task was sent at or before the latest emergency stop. */
+  private sentBeforeStop(payload: MessagePayload): boolean {
+    return payload.timestamp <= this.stoppedAt;
   }
 
   /**
    * The error that ends the task on this attempt, or null when another attempt
    * may run. With `retryOnTimeout`, a timeout before the last attempt is not final.
    */
-  private finalError(err: unknown, attempt: number): NonRetryableError | null {
-    const final = this.nonRetryable(err);
+  private finalError(
+    err: unknown,
+    attempt: number,
+    payload: MessagePayload,
+  ): NonRetryableError | null {
+    const final = this.nonRetryable(err, payload);
     const retriesTimeout =
       this.retryOnTimeout &&
-      !this.stopping &&
+      !this.interruption(payload) &&
       attempt < RETRY_ATTEMPTS &&
       final instanceof ControlAbortError &&
       final.reasonCode === "task_timeout";
@@ -368,10 +420,13 @@ export class AgentActor {
   }
 
   /** The error as a non-retryable one, or null when another attempt may run. */
-  private nonRetryable(err: unknown): NonRetryableError | null {
+  private nonRetryable(
+    err: unknown,
+    payload: MessagePayload,
+  ): NonRetryableError | null {
     if (err instanceof NonRetryableError) return err;
-    // Whatever the handler threw after stop() aborted it, the actor is draining.
-    return this.stopping ? stoppedError() : null;
+    // Whatever the handler threw after a stop aborted it, the task is over.
+    return this.interruption(payload);
   }
 
   private async publishToDlq(
@@ -414,7 +469,7 @@ export class AgentActor {
     // One AbortController per task: aborted on timeout (Finding #2 — stop the
     // in-flight LLM call so it stops burning tokens) and on actor shutdown.
     const controller = new AbortController();
-    this.inFlight.add(controller);
+    this.inFlight.set(controller, payload);
 
     // Definite-assignment: the Promise executor runs synchronously, so the
     // handle is always set before the finally below.
@@ -439,8 +494,16 @@ export class AgentActor {
         reject(timedOut);
       }, timeoutMs);
     });
+    // An emergency stop settles the task at once, even when the handler ignores
+    // its signal (ES-12); the handler's late result has no awaiter and is dropped.
+    const emergencyPromise = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener("abort", () => {
+        const reason: unknown = controller.signal.reason;
+        if (reason instanceof EmergencyStopError) reject(reason);
+      });
+    });
     try {
-      return await Promise.race([handlerPromise, timeoutPromise]);
+      return await Promise.race([handlerPromise, timeoutPromise, emergencyPromise]);
     } finally {
       // Clear the timer whichever side won, so a completed task never leaves an
       // armed timeout (default 300 000 ms) accumulating / holding the event loop.
@@ -449,12 +512,32 @@ export class AgentActor {
     }
   }
 
+  /**
+   * Emergency STOP ALL on this actor (roadmap §6.10, ADR-025). Every running
+   * task sent at or before `stoppedAt` is aborted with an `EmergencyStopError`
+   * (settled at once, never retried, dead-lettered as `emergency_stop`), and
+   * every such task delivered later is refused without running. Tasks sent
+   * after `stoppedAt` run normally: there is nothing to release.
+   */
+  public emergencyStop(stoppedAt: number = Date.now()): EmergencyStopResult {
+    if (stoppedAt <= this.stoppedAt) return { outcome: "noop", aborted: 0 };
+    this.stoppedAt = stoppedAt;
+    let aborted = 0;
+    for (const [controller, payload] of this.inFlight) {
+      if (!this.sentBeforeStop(payload)) continue;
+      controller.abort(new EmergencyStopError());
+      aborted++;
+    }
+    log.warn({ agentId: sanitizeId(this.id), aborted }, "Emergency stop applied");
+    return { outcome: "applied", aborted };
+  }
+
   public async stop(): Promise<void> {
     log.info({ agentId: sanitizeId(this.id) }, "Actor stopping");
     this.stopping = true;
     // Cancel any in-flight task work on graceful shutdown so a draining node
     // does not keep burning tokens on tasks it will never report on.
-    for (const controller of this.inFlight) {
+    for (const controller of this.inFlight.keys()) {
       controller.abort(stoppedError());
     }
     this.inFlight.clear();

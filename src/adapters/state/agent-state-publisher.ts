@@ -14,6 +14,7 @@ import type { TaskHandler } from "../../application/actor/AgentActor";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { wrapSigned } from "../../infrastructure/security/channel-signing";
 import { sanitizeDelta } from "./distributedMiddleware";
+import type { ControlAck } from "../../infrastructure/control/control-channel";
 import { createStructuredLogger } from "../../shared/structured-logger";
 import {
   BudgetExceededError,
@@ -21,6 +22,7 @@ import {
   formatCap,
 } from "../../shared/budget";
 import {
+  EmergencyStopError,
   FailedAttemptError,
   type AttemptUsage,
 } from "../../domain/errors/DomainError";
@@ -42,7 +44,13 @@ interface AgentState extends AgentInfo {
 interface TaskState {
   taskId: string;
   title: string;
-  status: "TODO" | "DOING" | "DONE" | "BLOCKED" | "AWAITING_VALIDATION";
+  status:
+    | "TODO"
+    | "DOING"
+    | "DONE"
+    | "BLOCKED"
+    | "AWAITING_VALIDATION"
+    | "STOPPED";
   assignedToAgentId: string;
   result?: string;
   tokens?: number;
@@ -69,6 +77,17 @@ function truncateToBytes(str: string, maxBytes: number): string {
   let end = maxBytes;
   while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--;
   return buf.toString("utf8", 0, end);
+}
+
+/** The board title of a task: its instruction (60 chars), else its taskId. */
+function taskTitle(payload: MessagePayload): string {
+  return String(payload.data["instruction"] ?? payload.taskId).slice(0, 60);
+}
+
+/** The emergency stop that aborted this signal, if that is why it aborted. */
+function emergencyAbort(signal?: AbortSignal): EmergencyStopError | null {
+  const reason: unknown = signal?.reason;
+  return reason instanceof EmergencyStopError ? reason : null;
 }
 
 /** How many recent taskIds keep a per-task token tally (bounded memory). */
@@ -197,6 +216,7 @@ export class AgentStatePublisher {
     agents?: AgentState[];
     tasks?: TaskState[];
     teamWorkflowStatus?: string;
+    control?: ControlAck;
   }): void {
     // Defense-in-depth: strip any PII-named top-level keys on the worker path too
     // (the middleware path already sanitizes via DistributedStateMiddleware).
@@ -292,10 +312,7 @@ export class AgentStatePublisher {
       payload: MessagePayload,
       signal?: AbortSignal,
     ): Promise<unknown> => {
-      const title = String(payload.data["instruction"] ?? payload.taskId).slice(
-        0,
-        60,
-      );
+      const title = taskTitle(payload);
 
       try {
         // Pre-flight (roadmap §7.2 item 2): a task that finds a cap already met
@@ -341,6 +358,13 @@ export class AgentStatePublisher {
         });
 
         const result = await handler(payload, signal);
+        const stopped = emergencyAbort(signal);
+        if (stopped) {
+          // A handler that ignored an emergency stop returned late (ES-12):
+          // its tokens were spent and count, but it never shows as DONE.
+          this.countLateTokens(payload.taskId, result);
+          throw stopped;
+        }
 
         // → DONE
         this.currentStatus = "IDLE";
@@ -400,6 +424,8 @@ export class AgentStatePublisher {
 
         return result;
       } catch (err) {
+        const stopped = this.endedByEmergencyStop(payload, err, signal);
+        if (stopped) throw stopped;
         // A failed attempt that already spent tokens counts against the caps
         // BEFORE the actor retries; reaching one ends the task non-retryably.
         const failure = this.accountFailedAttempt(payload.taskId, err);
@@ -427,6 +453,59 @@ export class AgentStatePublisher {
         throw failure;
       }
     };
+  }
+
+  /**
+   * Publish a task ended by an emergency STOP ALL as `STOPPED` (ADR-025). When
+   * it is the task this agent is running, the agent goes back to `IDLE` too; a
+   * task refused before it ran changes only the task.
+   */
+  publishStopped(payload: MessagePayload): void {
+    const { agentId, name, role } = this.agentInfo;
+    const task: TaskState = {
+      taskId: payload.taskId,
+      title: taskTitle(payload),
+      status: "STOPPED",
+      assignedToAgentId: agentId,
+    };
+    if (this.currentTaskId !== payload.taskId) {
+      this.publish({ tasks: [task] });
+      return;
+    }
+    this.currentStatus = "IDLE";
+    this.currentTaskId = null;
+    this.publish({
+      agents: [{ agentId, name, role, status: "IDLE", currentTaskId: null }],
+      tasks: [task],
+    });
+  }
+
+  /** Report how this node handled an emergency STOP ALL (ADR-025, ES-9). */
+  publishControlAck(ack: ControlAck): void {
+    this.publish({ control: ack });
+  }
+
+  /**
+   * The emergency stop that ended this attempt — the error itself, or the
+   * signal's reason when a handler that ignored the stop failed late (its paid
+   * usage still counts). Publishes STOPPED, never ERROR/BLOCKED (ES-12).
+   */
+  private endedByEmergencyStop(
+    payload: MessagePayload,
+    err: unknown,
+    signal?: AbortSignal,
+  ): EmergencyStopError | null {
+    const stop = err instanceof EmergencyStopError ? err : emergencyAbort(signal);
+    if (!stop) return null;
+    if (stop !== err) this.accountFailedAttempt(payload.taskId, err);
+    this.publishStopped(payload);
+    return stop;
+  }
+
+  /** Count a late result's tokens; a cap it reaches applies to the next task. */
+  private countLateTokens(taskId: string, result: unknown): void {
+    const late = this.extractTokenMetadata(result);
+    if (late) this.accountTokens(taskId, late.totalTokens);
   }
 
   /**

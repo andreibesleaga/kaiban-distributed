@@ -37,6 +37,10 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      # Board/HTTP stop commands need a board token (unset = board auth off, stop refused).
+      BOARD_JWT_SECRET: ${BOARD_JWT_SECRET:-}
       MESSAGING_DRIVER: bullmq
       PORT: "3000"
       SERVICE_NAME: kaiban-gateway
@@ -65,6 +69,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       AGENT_ID: researcher
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -102,6 +108,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       AGENT_ID: writer
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -138,6 +146,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       AGENT_ID: editor
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -180,6 +190,8 @@ services:
       # Inside Docker, gateway is reachable by service name
       GATEWAY_URL: http://gateway:3000
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       MESSAGING_DRIVER: bullmq
       TOPIC: ${TOPIC:-AI Agents in 2025}
       RESEARCH_WAIT_MS: ${RESEARCH_WAIT_MS:-120000}

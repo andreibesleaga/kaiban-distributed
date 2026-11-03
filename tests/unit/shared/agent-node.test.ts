@@ -92,6 +92,20 @@ vi.mock("../../../src/shared/driver-factory", () => ({
   createDriver: vi.fn().mockReturnValue(mockDriverInstance),
 }));
 
+const mockAttach = vi.hoisted(() => ({
+  close: vi.fn().mockResolvedValue(undefined),
+  attach: vi.fn(),
+}));
+vi.mock("../../../src/shared/emergency-stop", async (orig) => {
+  const real = await orig<typeof import("../../../src/shared/emergency-stop")>();
+  return {
+    ...real,
+    attachEmergencyStop: mockAttach.attach.mockImplementation(async () => ({
+      close: mockAttach.close,
+    })),
+  };
+});
+
 vi.mock("../../../src/shared/build-security-deps", () => ({
   buildSecurityDeps: vi.fn().mockReturnValue({
     actorDeps: {},
@@ -469,6 +483,75 @@ describe("startAgentNode — 2.0.1: timeout and signals", () => {
     finishFlush();
     await new Promise((r) => setTimeout(r, 10));
     expect(order).toEqual(["flushed", "exit"]);
+    exitSpy.mockRestore();
+  });
+});
+
+describe("startAgentNode — emergency STOP ALL (ADR-025)", () => {
+  const cfg = {
+    agentId: "writer",
+    queue: "kaiban-agents-writer",
+    agentConfig: { name: "Kai", role: "Writer", goal: "Write", background: "Expert" },
+    displayName: "Kai",
+    role: "Writer",
+    label: "[Writer]",
+    redisUrl: "redis://control:6379",
+  };
+  let listeners: Record<string, Array<() => void>>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetProcessDrain();
+    listeners = {};
+    vi.spyOn(process, "on").mockImplementation((event, handler) => {
+      (listeners[String(event)] ??= []).push(handler as () => void);
+      return process;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env["CONTROL_PLANE_ENABLED"];
+  });
+
+  it("control plane off (default): no subscription (ES-7)", async () => {
+    await startAgentNode(cfg);
+    expect(mockAttach.attach).not.toHaveBeenCalled();
+  });
+
+  it("the actor always reports stopped tasks to the board as STOPPED", async () => {
+    (mockStatePublisherInstance as Record<string, unknown>)["publishStopped"] = vi.fn();
+    await startAgentNode(cfg);
+    const deps = vi.mocked(AgentActor).mock.calls.at(-1)?.[4] as {
+      onEmergencyStop?: (p: unknown) => void;
+    };
+    const p = { taskId: "t", agentId: "writer", data: {}, timestamp: 0 };
+    deps.onEmergencyStop?.(p);
+    expect(
+      (mockStatePublisherInstance as Record<string, ReturnType<typeof vi.fn>>)["publishStopped"],
+    ).toHaveBeenCalledWith(p);
+  });
+
+  it("control plane on: attaches the actor to the control channel, and the drain closes it", async () => {
+    process.env["CONTROL_PLANE_ENABLED"] = "true";
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((_code?: number | string | null) => undefined as never);
+    await startAgentNode(cfg);
+    // The saved stop is read before the actor takes its first task (ES-3).
+    expect(mockAttach.attach.mock.invocationCallOrder[0]!).toBeLessThan(
+      mockActorStart.mock.invocationCallOrder.at(-1)!,
+    );
+    expect(mockAttach.attach).toHaveBeenCalledWith({
+      actor: mockActorInstance,
+      publisher: mockStatePublisherInstance,
+      redisUrl: "redis://control:6379",
+      agentId: "writer",
+    });
+
+    listeners["SIGTERM"]![0]!();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockAttach.close).toHaveBeenCalledOnce();
     exitSpy.mockRestore();
   });
 });

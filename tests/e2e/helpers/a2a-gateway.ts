@@ -11,6 +11,7 @@ import { KaibanAgentExecutor } from "../../../src/infrastructure/federation/a2a-
 import { CompletionRouter } from "../../../src/shared/completion-router";
 import { buildAgentCard } from "../../../src/infrastructure/federation/a2a-agent-card";
 import type { IMessagingDriver } from "../../../src/infrastructure/messaging/interfaces";
+import type { EmergencyStopIngress } from "../../../src/adapters/gateway/emergency-stop-ingress";
 
 function noopDriver(): IMessagingDriver {
   return {
@@ -22,6 +23,8 @@ function noopDriver(): IMessagingDriver {
 }
 
 export interface E2EGatewayOptions {
+  /** Mounts POST /control/stop-all (emergency STOP ALL, ADR-025). */
+  emergencyStop?: EmergencyStopIngress;
   agentIds?: string[];
   jwtEnabled?: boolean;
   trustProxy?: boolean;
@@ -74,5 +77,6 @@ export function makeA2AGateway(opts: E2EGatewayOptions = {}): GatewayApp {
       hasSeen: () => false,
     } as never,
     ...(opts.trustProxy !== undefined ? { trustProxy: opts.trustProxy } : {}),
+    ...(opts.emergencyStop ? { emergencyStop: opts.emergencyStop } : {}),
   });
 }

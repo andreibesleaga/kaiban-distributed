@@ -944,3 +944,34 @@ describe("handleDecision()", () => {
     stdoutSpy.mockRestore();
   });
 });
+
+describe("global-research — emergency STOP ALL signal (ADR-025)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("handleDecision passes the stop signal to both review waits and the revision wait", async () => {
+    const { driver, mockRouter, mockPub, mockRunLog } = makeMocks();
+    const signal = new AbortController().signal;
+    mockWaitForHITL.mockResolvedValueOnce("REVISE").mockResolvedValueOnce("PUBLISH");
+    mockRouter.wait.mockResolvedValue(parsedResult("revised"));
+
+    await handleDecision({
+      ctx: makeCtx({ consolidatedDraft: "draft" }),
+      query: "AI",
+      redisUrl: "redis://localhost:6379",
+      gov: { recommendation: "CONDITIONAL", score: "7/10", text: "gov" },
+      edit: { taskId: "edit-1", recommendation: "REVISE", score: "6/10", text: "edit" },
+      writeWaitMs: 1000,
+      autoPub: false,
+      router: mockRouter as never,
+      pub: mockPub as never,
+      driver,
+      rl: null,
+      runLog: mockRunLog as never,
+      signal,
+    } as never);
+
+    expect(mockWaitForHITL).toHaveBeenNthCalledWith(1, expect.objectContaining({ signal }));
+    expect(mockWaitForHITL).toHaveBeenNthCalledWith(2, expect.objectContaining({ signal }));
+    expect(mockRouter.wait).toHaveBeenCalledWith(expect.any(String), 1000, "revision", signal);
+  });
+});

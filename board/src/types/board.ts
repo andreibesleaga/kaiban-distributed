@@ -16,7 +16,8 @@ export type TaskStatus =
   | 'DOING'
   | 'DONE'
   | 'BLOCKED'
-  | 'AWAITING_VALIDATION';
+  | 'AWAITING_VALIDATION'
+  | 'STOPPED';
 
 export type HitlDecision = 'PUBLISH' | 'REVISE' | 'REJECT';
 
@@ -49,12 +50,41 @@ export interface Metadata {
   endTime?: number;
 }
 
+// ─── Emergency STOP ALL (ADR-025; only with CONTROL_PLANE_ENABLED) ──────────
+
+/** The latest emergency stop: everything sent at or before `issuedAt` was killed. */
+export interface StopInfo {
+  commandId: string;
+  issuedAt: number;
+  issuedBy: string;
+  reason?: string;
+}
+
+/** How the gateway (`issued`) or a node (`applied` / `noop`) handled a stop. */
+export interface ControlAck extends StopInfo {
+  nodeId: string;
+  agentId?: string;
+  outcome: 'applied' | 'noop' | 'issued';
+  aborted: number;
+  at: number;
+}
+
+/** In the gateway snapshot only when the control plane is on. */
+export interface ControlPlaneState {
+  enabled: true;
+  lastStop?: StopInfo;
+  /** Node acknowledgements for `lastStop`. */
+  acks: number;
+}
+
 export interface StateDelta {
   teamWorkflowStatus?: WorkflowStatus;
   agents?: AgentDelta[];
   tasks?: TaskDelta[];
   metadata?: Metadata;
   inputs?: { topic?: string; [key: string]: unknown };
+  control?: ControlAck;
+  controlPlane?: ControlPlaneState;
 }
 
 // ─── Board UI state ──────────────────────────────────────────────────────────
@@ -75,4 +105,6 @@ export interface BoardState {
   topic: string;
   connectionStatus: ConnectionStatus;
   log: LogEntry[];
+  /** null until the gateway says the control plane is on. */
+  controlPlane: ControlPlaneState | null;
 }

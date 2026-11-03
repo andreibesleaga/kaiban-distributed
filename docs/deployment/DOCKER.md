@@ -173,6 +173,7 @@ localhost:3000  ──►  gateway   (HTTP + Socket.io)
 | `JIT_TOKENS_ENABLED` | `false` | Both BullMQ and Kafka stacks |
 | `CIRCUIT_BREAKER_THRESHOLD` | `10` | Both BullMQ and Kafka stacks |
 | `CIRCUIT_BREAKER_WINDOW_MS` | `60000` | Both BullMQ and Kafka stacks |
+| `CONTROL_PLANE_ENABLED` | unset (off) | Emergency STOP ALL (2.1.0): set `true` on the gateway, every worker and the orchestrator; the gateway also needs `BOARD_JWT_SECRET` for board/HTTP stops. All compose files pass both through |
 
 The Gateway and Worker tables below describe the root `docker-compose.yml` (`kaiban-gateway`,
 `kaiban-worker`). In `examples/blog-team/docker-compose.yml` the gateway sets no `ROLE` (default

@@ -150,3 +150,90 @@ consumer smoke — followed by **fixes for every real finding**, then a **full r
    Trivy/CodeQL/SBOM/cosign) + final branch review before `merge to main` + tag `v2.0.0`.
 
 **No source defects remain; all locally-runnable gates are green.**
+
+---
+
+# 2.1.0 verification record — emergency STOP ALL (2026-11-03)
+
+Scope: the emergency STOP ALL ([ADR-025](decisions/ADR-025-emergency-stop-control-channel.md),
+[roadmap §6.10](roadmap/V2.1-ROADMAP.md)). Every line below is from a command run on the final tree
+of branch `feat/emergency-stop-2.1.0`.
+
+## Gate
+
+| Check | Result |
+| --- | --- |
+| `npm run test:coverage` | 134 files, 1,547 tests; 100 % statements (2,649), branches (1,540), functions (625), lines (2,441) |
+| `npm run typecheck` · `npm run lint` · `npm run lint:arch` | clean · 0 warnings · no circular dependency |
+| `npm run api:check` | both reports current (changes are additive) |
+| `npm run lockfile:check` · `npm run build` | ok · ok |
+| `cd board && npx tsc --noEmit && npx vitest run && npm run build` | 16 files, 174 tests (4 new axe tests) · built |
+| `npm run test:e2e` | 12 files, 73 tests (new: `emergency-stop.test.ts`, 4 scenarios) |
+| `npm run test:e2e:kafka` | 3 files, 4 tests (new: `emergency-stop-kafka.test.ts`); files now run one at a time |
+| `npm run test:e2e:security` | 40 tests (new section 10: unsigned and forged commands ignored, on the channel and in the saved key; HTTP 401 / 401 / 202 / 404) |
+| `npm run test:e2e:chaos` | 2 tests (new: a storm of 12 stops over 60 tasks on 3 workers; each task ends exactly once) |
+| `scripts/smoke-consumer.sh` | passed; the new exports resolve from both entry points of the packed tarball |
+| `node scripts/audit-gate.js` | 0 high/critical outside the documented exceptions (same set as 2.0.3) |
+| `docker build .` + image smoke | gateway healthy; `POST /control/stop-all` without a token → 401; `node dist/src/main/stop-all.js` issued a stop |
+| lychee (offline) on README, CHANGELOG, MIGRATION, EXAMPLES, AGENTS, `docs/` | 274 links, 0 errors |
+
+## Runs of the examples (Docker, mock OpenAI-compatible model)
+
+| Stack | Run | Result |
+| --- | --- | --- |
+| blog-team, BullMQ | normal run, control plane on | published, exit 0 |
+| | STOP ALL over HTTP during a model call | model request aborted 260 ms after the stop; workflow `STOPPED`, exit 2 |
+| | run after the stop | published, exit 0 |
+| | STOP ALL from the board button (Playwright click) | request aborted; exit 2 |
+| | `npm run stop-all` | request aborted; exit 2 |
+| | stop while waiting for the human review | run ended 775 ms after the stop; exit 2 |
+| | control plane off | `POST /control/stop-all` → 404; normal run published, exit 0 |
+| global-research, BullMQ, orchestrator in Docker | normal run (4 searchers) | exit 0 |
+| | stop during the fan-out | all 4 model requests aborted within 672 ms; exit 2 |
+| | run after the stop | exit 0 |
+| blog-team, Kafka | normal run | exit 0 |
+| | stop during a model call | request aborted after 665 ms; exit 2 |
+
+Board: `e2e/board-control.spec.ts` (STOP ALL button, stop banner, confirmation dialog) passes against
+the live gateway, with a new baseline for the dialog.
+
+Live model: one STOP ALL during a real `openai/gpt-4o-mini` call through OpenRouter, via a recording
+proxy. The request was closed by the client mid-generation and never finished upstream; the task
+ended `emergency_stop` 57 ms after the stop, with no completion. Cost under USD 0.01.
+
+## Found and fixed during verification
+
+- A node that starts after a stop could take an old queued task before reading the saved stop. The
+  control channel is now attached before `actor.start()` (in `startAgentNode` and the searcher
+  example); the e2e scenario A3 covers it.
+- Kafka e2e files ran in parallel, and the extra file made the scaling test see a rebalance
+  duplicate. The Kafka suite now runs one file at a time, like the BullMQ suite.
+
+## Pull request review (#178), all fixed in one round and re-verified with the gate above
+
+- A stop that arrived while the firewall or admission gate was still deciding was missed: the actor
+  now checks for a stop right before every attempt.
+- The saved stop in Redis was trusted unsigned: with `CHANNEL_SIGNING_SECRET` it now carries a
+  durable HMAC signature and an unsigned or altered value is ignored.
+- `unwrapVerified("null")` threw in signed mode: it returns null, and the control listener catches.
+- A failed read of the saved stop counted as done: a node now does not start without it, and a
+  failed read after a reconnect is retried.
+- The gateway's view of the last stop could go stale, and CLI stops were invisible to it: the gateway
+  now subscribes to the control channel itself.
+- A handler that ignored the stop and failed late showed ERROR/BLOCKED: it shows STOPPED (its paid
+  tokens still count).
+- A memoized producer that triggered the stop synchronously could hang its step: fixed.
+- A stop during a human review left the review card pending in the examples: it is marked STOPPED.
+- The Helm charts did not render `CONTROL_PLANE_ENABLED`: both configmap templates do now
+  (checked with `helm template`).
+- `KaibanTeamBridge` (deprecated, in-process) stops its team at the next step; a model call already
+  in flight there finishes. Documented as a limit (tasks run by an `AgentActor` are cancelled mid-call).
+
+## Seen, not changed (existing behaviour, same on `main`)
+
+- On a fresh Kafka broker with a model that answers in about 100 ms, the orchestrator's first wait
+  can miss the result: the completion consumer joins its group only after the first dispatch
+  (roadmap §7.2, completion routing). With a real model's latency the run completes.
+- The Kafka orchestrator prints one Node `TimeoutNegativeWarning`; the same warning appears on `main`.
+- One full unit run (of seven) failed the existing wall-clock test "retry delay increases with
+  backoff" in `AgentActor-edge.test.ts`; it passed in the other six runs and alone.

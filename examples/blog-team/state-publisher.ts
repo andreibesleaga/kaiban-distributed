@@ -25,7 +25,11 @@ export class BlogStatePublisher extends OrchestratorStatePublisher {
     });
   }
 
+  /** The review task waiting for a human decision, if any (for reviewStopped). */
+  private pendingReviewTaskId: string | null = null;
+
   awaitingHITL(taskId: string, reviewTitle: string, recommendation: string, score: string): void {
+    this.pendingReviewTaskId = taskId;
     this.publish({
       teamWorkflowStatus: 'RUNNING',
       agents: BLOG_AGENTS,
@@ -69,5 +73,20 @@ export class BlogStatePublisher extends OrchestratorStatePublisher {
       tasks.push({ taskId: editTaskId, title: 'Editorial Review', status: 'BLOCKED', assignedToAgentId: 'editor', result: 'Workflow stopped' });
     }
     this.publish({ teamWorkflowStatus: 'STOPPED', agents: BLOG_AGENTS, tasks, metadata: { totalTokens, estimatedCost, endTime: Date.now() } });
+  }
+
+  /**
+   * Emergency STOP ALL (ADR-025): the review the orchestrator was waiting on
+   * ends STOPPED, so the board shows no pending decision after the run exits.
+   */
+  reviewStopped(): void {
+    if (!this.pendingReviewTaskId) return;
+    this.publish({
+      tasks: [{
+        taskId: this.pendingReviewTaskId, title: 'Review stopped', status: 'STOPPED',
+        assignedToAgentId: 'editor', result: 'Emergency stop: no decision was taken',
+      }],
+    });
+    this.pendingReviewTaskId = null;
   }
 }

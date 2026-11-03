@@ -18,6 +18,9 @@ import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import type { AgentStatusTracker } from "../infrastructure/federation/agent-status-tracker";
 import { GatewayApp } from "../adapters/gateway/GatewayApp";
 import { SocketGateway } from "../adapters/gateway/SocketGateway";
+import { EmergencyStopIngress } from "../adapters/gateway/emergency-stop-ingress";
+import { controlPlaneEnabled } from "../shared/emergency-stop";
+import { ControlSubscriber } from "../infrastructure/control/control-channel";
 import { buildReadinessProbe, buildStartupProbe } from "../resilience/health";
 import { gracefulShutdown } from "../resilience/graceful-shutdown";
 import { createStructuredLogger } from "../shared/structured-logger";
@@ -110,6 +113,39 @@ function buildGatewayMcpHandler(
  * A2A surface (ADR-015): the official `@a2a-js/sdk` v0.3 server is mounted behind
  * the gateway's security middleware. The custom `A2AConnector` has been removed.
  */
+/**
+ * Emergency STOP ALL (ADR-025): one ingress for the HTTP route and the board
+ * socket event, only with CONTROL_PLANE_ENABLED. It always needs a board token.
+ */
+function buildEmergencyStopIngress(redis: Redis): EmergencyStopIngress | undefined {
+  if (!controlPlaneEnabled()) return undefined;
+  if (!process.env["BOARD_JWT_SECRET"]) {
+    log.warn(
+      "CONTROL_PLANE_ENABLED without BOARD_JWT_SECRET: every emergency stop from the board or HTTP is refused (npm run stop-all still works)",
+    );
+  }
+  return new EmergencyStopIngress(redis);
+}
+
+/**
+ * With the control plane on, the gateway watches the control channel too, so
+ * every board sees the latest stop (from any gateway or `npm run stop-all`),
+ * also after a reconnect. Returns the subscription to close on shutdown.
+ */
+async function watchControlChannel(
+  ingress: EmergencyStopIngress | undefined,
+  redisUrl: string,
+  sockets: SocketGateway,
+): Promise<ControlSubscriber | null> {
+  if (!ingress) return null;
+  const watch = new ControlSubscriber({
+    redisUrl,
+    onStop: (cmd): void => sockets.noteStop(cmd),
+  });
+  await watch.start();
+  return watch;
+}
+
 export async function runGateway(): Promise<void> {
   const config = loadConfig();
 
@@ -176,6 +212,8 @@ export async function runGateway(): Promise<void> {
     a2a.statusTracker,
   );
 
+  const emergencyStop = buildEmergencyStopIngress(redisHitlPub);
+
   const gateway = new GatewayApp({
     requestHandler: a2a.requestHandler,
     statusTracker: a2a.statusTracker,
@@ -183,6 +221,7 @@ export async function runGateway(): Promise<void> {
     readinessProbe,
     startupProbe,
     ...(mcpHandler ? { mcpHandler, mcpPath: config.mcp.path } : {}),
+    ...(emergencyStop ? { emergencyStop } : {}),
   });
   const httpServer = createServer(gateway.app);
   const socketGateway = new SocketGateway(
@@ -192,10 +231,12 @@ export async function runGateway(): Promise<void> {
     {
       validHitlDecisions: config.validHitlDecisions,
       hitlPublisher: redisHitlPub,
+      ...(emergencyStop ? { control: emergencyStop } : {}),
     },
   );
 
   socketGateway.initialize();
+  const controlWatch = await watchControlChannel(emergencyStop, config.redis.url, socketGateway);
 
   httpServer.listen(config.port, () => {
     listening = true;
@@ -213,6 +254,7 @@ export async function runGateway(): Promise<void> {
       steps: [
         { name: "stop-http-intake", run: (): Promise<void> => closeServer(httpServer) },
         { name: "drain-sockets", run: (): Promise<void> => socketGateway.shutdown() },
+        { name: "close-control-watch", run: async (): Promise<void> => { await controlWatch?.close(); } },
         ...(mcpHandler
           ? [{ name: "close-mcp", run: (): Promise<void> => mcpHandler.close() }]
           : []),

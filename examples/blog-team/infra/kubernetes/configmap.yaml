@@ -10,6 +10,8 @@ data:
   SERVICE_NAME: "kaiban-gateway"
   AGENT_IDS: "researcher,writer,editor"
   LLM_MODEL: "gpt-4o-mini"
+  # Emergency STOP ALL (2.1.0, ADR-025): "true" turns it on (also set BOARD_JWT_SECRET).
+  CONTROL_PLANE_ENABLED: "false"
 ---
 apiVersion: v1
 kind: Secret

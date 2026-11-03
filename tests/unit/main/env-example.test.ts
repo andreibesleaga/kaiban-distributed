@@ -28,4 +28,10 @@ describe(".env.example through the real loader", () => {
     expect(config.retryOnTimeout).toBe(false);
     expect(config.agentTimeoutMs).toBe(300000);
   });
+
+  it("documents CONTROL_PLANE_ENABLED as off, and the shared switch reads it as off", async () => {
+    const { controlPlaneEnabled } = await import("../../../src/shared/emergency-stop");
+    expect(example["CONTROL_PLANE_ENABLED"]).toBe("false");
+    expect(controlPlaneEnabled(example)).toBe(false);
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "kaiban-distributed",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "description": "Kaiban Distributed: Distributed Agentic AI Platform - Actor Model Kanban Framework Implementation with Enterprise Messaging Layer State (Redis/Kafka) and Individual Deployed AI Nodes (TypeScript).",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -31,6 +31,7 @@
     "dev": "node dist/src/main/index.js",
     "dev:gateway": "ROLE=gateway node dist/src/main/index.js",
     "dev:worker": "ROLE=worker node dist/src/main/index.js",
+    "stop-all": "node dist/src/main/stop-all.js",
     "lint": "eslint src tests examples --max-warnings 0",
     "lockfile:fix": "sh scripts/fix-lockfile.sh",
     "lockfile:check": "sh scripts/fix-lockfile.sh --check",

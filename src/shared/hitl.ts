@@ -43,6 +43,11 @@ export interface HitlOptions {
    * Typically prints the draft to stdout. Omit if VIEW is not applicable.
    */
   onView?: () => void;
+  /**
+   * Emergency STOP ALL (ADR-025): aborting it ends the wait — both board
+   * paths are closed and the promise rejects with the signal's reason.
+   */
+  signal?: AbortSignal;
 }
 
 /** Canonical map from board decision strings to HitlDecision. */
@@ -57,28 +62,32 @@ const BOARD_DECISION_MAP: Record<string, HitlDecision> = {
  * Resolves with 'PUBLISH', 'REVISE', or 'REJECT'.
  */
 export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
-  const { taskId, rl, redisUrl, onView } = opts;
+  const { taskId, rl, redisUrl, onView, signal } = opts;
   const listKey = `kaiban-hitl-decisions:${taskId}`;
+  if (signal?.aborted) return Promise.reject(signal.reason as Error);
 
-  return new Promise<HitlDecision>((resolve) => {
+  return new Promise<HitlDecision>((resolve, reject) => {
     let resolved = false;
+
+    const settle = (): void => {
+      resolved = true;
+      signal?.removeEventListener("abort", onAbort);
+      sub.disconnect();
+      poller.disconnect();
+    };
+    const onAbort = (): void => {
+      /* v8 ignore next — the listener is removed once a decision resolves */
+      if (resolved) return;
+      settle();
+      releasePrompt(rl);
+      reject(signal?.reason as Error);
+    };
 
     const finish = (decision: HitlDecision): void => {
       /* v8 ignore next — idempotent guard: once resolved, extra finish() calls are no-ops */
       if (resolved) return;
-      resolved = true;
-      sub.disconnect();
-      poller.disconnect();
-      // Feed empty line to release any pending rl.question callback so the
-      // readline interface is ready for a potential second HITL round (REVISE).
-      // Guarded: the interface may already be closed (EOF / board-only run).
-      if (rl) {
-        try {
-          rl.write("\n");
-        } catch {
-          /* readline already closed — board path resolved the decision */
-        }
-      }
+      settle();
+      releasePrompt(rl);
       resolve(decision);
     };
 
@@ -140,6 +149,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     };
 
     void runPoller();
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     // ── Terminal path ────────────────────────────────────────────────────
     // When there is no usable readline (non-TTY / EOF / board-only run), the
@@ -149,6 +159,20 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     // prompt orphaned and re-arming, which on EOF spins forever.
     if (rl) spawnTerminalPrompt(rl, finish, () => resolved, onView);
   });
+}
+
+/**
+ * Feed an empty line to release any pending rl.question callback so the
+ * readline interface is ready for a potential second HITL round (REVISE).
+ * Guarded: the interface may already be closed (EOF / board-only run).
+ */
+function releasePrompt(rl: readline.Interface | null): void {
+  if (!rl) return;
+  try {
+    rl.write("\n");
+  } catch {
+    /* readline already closed — board path resolved the decision */
+  }
 }
 
 /** Parse and validate a single board message, calling finish if valid. */

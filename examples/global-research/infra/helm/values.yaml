@@ -32,6 +32,8 @@ agents:
 config:
   MESSAGING_DRIVER: "bullmq"
   LLM_MODEL: "gpt-4o-mini"
+  # Emergency STOP ALL (2.1.0, ADR-025): "true" on every pod turns it on (also set BOARD_JWT_SECRET).
+  CONTROL_PLANE_ENABLED: "false"
 
 secrets:
   # Base64 encode these values or replace them in production using --set or external secret managers

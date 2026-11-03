@@ -38,6 +38,9 @@ import {
   workflowBudgetFromEnv,
   assertWithinBudget,
   BudgetExceededError,
+  EmergencyStopError,
+  controlPlaneEnabled,
+  createEmergencyStopSignal,
 } from '../../src/shared';
 import { log, RunLogger } from './run-logger';
 import { BlogStatePublisher } from './state-publisher';
@@ -67,7 +70,43 @@ const WORKFLOW_ID = process.env['WORKFLOW_ID']
 
 // ── Main orchestration flow ───────────────────────────────────
 
-async function main(): Promise<void> {
+/** Exit code of a run ended by an emergency STOP ALL (ADR-025). */
+const EXIT_EMERGENCY_STOP = 2;
+
+/**
+ * End a run that threw: publish its terminal state and finish the run log.
+ * Returns the exit code for a stop (emergency or budget); rethrows anything else.
+ */
+async function endFailedRun(
+  err: unknown, pub: BlogStatePublisher, runLog: RunLogger, orch: WorkflowOrchestrator,
+): Promise<number> {
+  const { totalTokens, totalCost } = runLog.totals;
+  if (err instanceof EmergencyStopError) {
+    // Emergency STOP ALL: every task of this run was killed; end STOPPED, start fresh next time.
+    pub.workflowStopped(randomUUID(), err.message, totalTokens, totalCost);
+    pub.reviewStopped();
+    runLog.finish('STOPPED');
+    await orch.clear();
+    log.info(`\n${err.message} — workflow stopped.\n`);
+    return EXIT_EMERGENCY_STOP;
+  }
+  if (err instanceof BudgetExceededError) {
+    // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
+    pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, totalTokens, totalCost);
+    runLog.finish('STOPPED');
+    await orch.clear();
+    log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
+    return 0;
+  }
+  // Publish a terminal state so the board reflects the failure instead of
+  // hanging on RUNNING forever, then surface the error to the CLI.
+  const msg = err instanceof Error ? err.message : String(err);
+  pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, totalTokens, totalCost);
+  runLog.finish('FAILED');
+  throw err;
+}
+
+async function main(): Promise<number> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   // For BullMQ: one driver handles both completed + failed queues.
   // For Kafka: separate consumer groups prevent the KafkaJS "can't subscribe after run()" issue.
@@ -82,7 +121,11 @@ async function main(): Promise<void> {
   // Each pipeline phase is memoized under WORKFLOW_ID, so a restart resumes from
   // the last completed phase instead of re-running (and re-paying for) it.
   const store           = new RedisCheckpointStore(REDIS_URL);
-  const orch            = new WorkflowOrchestrator({ workflowId: WORKFLOW_ID, router, store });
+  // Emergency STOP ALL (ADR-025): only with CONTROL_PLANE_ENABLED=true.
+  const stop            = controlPlaneEnabled() ? await createEmergencyStopSignal(REDIS_URL) : null;
+  const orch            = new WorkflowOrchestrator({
+    workflowId: WORKFLOW_ID, router, store, ...(stop ? { stopSignal: stop.signal } : {}),
+  });
   const budget          = workflowBudgetFromEnv();
 
   let socket: Socket | null = null;
@@ -93,8 +136,10 @@ async function main(): Promise<void> {
     if (isKafka) await failedDriver.disconnect();
     await pub.disconnect();
     await store.disconnect();
+    await stop?.close();
     rl.close();
   };
+  let exitCode = 0;
 
   try {
     log.header('KAIBAN DISTRIBUTED — BLOG TEAM ORCHESTRATOR');
@@ -160,7 +205,10 @@ async function main(): Promise<void> {
     // STEP 4 — Human-in-the-Loop Decision (HITL)
     log.header('HUMAN REVIEW REQUIRED (HITL)');
     log.info(`Editorial: ${edit.recommendation} (Accuracy: ${edit.score})`);
-    await handleBlogDecision({ topic: TOPIC, redisUrl: REDIS_URL, gatewayUrl: GATEWAY_URL, research, write, edit, router, pub, driver: completedDriver, rl, runLog });
+    await handleBlogDecision({
+      topic: TOPIC, redisUrl: REDIS_URL, gatewayUrl: GATEWAY_URL, research, write, edit, router, pub,
+      driver: completedDriver, rl, runLog, ...(stop ? { signal: stop.signal } : {}),
+    });
 
     // Terminal state reached — wipe the checkpoint so a re-run starts fresh.
     await orch.clear();
@@ -170,30 +218,19 @@ async function main(): Promise<void> {
     log.separator('-');
 
   } catch (err: unknown) {
-    // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
-    if (err instanceof BudgetExceededError) {
-      const { totalTokens, totalCost } = runLog.totals;
-      pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, totalTokens, totalCost);
-      runLog.finish('STOPPED');
-      await orch.clear();
-      log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
-    } else {
-      // Publish a terminal state so the board reflects the failure instead of
-      // hanging on RUNNING forever, then surface the error to the CLI.
-      const { totalTokens, totalCost } = runLog.totals;
-      const msg = err instanceof Error ? err.message : String(err);
-      pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, totalTokens, totalCost);
-      runLog.finish('FAILED');
-      throw err;
-    }
+    exitCode = await endFailedRun(err, pub, runLog, orch);
   } finally {
     const logPath = await runLog.flush('examples/blog-team/runs').catch(() => null);
     if (logPath) log.info(`Run log saved to ${logPath}`);
     await cleanup();
   }
+  return exitCode;
 }
 
-main().catch((err: unknown) => {
+main().then((code) => {
+  // An emergency stop leaves the killed phase's wait timers armed: exit now.
+  if (code !== 0) process.exit(code);
+}).catch((err: unknown) => {
   console.error('[BlogTeam] Fatal error:', err);
   process.exit(1);
 });

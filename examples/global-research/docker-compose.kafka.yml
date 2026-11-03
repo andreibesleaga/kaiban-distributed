@@ -92,6 +92,10 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      # Board/HTTP stop commands need a board token (unset = board auth off, stop refused).
+      BOARD_JWT_SECRET: ${BOARD_JWT_SECRET:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-gateway
@@ -126,6 +130,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-searcher
@@ -160,6 +166,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-writer
@@ -192,6 +200,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-reviewer
@@ -224,6 +234,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-editor
@@ -259,6 +271,8 @@ services:
     environment:
       GATEWAY_URL: http://gateway:3000
       REDIS_URL: redis://redis:6379
+      # Emergency STOP ALL (ADR-025): set true on every service to enable it.
+      CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-orchestrator

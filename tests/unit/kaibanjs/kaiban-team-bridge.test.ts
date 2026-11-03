@@ -11,12 +11,14 @@ const mockStart = vi
   .fn()
   .mockResolvedValue({ status: "FINISHED", result: "blog post", stats: null });
 const mockSubscribeToChanges = vi.fn().mockReturnValue(() => {});
+const mockStop = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("kaibanjs", () => ({
   Team: vi.fn().mockImplementation(function () {
     return {
       getStore: mockGetStore,
       start: mockStart,
+      stop: mockStop,
       subscribeToChanges: mockSubscribeToChanges,
     };
   }),
@@ -105,5 +107,39 @@ describe("KaibanTeamBridge", () => {
   it("disconnect() is safe when no middleware provided", async () => {
     const bridge = new KaibanTeamBridge({ name: "T", agents: [], tasks: [] });
     await expect(bridge.disconnect()).resolves.not.toThrow();
+  });
+});
+
+describe("KaibanTeamBridge.start — abort signal (emergency STOP ALL, ADR-025 ES-12)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("with no signal, starts the team as before", async () => {
+    const bridge = new KaibanTeamBridge({ name: "T", agents: [], tasks: [] });
+    await expect(bridge.start({ a: 1 })).resolves.toMatchObject({ status: "FINISHED" });
+    expect(mockStart).toHaveBeenCalledWith({ a: 1 });
+    expect(mockStop).not.toHaveBeenCalled();
+  });
+
+  it("an abort stops the team and rejects with the signal's reason", async () => {
+    mockStart.mockReturnValueOnce(new Promise(() => undefined)); // runs until stopped
+    const bridge = new KaibanTeamBridge({ name: "T", agents: [], tasks: [] });
+    const controller = new AbortController();
+    const running = bridge.start({}, controller.signal);
+    const reason = new Error("emergency stop");
+    controller.abort(reason);
+
+    await expect(running).rejects.toBe(reason);
+    expect(mockStop).toHaveBeenCalledOnce();
+  });
+
+  it("an already-aborted signal never starts the team", async () => {
+    const bridge = new KaibanTeamBridge({ name: "T", agents: [], tasks: [] });
+    const controller = new AbortController();
+    controller.abort(new Error("stopped"));
+
+    await expect(bridge.start({}, controller.signal)).rejects.toThrow("stopped");
+    expect(mockStart).not.toHaveBeenCalled();
   });
 });

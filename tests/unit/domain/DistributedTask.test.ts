@@ -82,6 +82,7 @@ describe("DistributedTask", () => {
       "AWAITING_VALIDATION",
       "DONE",
       "BLOCKED",
+      "STOPPED", // emergency STOP ALL (ADR-025)
     ];
     for (const status of statuses)
       expect(isDistributedTask({ ...validTask, status })).toBe(true);

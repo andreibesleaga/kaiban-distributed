@@ -55,7 +55,7 @@ vi.mock('socket.io-client', () => ({
 }));
 
 // Import after mocks
-import { sendHitlDecision, initSocket } from '../socketClient';
+import { sendHitlDecision, sendStopAll, initSocket } from '../socketClient';
 
 describe('sendHitlDecision', () => {
   beforeEach(() => {
@@ -155,5 +155,67 @@ describe('sendHitlDecision', () => {
     await vi.advanceTimersByTimeAsync(8_100);
     const errorLogs = (mockAddLog.mock.calls as unknown[][]).filter(c => c[0] === 'ERROR');
     expect(errorLogs).toHaveLength(0);
+  });
+});
+
+describe('sendStopAll (emergency STOP ALL, ADR-025)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockConnected = true;
+    initSocket();
+    capturedEmit.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('emits control:stop-all with the reason and logs the confirmation', () => {
+    sendStopAll('runaway');
+    expect(capturedEmit).toHaveBeenCalledWith('control:stop-all', { reason: 'runaway' }, expect.any(Function));
+    const ack = capturedEmit.mock.calls[0]![2] as (r: Record<string, unknown>) => void;
+    ack({ ok: true, commandId: 'abcdef12-3456', issuedAt: 1, saved: true });
+    expect(mockAddLog).toHaveBeenCalledWith('CONTROL', 'STOP ALL issued (command abcdef12)', true);
+  });
+
+  it('sends no reason when none is given', () => {
+    sendStopAll();
+    expect(capturedEmit).toHaveBeenCalledWith('control:stop-all', {}, expect.any(Function));
+  });
+
+  it('logs a refusal with the gateway error, or a generic one', () => {
+    sendStopAll();
+    const ack = capturedEmit.mock.calls[0]![2] as (r: Record<string, unknown>) => void;
+    ack({ ok: false, error: 'Missing board token' });
+    expect(mockAddLog).toHaveBeenCalledWith('ERROR', 'STOP ALL refused: Missing board token', true);
+    sendStopAll();
+    (capturedEmit.mock.calls[1]![2] as (r: unknown) => void)(undefined);
+    expect(mockAddLog).toHaveBeenCalledWith('ERROR', 'STOP ALL refused: gateway error', true);
+  });
+
+  it('logs when the gateway does not confirm within 8 s', () => {
+    vi.useFakeTimers();
+    sendStopAll();
+    vi.advanceTimersByTime(8_001);
+    expect(mockAddLog).toHaveBeenCalledWith(
+      'ERROR',
+      'STOP ALL not confirmed by the gateway within 8s — check the gateway, or run npm run stop-all',
+      true,
+    );
+  });
+
+  it('a confirmed stop clears the timeout (no late error)', () => {
+    vi.useFakeTimers();
+    sendStopAll();
+    (capturedEmit.mock.calls[0]![2] as (r: Record<string, unknown>) => void)({ ok: true, commandId: 'c', issuedAt: 1, saved: true });
+    vi.advanceTimersByTime(8_001);
+    expect(mockAddLog).not.toHaveBeenCalledWith('ERROR', expect.stringContaining('not confirmed'), true);
+  });
+
+  it('when disconnected, logs an error and emits nothing', () => {
+    mockConnected = false;
+    sendStopAll();
+    expect(capturedEmit).not.toHaveBeenCalled();
+    expect(mockAddLog).toHaveBeenCalledWith('ERROR', 'Cannot send STOP ALL — not connected to gateway (run npm run stop-all instead)', true);
   });
 });

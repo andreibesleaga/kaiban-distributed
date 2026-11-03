@@ -315,6 +315,7 @@ See the E2E horizontal scaling tests:
 | `kaiban-events-failed` | BullMQ queue / Kafka topic | DLQ — failed after 3 retries, or after one attempt on a non-retryable error |
 | `kaiban-state-events` | Redis Pub/Sub | Observability — actor state → board |
 | `kaiban-hitl-decisions` | Redis Pub/Sub | HITL — board decision → orchestrator |
+| `kaiban-control` | Redis Pub/Sub | Emergency STOP ALL (2.1.0, [ADR-025](../decisions/ADR-025-emergency-stop-control-channel.md)) — gateway / CLI → every worker and orchestrator; only with `CONTROL_PLANE_ENABLED=true` |
 
 ---
 

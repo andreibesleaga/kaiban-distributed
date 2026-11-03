@@ -77,6 +77,12 @@ describe("channel-signing", () => {
       expect(result).toEqual(payload);
     });
 
+    it("returns null (never throws) for JSON that is not an object envelope", () => {
+      for (const raw of ["null", "42", '"text"', "true"]) {
+        expect(unwrapVerified(raw)).toBeNull();
+      }
+    });
+
     it("returns null when sig is tampered", () => {
       const payload = { teamWorkflowStatus: "FINISHED" };
       const raw = wrapSigned(payload);

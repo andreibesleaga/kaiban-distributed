@@ -85,7 +85,11 @@ export class ResearchStatePublisher extends OrchestratorStatePublisher {
     this.publish({ tasks: [{ taskId: reviewTaskId, title: 'Governance & Compliance Review', status: 'DOING', assignedToAgentId: 'reviewer' }] });
   }
 
+  /** The review task waiting for a human decision, if any (for reviewStopped). */
+  private pendingReviewTaskId: string | null = null;
+
   awaitingHITL(taskId: string, recommendation: string, complianceScore: string): void {
+    this.pendingReviewTaskId = taskId;
     this.publish({
       teamWorkflowStatus: 'RUNNING',
       tasks: [{
@@ -115,5 +119,20 @@ export class ResearchStatePublisher extends OrchestratorStatePublisher {
       tasks: [{ taskId, title: 'Workflow ended', status: 'BLOCKED', assignedToAgentId: 'editor', result: reason.slice(0, 200) }],
       metadata: ctx ? { ...ctx.metadata, endTime: ctx.metadata.endTime ?? Date.now() } : undefined,
     });
+  }
+
+  /**
+   * Emergency STOP ALL (ADR-025): the review the orchestrator was waiting on
+   * ends STOPPED, so the board shows no pending decision after the run exits.
+   */
+  reviewStopped(): void {
+    if (!this.pendingReviewTaskId) return;
+    this.publish({
+      tasks: [{
+        taskId: this.pendingReviewTaskId, title: 'Review stopped', status: 'STOPPED',
+        assignedToAgentId: 'editor', result: 'Emergency stop: no decision was taken',
+      }],
+    });
+    this.pendingReviewTaskId = null;
   }
 }

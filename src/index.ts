@@ -27,6 +27,7 @@ export { AgentActor } from "./application/actor/AgentActor";
 export type {
   TaskHandler,
   AgentActorDeps,
+  EmergencyStopResult,
 } from "./application/actor/AgentActor";
 
 // ── Messaging ────────────────────────────────────────────────────────────────
@@ -219,6 +220,34 @@ export type {
 // The capped factory (MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET from the
 // environment) — the same function `kaiban-distributed/shared` exports.
 export { createAgentStatePublisher } from "./shared/agent-node";
+// Emergency STOP ALL (ADR-025): off unless CONTROL_PLANE_ENABLED=true.
+export {
+  controlPlaneEnabled,
+  createStopAllCommand,
+  attachEmergencyStop,
+  createEmergencyStopSignal,
+} from "./shared/emergency-stop";
+export type {
+  AttachEmergencyStopOptions,
+  EmergencyStopHandle,
+  EmergencyStopSignal,
+} from "./shared/emergency-stop";
+export {
+  issueStopAll,
+  readLastStop,
+  parseStopAllCommand,
+  ControlSubscriber,
+  StopAllCommandSchema,
+  STOP_MOMENT_KEY,
+} from "./infrastructure/control/control-channel";
+export type {
+  StopAllCommand,
+  ControlAck,
+  ControlPublisher,
+  ControlReader,
+  ControlSubscriberOptions,
+  StopSource,
+} from "./infrastructure/control/control-channel";
 export { DistributedStateMiddleware } from "./adapters/state/distributedMiddleware";
 
 // ── Security ─────────────────────────────────────────────────────────────────

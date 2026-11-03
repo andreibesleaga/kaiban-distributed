@@ -283,3 +283,22 @@ describe("ResearchStatePublisher", () => {
     expect(meta.totalTokens).toBe(1000);
   });
 });
+
+describe("global-research ResearchStatePublisher — emergency STOP ALL (ADR-025)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reviewStopped() marks the pending review task STOPPED, once; nothing when none is pending", () => {
+    const pub = new ResearchStatePublisher("redis://localhost:6379");
+    pub.reviewStopped();
+    expect(mockPublish).not.toHaveBeenCalled();
+    pub.awaitingHITL("edit-9", "PUBLISH", "9/10");
+    pub.reviewStopped();
+    const msg = JSON.parse(mockPublish.mock.calls.at(-1)![1] as string) as Record<string, unknown>;
+    expect(msg["tasks"]).toEqual([
+      expect.objectContaining({ taskId: "edit-9", status: "STOPPED", assignedToAgentId: "editor" }),
+    ]);
+    const calls = mockPublish.mock.calls.length;
+    pub.reviewStopped();
+    expect(mockPublish.mock.calls.length).toBe(calls);
+  });
+});
