@@ -34,7 +34,8 @@ interface StubOptions {
   /** Require the board token in the handshake (BOARD_JWT_SECRET set). */
   requireToken?: boolean;
   /** How the stub answers control:stop-all. */
-  ack?: 'ok' | 'refuse' | 'none';
+  /** `late`: confirms after the viewer's 8 s timeout has fired. */
+  ack?: 'ok' | 'refuse' | 'none' | 'late';
   tasks?: Record<string, unknown>[];
 }
 
@@ -72,7 +73,7 @@ async function startStub(viewerDir: string, opts: StubOptions): Promise<Stub> {
     next();
   });
   io.on('connection', (socket) => {
-    const snapshot = () =>
+    const snapshot = (): boolean =>
       socket.emit('state:update', {
         teamWorkflowStatus: 'RUNNING',
         agents: [],
@@ -85,6 +86,10 @@ async function startStub(viewerDir: string, opts: StubOptions): Promise<Stub> {
       stopPayloads.push(payload);
       if (opts.ack === 'none') return;
       if (opts.ack === 'refuse') return ack?.({ ok: false, error: 'Missing board token' });
+      if (opts.ack === 'late') {
+        setTimeout(() => ack?.({ ok: true, commandId: 'cmd-12345678-aaaa' }), 9_500);
+        return;
+      }
       ack?.({ ok: true, commandId: 'cmd-12345678-aaaa' });
     });
   });
@@ -113,7 +118,7 @@ for (const v of viewers) {
       stub = undefined;
     });
 
-    async function open(page: Page, opts: StubOptions, hash = '') {
+    async function open(page: Page, opts: StubOptions, hash = ''): Promise<void> {
       stub = await startStub(v.dir, opts);
       await page.goto(`${stub.url}/?gateway=${encodeURIComponent(stub.url)}${hash}`);
       await expect(page.locator('#conn-badge')).toContainText(/LIVE|Error/);
@@ -135,7 +140,11 @@ for (const v of viewers) {
       await open(page, { controlPlane: PLANE_ON });
       const button = page.getByRole('button', { name: 'STOP ALL' });
       await expect(button).toBeVisible();
-      await page.keyboard.press('Tab');
+      // Reach the button by keyboard alone; how many Tab presses that takes depends on
+      // where the browser puts the initial focus, so press until it lands (bounded).
+      for (let i = 0; i < 10 && !(await button.evaluate((el) => el === document.activeElement)); i++) {
+        await page.keyboard.press('Tab');
+      }
       await expect(button).toBeFocused();
       expect(await button.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe('none');
 
@@ -212,6 +221,17 @@ for (const v of viewers) {
       await expect(alert).toBeHidden();
       await expect(alert).toContainText('npm run stop-all', { timeout: 15_000 });
       await expect(alert).toContainText('8s');
+    });
+
+    test('a confirmation that arrives after the timeout clears the alert and logs the stop', async ({ page }) => {
+      test.setTimeout(30_000);
+      await open(page, { controlPlane: PLANE_ON, ack: 'late' });
+      await page.getByRole('button', { name: 'STOP ALL' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Stop all' }).click();
+      const alert = page.getByRole('alert');
+      await expect(alert).toContainText('npm run stop-all', { timeout: 15_000 });
+      await expect(alert).toBeHidden({ timeout: 15_000 });
+      await expect(page.locator('#log-box')).toContainText('STOP ALL issued (command cmd-1234)');
     });
 
     test('shows the gateway refusal', async ({ page }) => {

@@ -460,6 +460,7 @@ function sendStopAll(reason) {
     answered = true;
     window.clearTimeout(timer);
     if (response?.ok) {
+      clearControlError(); // a late confirmation replaces the timeout alert
       addLog('CONTROL', `STOP ALL issued (command ${String(response.commandId).slice(0, 8)})`, true);
     } else {
       showControlError(`STOP ALL refused: ${response?.error ?? 'gateway error'}`);
