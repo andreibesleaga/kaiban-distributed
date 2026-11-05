@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-11-04
+
+The two static HTML viewers (`examples/blog-team/viewer`, `examples/global-research/viewer`) now have the emergency STOP ALL that 2.1.0 gave only the React board. Additive; no new dependency; with the control plane off, the viewers behave as before.
+
+### Added
+
+- Viewers: a **STOP ALL** button (shown only when the gateway snapshot says the control plane is on), a native confirmation dialog with an optional reason, the `control:stop-all` emit with an 8 s acknowledgement timeout (a visible error names `npm run stop-all`), a banner with the time, issuer, reason and acknowledgement count of the last stop, and `STOPPED` tasks in the Blocked column with a "Stopped" badge.
+- Viewers: the board token. Open a viewer with `#token=<board token>` in the address (or set `window.BOARD_TOKEN`); it is sent as `auth: { token }` in the socket handshake, removed from the address bar at once, and never logged or stored. This also lets a viewer connect to a gateway that sets `BOARD_JWT_SECRET`.
+- Tests: `board/e2e/viewers-control.spec.ts` (Playwright, against a stub gateway, no network).
+
 ## [2.1.0] — 2026-11-03
 
 One new, opt-in control: the emergency STOP ALL ([ADR-025](docs/decisions/ADR-025-emergency-stop-control-channel.md), [roadmap §6.10](docs/roadmap/V2.1-ROADMAP.md)). Off unless `CONTROL_PLANE_ENABLED=true`; with it unset, behaviour is that of 2.0.3.

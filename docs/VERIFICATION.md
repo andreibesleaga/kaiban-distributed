@@ -237,3 +237,33 @@ ended `emergency_stop` 57 ms after the stop, with no completion. Cost under USD 
 - The Kafka orchestrator prints one Node `TimeoutNegativeWarning`; the same warning appears on `main`.
 - One full unit run (of seven) failed the existing wall-clock test "retry delay increases with
   backoff" in `AgentActor-edge.test.ts`; it passed in the other six runs and alone.
+
+---
+
+# 2.1.1 verification record — STOP ALL in the static viewers (2026-11-04)
+
+Scope: the STOP ALL button, confirmation, banner, `STOPPED` badge and board-token handshake in
+`examples/blog-team/viewer` and `examples/global-research/viewer` (the examples repository's copy was
+checked with the same spec). Every line below is from a command run on the final tree of branch
+`fix/viewers-stop-all-2.1.1`.
+
+## Gate
+
+| Check | Result |
+| --- | --- |
+| `npm run test:coverage` | 134 files, 1,547 tests; 100 % statements (2,649), branches (1,540), functions (625), lines (2,441) |
+| `npm run typecheck` · `npm run lint` · `npm run lint:arch` · `npm run api:check` · `npm run build` | clean · 0 warnings · no cycle · reports current · ok |
+| `cd board && npx vitest run && npm run build` | 16 files, 174 tests · built |
+| `cd board && npx playwright test viewers-control viewers-visual board-control` | 22 passed, 1 skipped (`board-control` needs a live gateway); the control spec has 10 tests per viewer, run against a stub gateway with no network. With `EXAMPLES_VIEWER_DIR` set to the examples repository's `viewer/` it runs 30 tests, all passing |
+| `npm run lockfile:check` · `scripts/smoke-consumer.sh` · `node scripts/audit-gate.js` | ok · passed · 0 high/critical outside the documented exception |
+| lychee (offline) on README, CHANGELOG, MIGRATION, EXAMPLES, `docs/` | 189 unique links, 0 errors |
+
+The spec was written first and failed for the right reason (no button) before the viewers changed.
+
+## Runs in Docker (mock OpenAI-compatible model that answers after 40 s, so a call is in flight)
+
+| Stack | Run | Result |
+| --- | --- | --- |
+| blog-team, BullMQ, `CONTROL_PLANE_ENABLED=true` and `BOARD_JWT_SECRET` | viewer opened from disk with `#token=`, STOP ALL clicked, confirmed with a reason | button shown; address bar cleaned; model request aborted about 1 s later; banner "3 node acknowledgements"; the Researcher card in Blocked with "Stopped"; orchestrator exit 2 |
+| global-research, BullMQ, 4 searchers | same, from its viewer | 4 of 4 model requests aborted; banner "7 node acknowledgements"; four Stopped cards; exit 2 |
+| blog-team, control plane off | viewer connected (LIVE) | no STOP ALL button; `POST /control/stop-all` → 404; a normal run published, exit 0 |

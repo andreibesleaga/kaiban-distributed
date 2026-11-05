@@ -655,7 +655,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "name": "kaiban-gateway",
   "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
   "url": "http://localhost:3000/a2a/rpc",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
     { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }
@@ -882,6 +882,7 @@ The full list is [`.env.example`](.env.example); it also covers the variables no
 With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every running model call, every task and every workflow at once:
 
 - **From the board:** the **STOP ALL** button in the header (shown only when the gateway has the control plane on), then confirm. The board needs `VITE_BOARD_TOKEN`, and the gateway `BOARD_JWT_SECRET`.
+- **From the static HTML viewers (2.1.1):** the same **STOP ALL** button, confirmation and banner in `examples/blog-team/viewer/board.html` and `examples/global-research/viewer/board.html`. When the gateway sets `BOARD_JWT_SECRET`, open the viewer with the token in the address fragment, for example `board.html#token=<board token>` (or `board.html?gateway=http://localhost:3000#token=<board token>`), or set `window.BOARD_TOKEN`. The fragment is removed from the address bar after it is read, and the token is never logged or stored.
 - **Over HTTP:** `curl -X POST http://localhost:3000/control/stop-all -H "Authorization: Bearer <board token>" -H "content-type: application/json" -d '{"reason":"runaway loop"}'`
 - **From a shell:** `npm run build` once, then `npm run stop-all -- --reason "runaway loop"` (in the image: `node dist/src/main/stop-all.js`). It needs only `REDIS_URL` (and `CHANNEL_SIGNING_SECRET` when the deployment signs its channels).
 
