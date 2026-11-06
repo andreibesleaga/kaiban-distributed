@@ -146,7 +146,9 @@ Smaller points:
   committed offset (first start, a new `KAFKA_GROUP_ID`, or offsets expired after the broker's
   `offsets.retention.minutes`) now reads its mailbox from the beginning, so tasks the topic still
   retains are run (again). Keep the topic retention shorter than the longest idle period, or
-  reset the group's offsets before restarting after a long pause.
+  reset the group's offsets before restarting after a long pause. The completed and failed
+  channels follow the same rule: a new orchestrator or gateway consumer group replays the
+  retained events once (results for tasks nobody waits for are dropped with a log line).
 - global-research: `AUTO_PUBLISH` is no longer inferred from a missing terminal. A piped or CI run
   must set `AUTO_PUBLISH=true` (or answer the review prompt), otherwise it waits for the decision.
 - `AGENT_TIMEOUT_MS` and `CIRCUIT_BREAKER_*` values that were silently mis-parsed now log a warning

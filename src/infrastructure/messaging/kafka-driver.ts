@@ -8,7 +8,6 @@ import {
   sanitizeTraceHeaders,
 } from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
-import { AGENT_MAILBOX_PREFIX } from "./channels";
 import { isMessagePayload } from "./payload-guard";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
@@ -150,14 +149,14 @@ export class KafkaDriver implements IMessagingDriver {
     // together), so the consumer is always disconnected at this point.
     await this.consumer.connect();
     this.consumerConnected = true;
-    // A task mailbox is durable work: a group with no committed offset (new
-    // agent id, or offsets expired after `offsets.retention.minutes`) must read
-    // the backlog, not skip it. Event channels (completed/failed) only matter
-    // live, so they start at the latest offset.
-    await this.consumer.subscribe({
-      topic,
-      fromBeginning: topic.startsWith(AGENT_MAILBOX_PREFIX),
-    });
+    // A group with no committed offset on a partition (new group, a partition it
+    // has not seen, or offsets expired after `offsets.retention.minutes`) reads
+    // it from the start. A task mailbox is durable work, so the backlog must not
+    // be skipped; and the completed/failed channels are subscribed lazily, after
+    // the task was sent, so "latest" would lose a result published before the
+    // group joined (the CompletionRouter ignores results it is not waiting for,
+    // so a one-time replay of old events costs only log lines).
+    await this.consumer.subscribe({ topic, fromBeginning: true });
     this.subscribedTopic = topic;
     await this.consumer.run({
       eachMessage: async ({ message, heartbeat }) => {

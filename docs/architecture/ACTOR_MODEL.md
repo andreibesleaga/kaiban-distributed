@@ -290,7 +290,9 @@ npx ts-node examples/blog-team/writer-node.ts &
 # Kafka assigns partitions automatically as instances join/leave.
 # One partition has one active consumer: create the task topic
 # (kaiban-agents-<id>) with at least as many partitions as replicas,
-# otherwise the extra replicas stay idle. Auto-created topics have one.
+# otherwise the extra replicas stay idle. Auto-created topics have one
+# (the compose files set KAFKA_NUM_PARTITIONS=4). A group reads a partition
+# it has no committed offset for from the beginning, for every topic.
 MESSAGING_DRIVER=kafka npx ts-node examples/blog-team/writer-node.ts &
 MESSAGING_DRIVER=kafka npx ts-node examples/blog-team/writer-node.ts &
 ```

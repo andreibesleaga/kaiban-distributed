@@ -80,12 +80,12 @@ describe("KafkaDriver", () => {
     expect(mockProducerConnect).toHaveBeenCalledOnce();
   });
 
-  it("subscribe() connects consumer", async () => {
-    await driver.subscribe("t", vi.fn());
+  it("subscribe() connects the consumer and reads an event channel from the beginning for a new group (a result published before the group joined is not lost)", async () => {
+    await driver.subscribe("kaiban-events-completed", vi.fn());
     expect(mockConsumerConnect).toHaveBeenCalledOnce();
     expect(mockConsumerSubscribe).toHaveBeenCalledWith({
-      topic: "t",
-      fromBeginning: false,
+      topic: "kaiban-events-completed",
+      fromBeginning: true,
     });
     expect(mockRun).toHaveBeenCalledOnce();
   });
