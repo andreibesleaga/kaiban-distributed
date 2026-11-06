@@ -10,13 +10,18 @@
 Security changes in 2.0.1: production boot refuses missing, short (< 32 bytes) or repeated signing
 secrets (`ALLOW_INSECURE_PRODUCTION=true` lets a missing one through, with a warning); HITL decisions
 validate the task id and are rate-limited per connection; probe routes have their own, higher limit.
-Not yet in 2.0.1 (planned for 2.1): an operator stop command, role checks on HITL decisions and on
-control routes, and per-run tokens for the board.
+Not in 2.0.1: an operator stop command (shipped in 2.1.0, below), role checks on HITL decisions and on
+control routes, and per-run tokens for the board (the last two are planned for a later version).
 
 Security changes in 2.0.2: a board token is rejected on the A2A and MCP routes and an A2A token is
 rejected on the board socket, by the `role` claim the token helpers already issue (this matters when
 both secrets are equal; hand-signed tokens must carry `board-viewer` or `a2a-client`); each probe
 route (`/health`, `/ready`, `/startup`) has its own 120 per minute bucket per client.
+
+Security changes in 2.1.0: the operator STOP ALL control plane (opt-in, `CONTROL_PLANE_ENABLED=true`).
+Control commands always need a board token, are limited to 5 per 10 s per connection, and the saved
+stop marker (`kaiban-control:stopped-at`) is signed when `CHANNEL_SIGNING_SECRET` is set. Role checks on
+HITL decisions and per-run board tokens are not part of 2.1.
 
 ## Reporting a vulnerability
 

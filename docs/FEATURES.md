@@ -58,7 +58,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
   to bound Redis growth, optional TLS) and `KafkaDriver` (a unique consumer group per worker role,
   optional SSL/mTLS, poison-message tolerance). **Value:** production-grade queueing semantics
   (durability, backpressure, competing consumers) without binding business logic to a specific broker.
-- **Five canonical channels with a deliberate durable/ephemeral split.** Task mailboxes,
+- **Six canonical channels with a deliberate durable/ephemeral split** (the sixth, `kaiban-control`, exists only with `CONTROL_PLANE_ENABLED`). Task mailboxes,
   `kaiban-events-completed`, and `kaiban-events-failed` (DLQ) flow over the durable driver; the
   `kaiban-state-events` and `kaiban-hitl-decisions` channels are **pinned to Redis Pub/Sub regardless
   of `MESSAGING_DRIVER`**. **Value:** durable task work and ephemeral UI/decision signalling each get
@@ -99,7 +99,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
 - **In-process actor dispatch and fan-out/fan-in.** `dispatchToAgent` hands an instruction straight
   to an agent mailbox; `CompletionRouter` maps `taskId → pending Promise` (with `waitAll` for fan-in).
   **Value:** orchestrate your own deployed nodes without going through the HTTP A2A surface, while
-  keeping the same input caps and dedup guarantees.
+  without the A2A input caps or in-flight dedup (callers validate; `dispatchToAgent` itself checks nothing).
 - **KaibanJS bridge.** `KaibanAgentBridge` wraps a KaibanJS agent in a per-task `Team` and returns a
   token-tracked result; `KaibanTeamBridge` runs a local KaibanJS `Team` whose state syncs to the
   distributed board. **Value:** existing KaibanJS agents drop straight into distributed worker
@@ -137,10 +137,10 @@ And the design stance that distinguishes it from most JS agent frameworks:
 - **Dual decision channels, durable-first delivery.** A decision can arrive from the React board or
   the terminal, raced fairly ("first to respond wins"); the gateway writes the durable per-task list
   entry **before** the pub/sub publish, and the board is ACK'd only after both succeed. **Value:** a
-  missed pub/sub message stays recoverable via the list fallback, so an approval is never silently lost.
+  missed pub/sub message stays recoverable via the list fallback, so an approval is not lost (a signed list entry stays valid for its 300 s lifetime; a decision rejected for a bad signature or age is logged).
 - **Emergency STOP ALL (2.1.0, opt-in).** With `CONTROL_PLANE_ENABLED=true`, one press of the
   board's STOP ALL button, one `POST /control/stop-all`, or `npm run stop-all` kills every running
-  model call, task and workflow sent up to that moment: model requests are cancelled mid-call,
+  model call, task and workflow sent up to that moment: model requests on the OpenAI-compatible provider are cancelled mid-call (other providers stop at the next agent-loop step),
   queued tasks are refused, workflows end `STOPPED`, and anything started afterwards runs normally
   ([ADR-025](decisions/ADR-025-emergency-stop-control-channel.md)). Board and HTTP commands need a
   board token; every node acknowledges on the state channel. **Value:** an operator can halt a
@@ -297,7 +297,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
   abuse has a narrower blast radius.
 - **Byte-accurate data caps & PII minimization.** A 64 KB outbound-message cap and 20 KB state-event-
   result cap measured in **UTF-8 bytes** (truncating on codepoint boundaries), SHA-256-hashed agent IDs
-  in logs, and `sanitizeDelta` PII stripping (email/name/phone/IP/secrets) on the state path. **Value:**
+  in logs, and `sanitizeDelta` stripping of PII-named top-level delta keys (email/name/phone/IP/secrets; nested keys are not inspected) on the state path. **Value:**
   one chatty actor can't congest the broker, and the observable stream meets GDPR data-minimization by
   default.
 - **Supply-chain security.** The published library ships **0 HIGH/CRITICAL advisories**; the release
@@ -471,9 +471,9 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 6. `CompletionRouter` with lazy subscription, duplicate-`wait()` rejection, and `taskId`-keyed dispatch.
 
 **Channels, state & checkpoint/resume**
-7. Five canonical channels with the durable/ephemeral split (durable broker vs. Redis Pub/Sub).
+7. Six canonical channels (the sixth, `kaiban-control`, only with `CONTROL_PLANE_ENABLED`) with the durable/ephemeral split (durable broker vs. Redis Pub/Sub).
 8. `AgentStatePublisher` (IDLE/THINKING/EXECUTING/ERROR + task deltas, 15 s heartbeat) and `OrchestratorStatePublisher` (workflow lifecycle).
-9. `DistributedStateMiddleware` intercepts Zustand `setState()` and publishes PII-stripped deltas.
+9. `DistributedStateMiddleware` intercepts Zustand `setState()` and publishes deltas with PII-named top-level keys stripped.
 10. Redis checkpoint→resume in the single-active orchestrator; idempotent re-advance by `taskId`.
 11. DLQ (`kaiban-events-failed`) with a typed taxonomy and safe replay (skips non-retryable poison).
 

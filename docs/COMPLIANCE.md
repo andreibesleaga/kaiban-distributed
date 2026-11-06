@@ -23,7 +23,7 @@ What is **default-ON** (structural, always in force):
 - Clean/Hexagonal layering + the actor-model invariants (message-passing only, let-it-crash, `taskId`
   idempotency, workers never own workflow lifecycle).
 - **Data caps as safety**: outbound message **64 KB**, state-event result **20 KB / 20 000 chars**,
-  SHA-256-hashed agent IDs in logs, `sanitizeDelta` PII strip.
+  SHA-256-hashed agent IDs in logs, `sanitizeDelta` PII strip (top-level delta keys only).
 - A2A input validation (`agentId` ≤64, `/^[\w-]+$/`, `*` rejected; `instruction` ≤10 000;
   total params ≤64 KB) — [`a2a-input-validation.ts`](../src/infrastructure/federation/a2a-input-validation.ts).
 - Helmet/CSP/HSTS, per-IP rate limits, request/body/frame size caps, request timeout.
@@ -112,7 +112,7 @@ not fully wired, or deploy-dependent) · ⬜ gap / roadmap (not yet implemented)
 | **Tampering** | Forged/altered state injected on Redis channels | 🟡 | HMAC-SHA256 channel signing [`channel-signing.ts`](../src/infrastructure/security/channel-signing.ts) with `timingSafeEqual` + 30 s replay window | **Opt-in** (`CHANNEL_SIGNING_SECRET`); plain-JSON pass-through when unset. |
 | **Tampering** | Altered audit records | 🟡 | Hash-chained [`audit-log.ts`](../src/governance/audit-log.ts); `verify()` reports first `brokenAt` | Tamper-evident in-memory; durable storage + signed chain head = roadmap. |
 | **Repudiation** | Agent/human denies an action | 🟡 | Hash-chained audit of every gate decision [`audit-log.ts`](../src/governance/audit-log.ts), OTel traces, HITL decision logging | Non-repudiation strength bounded by the audit chain being in-memory + the gate being opt-in. |
-| **Information disclosure** | PII / secrets leak via state events or logs | ✅ | `sanitizeDelta()` PII strip + SHA-256 agent-id hashing (`src/adapters/state/`), result/message size caps, secrets via env only (never logged) | Default-ON data-protection caps. |
+| **Information disclosure** | PII / secrets leak via state events or logs | ✅ | `sanitizeDelta()` PII strip of top-level delta keys (nested keys are not inspected) + SHA-256 agent-id hashing (`src/adapters/state/`), result/message size caps, secrets via env only (never logged) | Default-ON data-protection caps. |
 | **Information disclosure** | Cross-tenant / over-privileged memory reads | 🟡 | [`secure-memory-store.ts`](../src/memory/secure-memory-store.ts): tenant keyspaces + retrieval-time RBAC (role × classification) + minTrust floor | New opt-in component; consumers must adopt the store. |
 | **Denial of service** | Request flood / oversized payload / runaway loop | ✅ / 🟡 | Per-IP rate limits (RPC 100/min, probe routes 120/min), per-connection HITL decision limit (10 per 10 s), body 1 MB, WS frame 1 MB, request timeout 30 s, input caps (✅ default-ON); circuit breaker + fleet rate/cost limiter (🟡 opt-in) | HTTP-surface DoS guards are default-ON; cross-agent/fleet limiting is opt-in (`ECONOMICS_ENABLED`). |
 | **Denial of service** | Encryption-in-transit / MITM | 🟡 | mTLS `REDIS_TLS_*` / `KAFKA_SSL_*`, `TLS_REJECT_UNAUTHORIZED` default true | Deploy-dependent. |
@@ -136,7 +136,7 @@ not fully wired, or deploy-dependent) · ⬜ gap / roadmap (not yet implemented)
 | **ASI08 / LLM10** — Cascading failures | Circuit breaker | 🟡 | [`sliding-window-breaker.ts`](../src/infrastructure/security/sliding-window-breaker.ts) | Opt-in (`CIRCUIT_BREAKER_ENABLED`). |
 | **Excessive agency / ASI** — uncontrolled tool actions | MCP elicitation consent + HITL gate + kill-switch | 🟡 | [`mcp-server.ts`](../src/infrastructure/federation/mcp-server.ts) (fail-closed consent), [`ADR-004`](./decisions/ADR-004-hitl-editorial-review.md), [`registry.ts`](../src/governance/registry.ts) | MCP server opt-in; consent fails closed; kill-switch enforcement depends on gate wiring. |
 | **LLM04 / data & memory poisoning** | Memory hardening (provenance, trust floor, revoke) | 🟡 | [`secure-memory-store.ts`](../src/memory/secure-memory-store.ts), policy rule `block-secrets-in-memory` ([`policies.yml`](../src/governance/policies.yml)) | Provenance + minTrust + `revoke()` poisoned entries; opt-in adoption. |
-| **LLM02 / ASI** — Sensitive information disclosure | PII sanitization + classification RBAC | ✅ / 🟡 | `sanitizeDelta()` (✅ default-ON), memory classification RBAC (🟡 opt-in) | Board-facing PII strip is structural. |
+| **LLM02 / ASI** — Sensitive information disclosure | PII sanitization + classification RBAC | ✅ / 🟡 | `sanitizeDelta()` (✅ default-ON), memory classification RBAC (🟡 opt-in) | Board-facing PII strip covers top-level delta keys only; recursive redaction is deferred. |
 | **ASI03** — Identity & privilege abuse | JIT token provider + JWT auth | 🟡 | [`env-token-provider.ts`](../src/infrastructure/security/env-token-provider.ts), `a2a-auth.ts` | `ITokenProvider` seam for Vault/Secrets-Manager; opt-in. |
 | **ASI07** — Insecure inter-agent communication | mTLS + channel signing | 🟡 | mTLS + [`channel-signing.ts`](../src/infrastructure/security/channel-signing.ts) | Deploy-dependent / opt-in. |
 | **Improper output handling (LLM05:2025)** | Output/state minimization + size caps | ✅ | `sanitizeDelta`, result 20 KB / outbound 64 KB caps | Default-ON. |

@@ -85,7 +85,7 @@ AGENT_IDS=researcher,writer,editor
 MESSAGING_DRIVER=bullmq
 PORT=3000
 SERVICE_NAME=kaiban-gateway
-SOCKET_CORS_ORIGINS=https://<your-viewer-url>   # Required in production — gateway refuses wildcard CORS
+SOCKET_CORS_ORIGINS=https://<your-viewer-url>   # Required when NODE_ENV=production (the gateway then refuses wildcard CORS and needs the three signing secrets); without NODE_ENV=production it allows *
 # REDIS_URL is set automatically by the Redis plugin
 # OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-endpoint (optional)
 ```
@@ -202,7 +202,7 @@ Set these in Railway **Project → Variables** (shared across all services) or p
 |----------|-------|-------|
 | `AGENT_IDS` | `researcher,writer,editor` | The agent ids the workers run; the gateway runs no agents, but its agent card advertises one skill per id |
 | `PORT` | `3000` | Gateway HTTP port |
-| `SOCKET_CORS_ORIGINS` | `https://<viewer-url>` | **Required in production** — the gateway refuses wildcard CORS, so set this to your viewer URL |
+| `SOCKET_CORS_ORIGINS` | `https://<viewer-url>` | **Required with `NODE_ENV=production`** (set it, together with the three signing secrets); without it the gateway silently allows `*`. Set this to your viewer URL |
 
 ### Worker-Only Variables
 

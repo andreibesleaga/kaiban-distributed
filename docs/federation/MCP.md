@@ -40,7 +40,7 @@ The surface is **Streamable HTTP** at `${MCP_SERVER_PATH}`:
 - **`dispatch_task`** — hand an instruction to an allow-listed agent.
   Input: `{ agentId, instruction, expectedOutput? }`. **Side-effecting** → gated by **elicitation
   consent** (see below). Publishes to the agent mailbox (`kaiban-agents-{agentId}`) through the same
-  `validateTaskInput` caps + `taskId` dedup as A2A. Returns `{ dispatched, taskId, status }`.
+  `validateTaskInput` caps as A2A. Each call mints a fresh `taskId`, so a client retry runs a second task: there is no dedup on this path. Returns `{ dispatched, taskId, status }`.
 
 ### Resources (read-only grounding context)
 - **`kaiban://agents`** — the agents this gateway can route to, with last-known status.

@@ -118,5 +118,5 @@ new AgentActor(agentId, driver, queue, handler, { firewall, circuitBreaker, admi
 - Unit-tested to 100% with **no broker**.
 
 ## Deferred (roadmap)
-Wiring `evaluate()` into the deployed `AgentActor` hot path / federation egress; durable + signed audit
+Wiring `evaluate()` into federation egress; durable + signed audit
 chain; richer policy DSL. See ADR-020.

@@ -78,6 +78,8 @@ agents:
 config:
   MESSAGING_DRIVER: "bullmq"
   LLM_MODEL: "gpt-4o-mini"
+  # Emergency STOP ALL (2.1.0, ADR-025): "true" on every pod turns it on (also set BOARD_JWT_SECRET).
+  CONTROL_PLANE_ENABLED: "false"
 
 secrets:
   OPENAI_API_KEY: ""        # required — pass via --set or external secret manager
@@ -121,7 +123,7 @@ helm install blog-team examples/blog-team/infra/helm \
   --set secrets.OPENAI_API_KEY="sk-your-key"
 ```
 
-> You must also override `REDIS_URL` in the ConfigMap template, or pass it via a custom values file.
+> You must also edit `REDIS_URL` in `templates/configmap.yaml`: the chart hardcodes the in-cluster Redis Service and has no value for it.
 
 ### Custom values file
 
@@ -200,7 +202,7 @@ helm upgrade --install blog-team examples/blog-team/infra/helm \
 
 **Option B — External Secrets Operator**
 
-Disable the built-in secret (`secrets.OPENAI_API_KEY=""`) and create a matching `ExternalSecret` resource that populates `<release>-kaiban-blog-team-secrets`.
+The chart always renders its own Secret, and an empty `secrets.OPENAI_API_KEY` still renders it (with an empty key), so a second Secret of the same name conflicts. Either delete the chart's Secret template for your install, or point the Deployments at a differently named Secret that the `ExternalSecret` populates.
 
 **Option C — Sealed Secrets**
 

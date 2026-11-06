@@ -31,7 +31,9 @@ export interface DispatchParams {
 
 /**
  * Publish a task to `agentId`'s mailbox and return its `taskId` (the dedup key the
- * caller waits on). Only the validated fields that are present are forwarded.
+ * caller waits on). Only the fields that are present are forwarded. No input caps
+ * or agent-id checks are applied here: callers validate (the A2A and MCP paths use
+ * `validateTaskInput`).
  */
 export async function dispatchToAgent(
   driver: Pick<IMessagingDriver, "publish">,
