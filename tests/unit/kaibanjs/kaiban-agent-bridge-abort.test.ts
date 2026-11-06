@@ -241,3 +241,64 @@ describe("createKaibanTaskHandler — team.stop() on abort", () => {
     expect(AgentMock).not.toHaveBeenCalled();
   });
 });
+
+describe("createKaibanTaskHandler — token provider key reaches the owned model", () => {
+  beforeEach(() => {
+    AgentMock.mockClear();
+    mockTeamStop.mockReset().mockResolvedValue(undefined);
+    mockTeamStart.mockReset().mockResolvedValue({ status: "FINISHED", result: "done", stats: null });
+  });
+
+  it("the token provider's key reaches the model, not the key baked into llmConfig (WF-V-04)", async () => {
+    AgentMock.mockClear();
+    const tokenProvider = {
+      getToken: vi.fn().mockImplementation(async (name: string) =>
+        name === "OPENAI_API_KEY" ? "sk-fresh-from-vault" : null),
+    };
+    const h = createKaibanTaskHandler(
+      { ...openaiConfig, llmConfig: { ...openaiConfig.llmConfig, apiKey: "sk-stale" } } as never,
+      makeMockDriver(),
+      tokenProvider as never,
+    );
+    await h(payload, new AbortController().signal);
+    const params = AgentMock.mock.calls[0]![0] as { llmInstance: { lc_kwargs: { apiKey: string } } };
+    expect(params.llmInstance.lc_kwargs.apiKey).toBe("sk-fresh-from-vault");
+  });
+
+  it("an OpenRouter base URL takes OPENROUTER_API_KEY from the token provider (WF-V-04)", async () => {
+    AgentMock.mockClear();
+    const tokenProvider = {
+      getToken: vi.fn().mockImplementation(async (name: string) =>
+        name === "OPENROUTER_API_KEY" ? "sk-or-fresh" : "sk-openai-other"),
+    };
+    const h = createKaibanTaskHandler(
+      {
+        ...openaiConfig,
+        llmConfig: { provider: "openai", model: "openai/gpt-4o-mini", apiKey: "sk-or-stale", apiBaseUrl: "https://openrouter.ai/api/v1" },
+      } as never,
+      makeMockDriver(),
+      tokenProvider as never,
+    );
+    await h(payload, new AbortController().signal);
+    const params = AgentMock.mock.calls[0]![0] as { llmInstance: { lc_kwargs: { apiKey: string } } };
+    expect(params.llmInstance.lc_kwargs.apiKey).toBe("sk-or-fresh");
+  });
+
+  it("a token provider with no key leaves llmConfig.apiKey in place; no provider changes nothing", async () => {
+    AgentMock.mockClear();
+    const none = { getToken: vi.fn().mockResolvedValue(null) };
+    const cfg = { ...openaiConfig, llmConfig: { ...openaiConfig.llmConfig, apiKey: "sk-config" } } as never;
+    await createKaibanTaskHandler(cfg, makeMockDriver(), none as never)(payload, new AbortController().signal);
+    await createKaibanTaskHandler(cfg, makeMockDriver())(payload, new AbortController().signal);
+    for (const call of AgentMock.mock.calls) {
+      expect((call[0] as { llmInstance: { lc_kwargs: { apiKey: string } } }).llmInstance.lc_kwargs.apiKey).toBe("sk-config");
+    }
+  });
+
+  it("a token provider with no llmConfig leaves the config absent", async () => {
+    AgentMock.mockClear();
+    const tp = { getToken: vi.fn().mockResolvedValue("sk-x") };
+    await createKaibanTaskHandler({ name: "A", role: "R", goal: "G", background: "B" } as never, makeMockDriver(), tp as never)(payload, new AbortController().signal);
+    expect(AgentMock.mock.calls[0]![0]).not.toHaveProperty("llmInstance");
+  });
+});

@@ -343,6 +343,47 @@ describe("createKaibanTaskHandler", () => {
     );
   });
 
+  it("never prices a model as a LONGER key it merely prefixes: gpt-4 is not gpt-4o (WF-07)", async () => {
+    mockTeamStart.mockResolvedValue(makeSuccess("answer", 1_000_000, 1_000_000));
+    const h = createKaibanTaskHandler(
+      { name: "A", role: "R", goal: "G", background: "B", llmConfig: { provider: "openai", model: "gpt-4" } },
+      makeMockDriver(),
+    );
+    const result = (await h(basePayload)) as { estimatedCost: number };
+    expect(result.estimatedCost).toBeCloseTo(4.0, 2); // default, not gpt-4o's 12.5
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-4" }),
+      expect.stringContaining("default pricing"),
+    );
+  });
+
+  it("prices an extended model id by the LONGEST known key and warns once (WF-07)", async () => {
+    mockTeamStart.mockResolvedValue(makeSuccess("answer", 1_000_000, 1_000_000));
+    mockLog.warn.mockClear();
+    const h = createKaibanTaskHandler(
+      {
+        name: "A", role: "R", goal: "G", background: "B",
+        llmConfig: { provider: "openai", model: "gpt-4o-mini-search-preview" },
+      },
+      makeMockDriver(),
+    );
+    const result = (await h(basePayload)) as { estimatedCost: number };
+    expect(result.estimatedCost).toBeCloseTo(0.75, 2); // gpt-4o-mini, not gpt-4o
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-4o-mini-search-preview", pricedAs: "gpt-4o-mini" }),
+      expect.stringContaining("closest known model"),
+    );
+    await h(basePayload);
+    expect(mockLog.warn).toHaveBeenCalledTimes(1); // one-time
+  });
+
+  it("prices a run with no llmConfig as KaibanJS's default model gpt-4o-mini (WF-07)", async () => {
+    mockTeamStart.mockResolvedValue(makeSuccess("answer", 1_000_000, 1_000_000));
+    const h = createKaibanTaskHandler({ name: "A", role: "R", goal: "G", background: "B" }, makeMockDriver());
+    const result = (await h(basePayload)) as { estimatedCost: number };
+    expect(result.estimatedCost).toBeCloseTo(0.75, 2);
+  });
+
   it("includes env vars in Team env when set", async () => {
     const { Team } = await import("kaibanjs");
     process.env["OPENAI_API_KEY"] = "test-key";

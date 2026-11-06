@@ -59,31 +59,48 @@ function normalizeModel(model: string): string {
     .replace(/[-:]v\d+$/, "");
 }
 
-/** Does either of two model identifiers prefix the other (date/version aside)? */
-function isPrefixMatch(normalized: string, key: string): boolean {
-  const normalizedKey = normalizeModel(key);
-  return (
-    normalized.startsWith(normalizedKey) || normalizedKey.startsWith(normalized)
-  );
+type Price = { input: number; output: number };
+
+/** The pricing keys in normalized form, longest first (so the most specific wins). */
+const NORMALIZED_PRICING: ReadonlyArray<{ key: string; norm: string; price: Price }> =
+  Object.entries(MODEL_PRICING)
+    .filter(([key]) => key !== "default")
+    .map(([key, price]) => ({ key, norm: normalizeModel(key), price }))
+    .sort((x, y) => y.norm.length - x.norm.length);
+
+/** Models already reported as approximately priced or unknown (warn once each). */
+const warnedModels = new Set<string>();
+
+function warnOnce(model: string, message: string, extra: object): void {
+  if (warnedModels.has(model)) return;
+  warnedModels.add(model);
+  log.warn({ model, ...extra }, message);
 }
 
-/** Resolve a model name to a pricing entry, falling back to `default` with a one-time warn. */
-function resolvePricing(model: string): { input: number; output: number } {
+/**
+ * Resolve a model name to a pricing entry. An exact (or date/provider-normalized)
+ * match is silent. A model that extends a known key (`gpt-4o-mini-search-preview`
+ * extends `gpt-4o-mini`) takes the LONGEST such key's price with a one-time
+ * warning; an unknown model takes `default` with a one-time warning. A model that
+ * merely is a prefix of a key (`gpt-4` vs `gpt-4o`) never matches that key.
+ */
+function resolvePricing(model: string): Price {
   const exact = MODEL_PRICING[model];
   if (exact) return exact;
 
   const normalized = normalizeModel(model);
-  const byNormalized = MODEL_PRICING[normalized];
-  if (byNormalized) return byNormalized;
+  const same = NORMALIZED_PRICING.find((e) => e.norm === normalized);
+  if (same) return same.price;
 
-  for (const [key, pricing] of Object.entries(MODEL_PRICING)) {
-    if (key !== "default" && isPrefixMatch(normalized, key)) return pricing;
+  const longer = NORMALIZED_PRICING.find((e) => normalized.startsWith(`${e.norm}-`));
+  if (longer) {
+    warnOnce(model, "Model priced by the closest known model prefix (estimate)", {
+      pricedAs: longer.key,
+    });
+    return longer.price;
   }
 
-  log.warn(
-    { model, normalized },
-    "Model not in pricing table; using default pricing",
-  );
+  warnOnce(model, "Model not in pricing table; using default pricing", { normalized });
   return MODEL_PRICING["default"]!;
 }
 
@@ -126,6 +143,28 @@ async function buildEnv(
     if (val) env[key] = val;
   }
   return env;
+}
+
+/**
+ * With a token provider, its per-task key must reach the model: KaibanJS prefers
+ * `llmConfig.apiKey` over the team env, so a key baked into the config (for
+ * example read from `process.env` at start) would shadow a rotated one. The
+ * OpenRouter key applies to an OpenRouter base URL, the OpenAI key otherwise.
+ */
+function withProviderKey(
+  agentConfig: KaibanAgentConfig,
+  env: Record<string, string>,
+): KaibanAgentConfig {
+  const llm = agentConfig.llmConfig;
+  if (!llm) return agentConfig;
+  const baseUrl = (llm as { apiBaseUrl?: string }).apiBaseUrl;
+  const keyName = baseUrl?.includes("openrouter.ai")
+    ? "OPENROUTER_API_KEY"
+    : "OPENAI_API_KEY";
+  const apiKey = env[keyName];
+  return apiKey
+    ? { ...agentConfig, llmConfig: { ...llm, apiKey } }
+    : agentConfig;
 }
 
 /** Build a KaibanJS Task from a raw message payload and a pre-created agent. */
@@ -433,7 +472,8 @@ export function createKaibanTaskHandler(
     const env = await buildEnv(tokenProvider, payload.taskId);
     signal?.throwIfAborted();
 
-    const team = buildTeam(agentConfig, payload, env, signal);
+    const config = tokenProvider ? withProviderKey(agentConfig, env) : agentConfig;
+    const team = buildTeam(config, payload, env, signal);
 
     const inputs = (payload.data["inputs"] as Record<string, unknown>) ?? {};
     const result = await startTeam(team, inputs, signal);
@@ -441,7 +481,8 @@ export function createKaibanTaskHandler(
     // Compute cost before the status check so we can log it regardless.
     // KaibanJS's own summary box shows $-1 when the model isn't in its private
     // pricing table — this line prints the correct value from our MODEL_PRICING.
-    const model = agentConfig.llmConfig?.model ?? "default";
+    // KaibanJS runs gpt-4o-mini when no model is configured, so price that.
+    const model = agentConfig.llmConfig?.model ?? "gpt-4o-mini";
     const handlerResult = toHandlerResult(result, model);
     log.info(
       {
