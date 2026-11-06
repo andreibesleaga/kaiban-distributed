@@ -74,6 +74,7 @@ export function buildA2AStack(opts: A2AStackOptions): A2AStack {
     router: opts.router,
     taskStore,
     timeoutMs: opts.timeoutMs,
+    agentIds: opts.agentIds,
   });
   const requestHandler = new DefaultRequestHandler(card, taskStore, executor);
 

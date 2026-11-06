@@ -167,6 +167,18 @@ describe("KaibanAgentExecutor.execute", () => {
     expect(finished).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects an agentId outside the configured list without creating a queue (SEC-05)", async () => {
+    const { deps, publish } = makeDeps();
+    const ex = new KaibanAgentExecutor({ ...deps, agentIds: ["writer"] });
+    const { bus, events } = makeEventBus();
+    await ex.execute(makeContext({ agentId: "x1", text: "go" }), bus);
+    expect(publish).not.toHaveBeenCalled();
+    expect(states(events).at(-1)).toBe("rejected");
+    const ok = makeEventBus();
+    await ex.execute(makeContext({ taskId: "t-2", agentId: "writer", text: "go" }), ok.bus);
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
   it("derives the instruction from text parts when metadata has none", async () => {
     const { deps, publish } = makeDeps();
     const ex = new KaibanAgentExecutor(deps);

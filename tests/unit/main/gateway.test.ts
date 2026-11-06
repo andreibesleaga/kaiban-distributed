@@ -399,6 +399,13 @@ describe("runGateway", () => {
       mcpDeps.dispatchTask({ agentId: "", instruction: "x" }),
     ).rejects.toThrow("agentId is required");
 
+    // An id outside AGENT_IDS never reaches a queue (SEC-05).
+    h.driverPublish.mockClear();
+    await expect(
+      mcpDeps.dispatchTask({ agentId: "stranger", instruction: "x" }),
+    ).rejects.toThrow("Unknown agentId");
+    expect(h.driverPublish).not.toHaveBeenCalled();
+
     expect(mcpDeps.listAgents()).toEqual([{ id: "gateway", status: "IDLE" }]);
     expect(mcpDeps.getAgentStatus("gateway")).toEqual({
       agentId: "gateway",

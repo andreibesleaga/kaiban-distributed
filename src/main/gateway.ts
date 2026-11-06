@@ -66,11 +66,14 @@ function buildGatewayMcpHandler(
         : {}),
     },
     dispatchTask: async ({ agentId, instruction, expectedOutput }) => {
-      const validation = validateTaskInput({
-        agentId,
-        instruction,
-        ...(expectedOutput !== undefined ? { expectedOutput } : {}),
-      });
+      const validation = validateTaskInput(
+        {
+          agentId,
+          instruction,
+          ...(expectedOutput !== undefined ? { expectedOutput } : {}),
+        },
+        config.agentIds,
+      );
       if ("error" in validation) throw new Error(validation.error.message);
       const taskId = randomUUID();
       const p = validation.params;
