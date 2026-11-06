@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-19
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase M + §B1.2 (federation invariants); §B8 BETA.2
+- **Refs:** the v2.0 planning notes (private; not in this repository)
 
 ## Context
 v2.0 adds a first-party **MCP server** so MCP-speaking hosts (IDEs, agents, the Model Context Protocol
@@ -64,3 +64,5 @@ default, and must not become an unauthenticated side-door around the gateway's s
 - The server is fully unit-tested (real SDK `Client` over an in-memory transport + a real
   `StreamableHTTPClientTransport` round-trip over loopback) at 100% coverage with no brokers.
 - One more env knob (`MCP_SERVER_ENABLED` + path/consent/allow-list) and one new direct dep (`zod`).
+
+> **Update (2.1.2, November 2026).** The chain on the MCP route is: rate limit, JWT check (`A2A_JWT_SECRET`), request timeout (at least 15 minutes, longer than the longest task wait), then a 1 MB JSON body parse; there is no global body parser, so unknown paths and anonymous callers cost no parsing. Sessions are limited: a session idle for 30 minutes is closed when a new one opens, and above 200 live sessions `initialize` returns HTTP 503. `dispatch_task` (like A2A) refuses an `agentId` that is not in `AGENT_IDS`.

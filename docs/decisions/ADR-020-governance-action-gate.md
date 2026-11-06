@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-19
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase G + §B1 invariants (#8 default-off); §B8 BETA.3
+- **Refs:** the v2.0 planning notes (private; not in this repository)
 
 ## Context
 v2.0 needs **external, non-bypassable enforcement**: a single point every sensitive operation
@@ -63,3 +63,5 @@ A new **`src/governance/`** layer (contract `src/governance/types.ts`) plus a ha
 ## Consequences
 - A composable, default-off enforcement spine with a tamper-evident trail, hot-loadable policy, a
   kill-switch, and a hardened memory store — all 100%-covered with no broker. One new dep (`yaml`).
+
+> **Update (2026-06-19).** The actor hot-path wiring was done in ADR-021. Still open: federation-egress enforcement, a default fleet cost limiter (roadmap sections 1 and 2) and a durable or signed audit chain.

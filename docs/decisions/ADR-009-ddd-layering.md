@@ -22,3 +22,5 @@ circular-import check (`madge --circular --extensions ts src/`).
 - **+** New transports/security impls slot in behind interfaces.
 - **−** More indirection than a flat structure; the composition root (`main/index.ts`)
   carries the wiring.
+
+> **Update (2.1.2, November 2026).** Four more top-level folders exist: `economics/`, `governance/`, `memory/` and `resilience/` (ADR-018, 019, 020). They follow the same rule: no framework imports in `domain/`, no cycles (madge).

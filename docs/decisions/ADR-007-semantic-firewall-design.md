@@ -21,3 +21,5 @@ Blocked payloads route straight to the DLQ (`kaiban-events-failed`) without retr
 - **+** Cheap, stateless, zero new runtime deps; backward-compatible (off by default).
 - **+** Domain interface lets a stronger classifier be swapped in.
 - **−** Regex heuristics are best-effort, not exhaustive — defense in depth, not a guarantee.
+
+> **Update (2.1.2, November 2026).** `SEMANTIC_FIREWALL_LLM_URL` is read into the configuration (`security.semanticFirewallLlmUrl`), but nothing uses the value and no LLM analysis runs. The sentence "nothing reads it yet" above means "nothing acts on it yet".
