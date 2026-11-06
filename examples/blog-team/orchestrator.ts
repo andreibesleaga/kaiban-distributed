@@ -169,7 +169,7 @@ async function main(): Promise<number> {
     // STEP 1 — Research (checkpoint→resume via the shared orchestrator)
     log.separator('-'); log.info('STEP 1 — Ava (Researcher) is gathering information...'); log.separator('-');
     const research = await orch.memoize<ResearchResult>('research',
-      () => runResearchPhase(TOPIC, router, pub, completedDriver, runLog));
+      () => runResearchPhase(TOPIC, router, pub, completedDriver, runLog, stop?.signal));
 
     log.info('\nRESEARCH COMPLETE');
     log.separator('-');
@@ -181,7 +181,7 @@ async function main(): Promise<number> {
     log.info('\nSTEP 2 — Kai (Writer) is drafting the blog post...');
     log.separator('-');
     const write = await orch.memoize<WriteResult>('write',
-      () => runWritePhase(TOPIC, research.summary, router, pub, completedDriver, runLog));
+      () => runWritePhase(TOPIC, research.summary, router, pub, completedDriver, runLog, stop?.signal));
 
     log.info('\nDRAFT COMPLETE');
     log.separator('-');
@@ -193,7 +193,7 @@ async function main(): Promise<number> {
     log.info('\nSTEP 3 — Morgan (Editor) is reviewing for accuracy...');
     log.separator('-');
     const edit = await orch.memoize<EditResult>('editorial',
-      () => runEditorialPhase(TOPIC, research.summary, write.draft, router, pub, completedDriver, runLog));
+      () => runEditorialPhase(TOPIC, research.summary, write.draft, router, pub, completedDriver, runLog, stop?.signal));
 
     log.header('EDITORIAL REVIEW BY MORGAN');
     log.info(edit.review);

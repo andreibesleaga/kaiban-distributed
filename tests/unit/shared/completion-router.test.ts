@@ -421,6 +421,20 @@ describe("CompletionRouter", () => {
     ).rejects.toThrow(/Aborted wait for x/);
   });
 
+  it("waitAll() with a signal rejects with the stop error and removes every waiter (WF-03)", async () => {
+    const { driver } = makeCapturingDriver();
+    const router = new CompletionRouter(driver, driver);
+    const controller = new AbortController();
+    const all = router.waitAll(["a", "b"], 10_000, "search", controller.signal);
+    const stop = new EmergencyStopError();
+    controller.abort(stop);
+    await expect(all).rejects.toBe(stop);
+    // Waiters are gone: the same ids can be waited on again without a duplicate error.
+    const again = router.wait("a", 10, "x");
+    vi.advanceTimersByTime(11);
+    await expect(again).rejects.toThrow(/Timeout/);
+  });
+
   it("ignores an abort fired after the task already completed", async () => {
     const handlersByQueue = new Map<string, SubscribeHandler>();
     const driver: IMessagingDriver = {

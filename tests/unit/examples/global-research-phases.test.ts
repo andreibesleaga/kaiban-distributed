@@ -10,7 +10,7 @@ import {
 } from "../../../examples/global-research/phases";
 import type { ResearchContext } from "../../../examples/global-research/types";
 import type { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
-import { AGENT_CHANNEL_PREFIX } from "../../../src/shared";
+import { AGENT_CHANNEL_PREFIX, EmergencyStopError } from "../../../src/shared";
 
 // ── mock waitForHITLDecision ──────────────────────────────────────────────────
 const { mockWaitForHITL } = vi.hoisted(() => ({ mockWaitForHITL: vi.fn() }));
@@ -973,5 +973,68 @@ describe("global-research — emergency STOP ALL signal (ADR-025)", () => {
     expect(mockWaitForHITL).toHaveBeenNthCalledWith(1, expect.objectContaining({ signal }));
     expect(mockWaitForHITL).toHaveBeenNthCalledWith(2, expect.objectContaining({ signal }));
     expect(mockRouter.wait).toHaveBeenCalledWith(expect.any(String), 1000, "revision", signal);
+  });
+});
+
+// ── WF-03: a stop must not turn the killed tasks into BLOCKED ────────────────
+
+describe("global-research — a stop does not publish taskFailed (WF-03)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const gov = { recommendation: "APPROVED", score: "9/10", text: "gov" };
+  const phases: Array<[string, (m: ReturnType<typeof makeMocks>, signal?: AbortSignal) => Promise<unknown>]> = [
+    ["write", (m, signal) => runWritePhase(makeCtx({ rawSearchData: [] }), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["governance", (m, signal) => runGovernancePhase(makeCtx(), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["editorial", (m, signal) => runEditorialPhase(makeCtx(), "q", gov, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+  ];
+
+  for (const [name, run] of phases) {
+    it(`${name}: passes the signal to the wait`, async () => {
+      const m = makeMocks();
+      const signal = new AbortController().signal;
+      m.mockRouter.wait.mockResolvedValue(parsedResult("ok"));
+      await run(m, signal);
+      expect(m.mockRouter.wait.mock.calls[0]![3]).toBe(signal);
+    });
+
+    it(`${name}: an EmergencyStopError (late worker dead-letter) is rethrown without taskFailed`, async () => {
+      const m = makeMocks();
+      const stop = new EmergencyStopError();
+      m.mockRouter.wait.mockRejectedValue(stop);
+      await expect(run(m)).rejects.toBe(stop);
+      expect(m.mockPub.taskFailed).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: any failure while the stop signal is aborted skips taskFailed`, async () => {
+      const m = makeMocks();
+      const ctl = new AbortController();
+      ctl.abort();
+      m.mockRouter.wait.mockRejectedValue(new Error("Aborted wait"));
+      await expect(run(m, ctl.signal)).rejects.toThrow("Aborted wait");
+      expect(m.mockPub.taskFailed).not.toHaveBeenCalled();
+    });
+  }
+
+  it("a non-stop failure still publishes taskFailed", async () => {
+    const m = makeMocks();
+    m.mockRouter.wait.mockRejectedValue(new Error("boom"));
+    await expect(runGovernancePhase(makeCtx(), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never)).rejects.toThrow("boom");
+    expect(m.mockPub.taskFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it("search: the signal reaches waitAll", async () => {
+    const m = makeMocks();
+    const signal = new AbortController().signal;
+    m.mockRouter.waitAll.mockResolvedValue([{ taskId: "x", result: parsedResult("ok") }]);
+    await runSearchPhase(makeCtx(), "q", 1, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal);
+    expect(m.mockRouter.waitAll.mock.calls[0]![3]).toBe(signal);
+  });
+
+  it("search: a stop rejects the phase and no searcher task is marked BLOCKED", async () => {
+    const m = makeMocks();
+    const stop = new EmergencyStopError();
+    m.mockRouter.waitAll.mockRejectedValue(stop);
+    await expect(runSearchPhase(makeCtx(), "q", 2, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never)).rejects.toBe(stop);
+    expect(m.mockPub.searchPhaseComplete).not.toHaveBeenCalled();
   });
 });

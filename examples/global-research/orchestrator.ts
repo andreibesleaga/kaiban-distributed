@@ -119,7 +119,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.info(`Sub-topics: ${subTopics.map((t, i) => `\n  ${i + 1}. ${t}`).join('')}\n`);
 
   restore(ctx, await orch.memoize<CtxSnapshot>('search', async () => {
-    await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, driver, runLog);
+    await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, driver, runLog, signal);
     return snapshot(ctx);
   }));
 
@@ -130,7 +130,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.separator('='); log.info('STEP 2 — Fan-In: Atlas (Writer) synthesising research...'); log.separator('=');
 
   restore(ctx, await orch.memoize<CtxSnapshot>('write', async () => {
-    await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, driver, runLog);
+    await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, driver, runLog, signal);
     return snapshot(ctx);
   }));
 
@@ -141,7 +141,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.separator('='); log.info('STEP 3 — Sage (Reviewer) running governance compliance check...'); log.separator('=');
 
   const govStep = await orch.memoize('governance', async () => {
-    const result = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, driver, runLog);
+    const result = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, driver, runLog, signal);
     return { gov: result, snap: snapshot(ctx) };
   });
   restore(ctx, govStep.snap);
@@ -164,7 +164,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.separator('='); log.info('STEP 4 — Morgan (Editor) preparing HITL review...'); log.separator('=');
 
   const editStep = await orch.memoize('editorial', async () => {
-    const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, driver, runLog);
+    const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, driver, runLog, signal);
     return { edit: result, snap: snapshot(ctx) };
   });
   restore(ctx, editStep.snap);

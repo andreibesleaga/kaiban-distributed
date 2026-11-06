@@ -10,7 +10,7 @@ import {
   EDIT_WAIT_MS,
 } from "../../../examples/blog-team/phases";
 import type { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
-import { AGENT_CHANNEL_PREFIX } from "../../../src/shared";
+import { AGENT_CHANNEL_PREFIX, EmergencyStopError } from "../../../src/shared";
 
 // ── mock waitForHITLDecision from shared ─────────────────────────────────────
 const { mockWaitForHITL } = vi.hoisted(() => ({ mockWaitForHITL: vi.fn() }));
@@ -580,4 +580,43 @@ describe("blog-team — emergency STOP ALL signal (ADR-025)", () => {
     });
     expect(mockWaitForHITL.mock.calls[0]![0]).not.toHaveProperty("signal");
   });
+});
+
+// ── WF-03: a stop must not turn the killed tasks into BLOCKED ────────────────
+
+describe("blog-team — a stop does not publish taskFailed (WF-03)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const phases: Array<[string, (m: ReturnType<typeof makeMocks>, signal?: AbortSignal) => Promise<unknown>]> = [
+    ["research", (m, signal) => runResearchPhase("t", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["write", (m, signal) => runWritePhase("t", "r", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["editorial", (m, signal) => runEditorialPhase("t", "r", "d", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+  ];
+
+  for (const [name, run] of phases) {
+    it(`${name}: passes the signal to the wait`, async () => {
+      const m = makeMocks();
+      const signal = new AbortController().signal;
+      m.mockRouter.wait.mockResolvedValue(parsedResult("ok"));
+      await run(m, signal);
+      expect(m.mockRouter.wait.mock.calls[0]![3]).toBe(signal);
+    });
+
+    it(`${name}: an EmergencyStopError (late worker dead-letter) is rethrown without taskFailed`, async () => {
+      const m = makeMocks();
+      const stop = new EmergencyStopError();
+      m.mockRouter.wait.mockRejectedValue(stop);
+      await expect(run(m)).rejects.toBe(stop);
+      expect(m.mockPub.taskFailed).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: any failure while the stop signal is aborted skips taskFailed`, async () => {
+      const m = makeMocks();
+      const ctl = new AbortController();
+      ctl.abort();
+      m.mockRouter.wait.mockRejectedValue(new Error("Aborted wait"));
+      await expect(run(m, ctl.signal)).rejects.toThrow("Aborted wait");
+      expect(m.mockPub.taskFailed).not.toHaveBeenCalled();
+    });
+  }
 });

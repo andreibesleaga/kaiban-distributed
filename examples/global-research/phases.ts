@@ -19,6 +19,7 @@ import {
   waitForHITLDecision,
   workflowBudgetFromEnv,
   assertWithinBudget,
+  EmergencyStopError,
 } from '../../src/shared';
 import type { IMessagingDriver } from '../../src/infrastructure/messaging/interfaces';
 import { ResearchStatePublisher, extractSearchResults } from './state-publisher';
@@ -38,6 +39,16 @@ export interface EditorialResult {
   recommendation: string; // PUBLISH | REVISE | REJECT
   score: string;
   text: string;
+}
+
+/**
+ * A stopped run is reported once, as STOPPED, by the orchestrator. A phase's
+ * wait that is cut by the stop (or a worker's `emergency_stop` dead-letter that
+ * lands a moment later) must not re-publish the task as BLOCKED.
+ */
+function failUnlessStopped(err: Error, signal: AbortSignal | undefined, report: () => void): never {
+  if (!(err instanceof EmergencyStopError) && !signal?.aborted) report();
+  throw err;
 }
 
 // ── Sub-topic builder ─────────────────────────────────────────────────────────
@@ -67,6 +78,7 @@ export async function runSearchPhase(
   pub: ResearchStatePublisher,
   driver: Pick<IMessagingDriver, 'publish'>,
   runLog: RunLogger,
+  signal?: AbortSignal,
 ): Promise<void> {
   ctx.status = 'SEARCHING';
   const subTopics = buildSubTopics(query, numSearchers);
@@ -86,7 +98,7 @@ export async function runSearchPhase(
   // logged taskId always match the searcher that produced it (fixes a fan-out
   // result↔index mismatch when searchers finish out of order).
   const indexByTaskId = new Map(taskIds.map((id, i) => [id, i]));
-  const results = await router.waitAll(taskIds, searchWaitMs, 'search');
+  const results = await router.waitAll(taskIds, searchWaitMs, 'search', signal);
 
   for (const sr of results) {
     const idx = indexByTaskId.get(sr.taskId) ?? 0;
@@ -117,6 +129,7 @@ export async function runWritePhase(
   pub: ResearchStatePublisher,
   driver: Pick<IMessagingDriver, 'publish'>,
   runLog: RunLogger,
+  signal?: AbortSignal,
 ): Promise<void> {
   ctx.status = 'AGGREGATING';
   const searchSummary = ctx.rawSearchData
@@ -131,8 +144,8 @@ export async function runWritePhase(
   });
   pub.aggregatingPhase(taskId, ctx.rawSearchData.length);
 
-  const raw = await router.wait(taskId, writeWaitMs, 'writing')
-    .catch((err: Error) => { pub.taskFailed(taskId, 'writer', 'Research Synthesis', err.message); throw err; });
+  const raw = await router.wait(taskId, writeWaitMs, 'writing', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(taskId, 'writer', 'Research Synthesis', err.message)));
 
   const parsed = parseHandlerResult(raw);
   ctx.metadata.totalTokens   += parsed.inputTokens + parsed.outputTokens;
@@ -153,6 +166,7 @@ export async function runGovernancePhase(
   pub: ResearchStatePublisher,
   driver: Pick<IMessagingDriver, 'publish'>,
   runLog: RunLogger,
+  signal?: AbortSignal,
 ): Promise<GovernanceResult> {
   ctx.status = 'REVIEWING';
   const taskId = await dispatchToAgent(driver, 'reviewer', {
@@ -163,8 +177,8 @@ export async function runGovernancePhase(
   });
   pub.reviewingPhase(taskId);
 
-  const raw = await router.wait(taskId, reviewWaitMs, 'governance review')
-    .catch((err: Error) => { pub.taskFailed(taskId, 'reviewer', 'Governance Review', err.message); throw err; });
+  const raw = await router.wait(taskId, reviewWaitMs, 'governance review', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(taskId, 'reviewer', 'Governance Review', err.message)));
 
   const parsed = parseHandlerResult(raw);
   ctx.metadata.totalTokens   += parsed.inputTokens + parsed.outputTokens;
@@ -194,6 +208,7 @@ export async function runEditorialPhase(
   pub: ResearchStatePublisher,
   driver: Pick<IMessagingDriver, 'publish'>,
   runLog: RunLogger,
+  signal?: AbortSignal,
 ): Promise<EditorialResult> {
   ctx.status = 'AWAITING_VALIDATION';
   const taskId = await dispatchToAgent(driver, 'editor', {
@@ -203,8 +218,8 @@ export async function runEditorialPhase(
     context: `--- GOVERNANCE REVIEW (${gov.recommendation}) ---\n${gov.text}\n\n--- RESEARCH REPORT ---\n${ctx.consolidatedDraft}`,
   });
 
-  const raw = await router.wait(taskId, editWaitMs, 'editorial review')
-    .catch((err: Error) => { pub.taskFailed(taskId, 'editor', 'Editorial Review', err.message); throw err; });
+  const raw = await router.wait(taskId, editWaitMs, 'editorial review', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(taskId, 'editor', 'Editorial Review', err.message)));
 
   const parsed = parseHandlerResult(raw);
   ctx.metadata.totalTokens   += parsed.inputTokens + parsed.outputTokens;
