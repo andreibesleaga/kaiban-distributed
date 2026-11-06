@@ -778,10 +778,12 @@ describe("E2E: Global Research Swarm Full Flow (BullMQ + HITL)", () => {
     );
     const writeTaskId = `${wfId}-write`;
 
-    const oracleDriver = new BullMQDriver(connConfig());
+    // One consumer of the completed queue only: a second subscriber (an oracle)
+    // would compete with the router for the completions (BullMQ queues are
+    // work queues, see CompletionRouter.ensureSubscribed) and starve the gate.
+    const taskDriver = new BullMQDriver(connConfig());
     const routerDriver = new BullMQDriver(connConfig());
-    drivers.push(oracleDriver, routerDriver);
-    const oracle = createOracle(oracleDriver);
+    drivers.push(taskDriver, routerDriver);
     const router = new CompletionRouter(routerDriver);
 
     // Fixed, distinct latencies (no randomness): task 0 is fastest, task 3 slowest.
@@ -801,7 +803,7 @@ describe("E2E: Global Research Swarm Full Flow (BullMQ + HITL)", () => {
     await new Promise((r) => setTimeout(r, 200));
     await Promise.all(
       searchTaskIds.map((taskId) =>
-        oracleDriver.publish(SEARCHER_Q, {
+        taskDriver.publish(SEARCHER_Q, {
           taskId,
           agentId: "searcher",
           timestamp: Date.now(),
@@ -818,7 +820,8 @@ describe("E2E: Global Research Swarm Full Flow (BullMQ + HITL)", () => {
     expect(results.every((r) => r.error === undefined)).toBe(true);
     expect(results.map((r) => r.taskId).sort()).toEqual([...searchTaskIds].sort());
 
-    await oracleDriver.publish(WRITER_Q, {
+    const writeWait = router.wait(writeTaskId, 12_000, "write");
+    await taskDriver.publish(WRITER_Q, {
       taskId: writeTaskId,
       agentId: "writer",
       timestamp: Date.now(),
@@ -828,13 +831,8 @@ describe("E2E: Global Research Swarm Full Flow (BullMQ + HITL)", () => {
       },
     });
 
-    const writePhase = await oracle.waitFor([writeTaskId], 12_000);
-    expect(writePhase.success.size).toBe(1);
-
-    // Verify writer result contains expected content
-    const writeResult = JSON.parse(
-      String(getHandlerResult(writePhase.success.get(writeTaskId))),
-    ) as { answer: string };
+    // The router hands back the handler's result string.
+    const writeResult = JSON.parse(await writeWait) as { answer: string };
     expect(writeResult.answer).toContain("AI");
   }, 45_000);
 });
