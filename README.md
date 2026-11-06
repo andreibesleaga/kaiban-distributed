@@ -87,7 +87,7 @@ const driver = createDriver('my-agent');
 
 // Applies MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET from the environment
 // (defaults 200000 / 50000; the literal 'unlimited' removes a cap).
-const statePublisher = createAgentStatePublisher('redis://localhost:6379', {
+const statePublisher = createAgentStatePublisher(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   agentId: 'my-agent', name: 'Ada', role: 'Analyst',
 });
 
@@ -217,12 +217,12 @@ stateDiagram-v2
 |-----------|----------|---------|
 | `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker; outbound message data capped at 64 KB |
 | `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS agent in a per-task `Team`; calls `team.start()`; returns token-tracked `KaibanHandlerResult`; optional JIT token provider |
-| `KaibanTeamBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync |
+| `KaibanTeamBridge` (deprecated) | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync, in one process. For single tasks use `createKaibanTaskHandler`; a model call in flight is not cancelled by STOP ALL on this path |
 | `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/THINKING/EXECUTING/ERROR agent status to Redis Pub/Sub; 15s heartbeat; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
 | `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); optional TLS; no colon queue names |
 | `KafkaDriver` | `src/infrastructure/messaging/` | Kafka-backed messaging; optional SSL/mTLS; unique consumer group per worker role |
 | `DistributedStateMiddleware` | `src/adapters/state/` | Subscribes to the Zustand store and publishes each change as a signed board delta |
-| `GatewayApp` | `src/adapters/gateway/` | Express HTTP: `/health`, `/.well-known/agent-card.json`, `/a2a/rpc` |
+| `GatewayApp` | `src/adapters/gateway/` | Express HTTP: `/health`, `/ready`, `/startup`, `/.well-known/agent-card.json`, `/a2a/rpc`, `/a2a/agents/:agentId/status`, `/mcp` (when enabled), `/control/stop-all` (control plane only) |
 | `SocketGateway` | `src/adapters/gateway/` | Socket.io server + Redis pub/sub subscriber; broadcasts `state:update` to board |
 | A2A stack (`buildA2AStack`: `KaibanAgentExecutor` + `RedisTaskStore` + `AgentStatusTracker`) | `src/infrastructure/federation/` | Official `@a2a-js/sdk` v0.3 server; `message/send` validates + publishes to the agent mailbox (ADR-015) |
 | `MCPFederationClient` | `src/infrastructure/federation/` | Connects to any MCP tool server via stdio transport |
@@ -242,7 +242,7 @@ stateDiagram-v2
 
 ---
 
-## Quick Start
+## Run the gateway alone (health check)
 
 ### 1. Install
 
@@ -297,6 +297,8 @@ curl http://localhost:3000/.well-known/agent-card.json
 #   name = SERVICE_NAME (kaiban-worker in .env.example); one skill per id in AGENT_IDS
 ```
 
+This starts the gateway only. To run tasks, start a worker with `ROLE=worker AGENT_IDS=researcher,writer,editor node dist/src/main/index.js`, or use the [full demo](#quick-start-full-demo) above.
+
 ---
 
 ## React Board (`board/`)
@@ -324,7 +326,9 @@ npm run dev               # → http://localhost:5173
 
 **Production build** outputs static files to `board/dist/` — deploy anywhere (nginx, CDN, etc.). Set `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff` as response headers on the host: browsers ignore them in `<meta>` tags (see `board/README.md`, "Production hosting").
 
-![(React Board running example)](docs/images/ReactBoard2.png)
+![(React Board running example, with the STOP ALL button in the header)](docs/images/ReactBoard2.png)
+
+The stop dialog and the board after a stop are shown in [docs/images/board-stop-dialog.png](docs/images/board-stop-dialog.png) and [docs/images/board-stopped.png](docs/images/board-stopped.png).
 
 ---
 
@@ -335,17 +339,14 @@ Mirrors the [kaibanjs-node-demo](https://github.com/kaiban-ai/kaibanjs-node-demo
 ```typescript
 // my-agent-node.ts
 import 'dotenv/config';
-import { BullMQDriver } from './src/infrastructure/messaging/bullmq-driver';
 import { AgentActor } from './src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from './src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { createAgentStatePublisher } from './src/shared';
+import { createDriver, createAgentStatePublisher } from './src/shared';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const redisUrl = new URL(REDIS_URL);
 
-const driver = new BullMQDriver({
-  connection: { host: redisUrl.hostname, port: parseInt(redisUrl.port || '6379', 10) },
-});
+// BullMQ or Kafka from MESSAGING_DRIVER; REDIS_URL credentials and REDIS_TLS_* are applied.
+const driver = createDriver('researcher');
 
 // Applies MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET (defaults 200000 / 50000).
 const statePublisher = createAgentStatePublisher(REDIS_URL, {
@@ -416,15 +417,16 @@ SocketGateway:
   subscribes Redis kaiban-state-events → emits Socket.io 'state:update' to board
 ```
 
-### Board state lifecycle
+### Board state lifecycle (static viewer wording)
 
-`teamWorkflowStatus` values (set by the orchestrator only):
+`teamWorkflowStatus` values (set by the orchestrator only). The banner texts below are those of the static viewer `examples/blog-team/viewer/board.html`; the React board shows "Workflow finished", "Workflow stopped" (amber) and "Workflow errored" (red) instead:
 
 | `teamWorkflowStatus` | Board banner | Badge |
 |---|---|---|
 | `RUNNING` | none | 🔵 blue |
 | `FINISHED` | ✅ **WORKFLOW COMPLETE** (green glow) | 🟢 green |
 | `STOPPED` | ⏹ **WORKFLOW ENDED** (grey) | ⚫ grey |
+| `ERRORED` | red banner (React board: "Workflow errored") | 🔴 red |
 
 > The ⏸ **HUMAN DECISION REQUIRED** (orange pulse) banner is shown when any task has status `AWAITING_VALIDATION` — this is triggered by task state, not by `teamWorkflowStatus`.
 
@@ -434,6 +436,9 @@ Task card states:
 - `DONE` — 🟢 green
 - `AWAITING_VALIDATION` — 🟠 orange pulsing glow + `⏸ HUMAN DECISION` badge + HITL banner
 - `BLOCKED` — 🔴 red glow + `⛔ ERROR` badge + red error banner with message
+- `STOPPED` — shown in the Blocked column with a `Stopped` badge after an emergency STOP ALL
+
+The React board groups tasks into the columns To Do · In Progress · Review · Done · Blocked.
 
 ### Option A: Static HTML viewer (zero setup)
 
@@ -516,7 +521,9 @@ Both the board and the terminal prompt remain functional simultaneously — firs
 cd board && npm run build    # → board/dist/ (static files, serve anywhere)
 ```
 
-### Option D: KaibanTeamBridge (local Team + distributed workers)
+### Option D: KaibanTeamBridge (local Team + distributed workers; deprecated)
+
+Deprecated: for single tasks use `createKaibanTaskHandler`. A model call in flight is not cancelled by STOP ALL on this path.
 
 ```typescript
 import { Agent, Task } from 'kaibanjs';
@@ -694,8 +701,13 @@ KAFKA_GROUP_ID=kaiban-group
 | editor worker | `kaiban-group-editor` |
 | orchestrator (completed events) | `kaiban-group-orchestrator-completed` |
 | orchestrator (failed/DLQ events) | `kaiban-group-orchestrator-failed` |
+| gateway (completed events) | `kaiban-group-gateway-completed` |
+| gateway (failed events) | `kaiban-group-gateway-failed` |
+| searcher worker (global-research) | `kaiban-group-searcher` |
 
 **Long tasks and heartbeats** — while a task handler runs, the Kafka worker sends a consumer-group heartbeat every 3 s (`eachMessage` heartbeat, cleared when the handler ends; heartbeat errors are logged, never thrown). A task running longer than the ~30 s session timeout therefore no longer gets its worker evicted and re-run elsewhere. The timeouts themselves are unchanged (KafkaJS defaults: session 30 s, rebalance 60 s). Known limit: if a real group rebalance happens while a task runs, the offset commit can still fail and the task may be delivered again to another worker; task-level de-duplication is planned (roadmap §7.2, item 5). BullMQ has its own lock renewal and is not affected.
+
+A consumer group reads a topic **from the beginning** on a partition where it has no committed offset (first start, a new `KAFKA_GROUP_ID`, or offsets expired after the broker's `offsets.retention.minutes`), so a task mailbox's backlog is run and a result published before the orchestrator joined is not lost. Scaled replicas of one agent share work only when the task topic has at least that many partitions; the compose files set `KAFKA_NUM_PARTITIONS=4`. See [MIGRATION](MIGRATION.md#211--212-audit-fixes).
 
 > Task queues use Kafka topics. State broadcast (`kaiban-state-events`) always uses Redis Pub/Sub — `SocketGateway` reads directly from Redis regardless of `MESSAGING_DRIVER`.
 
@@ -737,6 +749,7 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 | Event | Direction | Payload |
 |-------|-----------|---------|
 | `state:update` | server → client | `StateDelta` (top-level PII keys stripped) |
+| `state:request` | client → server | none; asks for a full snapshot replay (5 per 10 s per connection) |
 | `hitl:decision` | client → server | `{ taskId: string, decision: 'PUBLISH' \| 'REVISE' \| 'REJECT' }` |
 | `control:stop-all` | client → server | `{ reason?: string }`, acked with `{ ok, commandId, issuedAt, saved }` or `{ ok: false, error }` (2.1.0, only with `CONTROL_PLANE_ENABLED=true`; needs the handshake board token) |
 
@@ -759,8 +772,8 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 |----------|---------|----------|-------------|
 | `ROLE` | `gateway` | No | `node dist/src/main/index.js` runs as `gateway` (HTTP, Socket.io, A2A; consumes no tasks) or `worker` (runs an agent for every id in `AGENT_IDS`; no HTTP). Worker processes must set `ROLE=worker` (ADR-013) |
 | `AGENT_IDS` | — | **Yes** | Comma-separated agent IDs this node serves |
-| `REDIS_URL` | `redis://localhost:6379` | No | Redis connection URL |
-| `MESSAGING_DRIVER` | `bullmq` | No | `bullmq` or `kafka` |
+| `REDIS_URL` | `redis://localhost:6379` | No | Redis connection URL. User, password, database and `rediss://` in it apply to every Redis client, the task queues too (since 2.1.2); `REDIS_TLS_*` add the client certificate. Example: `rediss://:password@host:6379/0`. `REDIS_PASSWORD` is read by the root `docker-compose.yml` only, not by this code |
+| `MESSAGING_DRIVER` | `bullmq` | No | `bullmq` or `kafka` (`amqp` is accepted by the parser and then refused at gateway boot: it is an unimplemented seam) |
 | `KAFKA_BROKERS` | `localhost:9092` | Kafka only | Comma-separated broker addresses |
 | `KAFKA_CLIENT_ID` | `kaiban-worker` | No | Kafka client identifier |
 | `KAFKA_GROUP_ID` | `kaiban-group` | No | Kafka consumer group base ID |
@@ -778,11 +791,22 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 | `AGENT_TIMEOUT_MS` | `300000` | No | Time limit for one task attempt, on the gateway's wait and (since 2.0.1) on every worker node; a timed-out task is not retried unless `RETRY_ON_TIMEOUT` is on |
 | `RETRY_ON_TIMEOUT` | `false` | No | `true` or `1`: retry a timed-out task (3 attempts, linear back-off) instead of dead-lettering it at once; a hung provider call can then be paid for up to three times. The gateway's wait grows to 3 × `AGENT_TIMEOUT_MS` plus back-off plus 5 s, so set it identically on the gateway and every worker. A stop is never retried |
 | `CONTROL_PLANE_ENABLED` | `false` | No | `true` or `1` on **every** gateway, worker and orchestrator process: turns on the emergency STOP ALL (below). Unset: no subscription, route or socket event is added |
+| `BOARD_JWT_SECRET` | — | Production | Signs board tokens (viewers, STOP ALL). How to mint one: [SECURITY_FEATURES §1.1](docs/security/SECURITY_FEATURES.md#11-board-viewer-jwt-socketio) |
+| `A2A_JWT_SECRET` | — | Production | When set, `/a2a/rpc` needs a bearer token signed with it |
+| `CHANNEL_SIGNING_SECRET` | — | Production | HMAC key for the Redis channels (state, human decisions, STOP ALL) |
+| `SOCKET_CORS_ORIGINS` | — | Production | Comma-separated origins allowed to open the Socket.io connection; unset = any origin (development only); with `NODE_ENV=production` the gateway refuses to start without it |
+| `TRUST_PROXY` | `false` | No | `true` behind one reverse proxy: rate limits then use the client address from `X-Forwarded-For` instead of the proxy's |
+| `A2A_PUBLIC_URL` | `http://localhost:<PORT>` | No | Public base URL advertised in the agent card |
+| `VALID_HITL_DECISIONS` | `PUBLISH,REVISE,REJECT` | No | Decisions the gateway accepts from a board |
+| `LOG_LEVEL` | `info` | No | pino log level (`LOG_PRETTY=true` for readable output in development) |
+| `MCP_SERVER_ENABLED` | `false` | No | `true` mounts the MCP server; see [docs/federation/MCP.md](docs/federation/MCP.md) for `MCP_*` |
 | `ALLOW_INSECURE_PRODUCTION` | — | No | With `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct; `true` lets a missing one through with a warning on every start (a weak or repeated secret is never allowed) |
 
 Only the literal `unlimited` removes a spend cap; `0`, a negative number or text gives the default and logs one warning.
 
-The full list is [`.env.example`](.env.example); it also covers the variables not repeated here (`A2A_PUBLIC_URL`, `VALID_HITL_DECISIONS`, `TRUST_PROXY`, `LOG_LEVEL`, and the `MCP_*`, `ECONOMICS_*` and `GOVERNANCE_*` groups).
+The full list is [`.env.example`](.env.example); it also covers the variables not repeated here (the other `MCP_*`, `ECONOMICS_*` and `GOVERNANCE_*` groups).
+
+**Docker Compose passes only some of these variables to the containers.** Which ones each compose file forwards, and how to add the rest, is in [docs/deployment/DOCKER.md](docs/deployment/DOCKER.md#which-variables-reach-the-containers).
 
 #### Emergency STOP ALL (2.1.0)
 
@@ -792,6 +816,8 @@ With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every runn
 - **From the static HTML viewers (2.1.1):** the same **STOP ALL** button, confirmation and banner in `examples/blog-team/viewer/board.html` and `examples/global-research/viewer/board.html`. When the gateway sets `BOARD_JWT_SECRET`, open the viewer with the token in the address fragment, for example `board.html#token=<board token>` (or `board.html?gateway=http://localhost:3000#token=<board token>`), or set `window.BOARD_TOKEN`. The fragment is removed from the address bar after it is read, and the token is never logged or stored.
 - **Over HTTP:** `curl -X POST http://localhost:3000/control/stop-all -H "Authorization: Bearer <board token>" -H "content-type: application/json" -d '{"reason":"runaway loop"}'`
 - **From a shell:** `npm run build` once, then `npm run stop-all -- --reason "runaway loop"` (in the image: `node dist/src/main/stop-all.js`). It needs only `REDIS_URL` (and `CHANNEL_SIGNING_SECRET` when the deployment signs its channels; without it the command prints a warning, because signing nodes ignore an unsigned stop). A signed stop is accepted whatever the clock difference between the host that issues it and the node.
+
+A board token is a JWT signed with `BOARD_JWT_SECRET`. Mint one with the command in [SECURITY_FEATURES §1.1](docs/security/SECURITY_FEATURES.md#11-board-viewer-jwt-socketio). It lasts 1 hour by default, so keep a fresh one ready before you need it; `npm run stop-all` needs no token.
 
 The stop is a moment, not a mode. Every task sent before it ends: a running one has its model request cancelled mid-call and settles at once; a queued one is refused when it is delivered. Every workflow running then ends `STOPPED` (the examples exit with code 2). Anything started after the stop runs normally, so there is nothing to release. Stopped tasks show as `STOPPED` on the board, sit in the dead-letter channel as `emergency_stop` with their inputs, and can be replayed with `replayDlq`. Each node acknowledges on the state channel, and the board shows the last stop with its acknowledgement count. The moment is kept in Redis, so a node that missed the message or restarts still refuses the old tasks. Keep the hosts' clocks synchronised (NTP): a task sent within the clock skew of the stop can fall on either side. Pause, resume and stopping one task, agent or workflow are planned for a later version ([roadmap §6.10](docs/roadmap/V2.1-ROADMAP.md)).
 
@@ -817,7 +843,7 @@ There was no operator stop command before 2.1.0 (see Emergency STOP ALL above). 
 |----------|---------|-------------|
 | `REDIS_TLS_CA` / `REDIS_TLS_CERT` / `REDIS_TLS_KEY` | — | Paths to Redis mTLS certificates |
 | `KAFKA_SSL_CA` / `KAFKA_SSL_CERT` / `KAFKA_SSL_KEY` | — | Paths to Kafka mTLS certificates |
-| `TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` for self-signed certs in staging |
+| `TLS_REJECT_UNAUTHORIZED` | `true` | Only `false` or `0` turns verification off (self-signed certs in staging); any other value keeps it on |
 | `SEMANTIC_FIREWALL_ENABLED` | `false` | Enable heuristic prompt injection firewall |
 | `SEMANTIC_FIREWALL_LLM_URL` | — | Reserved, not used yet: the firewall is always the built-in regex `HeuristicFirewall` |
 | `JIT_TOKENS_ENABLED` | `false` | Enable JIT token provider for LLM API keys |
@@ -896,14 +922,14 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
 | Unit | `npm test` | 1778 tests, 151 files | None (all mocked) |
-| BullMQ E2E | `npm run test:e2e` | 69 tests, 11 files | Docker Redis (auto-managed by globalSetup) |
-| Security E2E | `npm run test:e2e:security` | 37 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
-| Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
-| Chaos E2E | `npm run test:e2e:chaos` | 1 test, 1 file (Redis paused mid-flight, zero tasks dropped) | Docker Redis |
-| Board | `cd board && npm test` | 148 tests, 14 files: React component + Zustand store + a11y tests | happy-dom |
+| BullMQ E2E | `npm run test:e2e` | 73 tests, 12 files | Docker Redis (auto-managed by globalSetup) |
+| Security E2E | `npm run test:e2e:security` | 41 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
+| Kafka E2E | `npm run test:e2e:kafka` | 4 tests, 3 files | Docker Kafka + Zookeeper |
+| Chaos E2E | `npm run test:e2e:chaos` | 2 tests, 2 files (Redis paused mid-flight, zero tasks dropped; a storm of stops over 60 tasks) | Docker Redis |
+| Board | `cd board && npm test` | 207 tests, 18 files: React component + Zustand store + a11y tests | happy-dom |
 | Visual (Playwright) | `cd board && npm run test:visual` | board screenshot baseline + structural checks of the two example viewers | board dev server + gateway + chromium |
 
-Counts as of 30 Oct 2026 (unit and board suites run; E2E counted from the test files). CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
+Counts as of 6 Nov 2026 (release 2.1.2); the recorded run is in [docs/VERIFICATION.md](docs/VERIFICATION.md), the single home for these numbers. CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
 
 ### Coverage
 
@@ -934,7 +960,9 @@ kaiban-distributed/
 │   │       └── retry-policy.ts # Retry count, back-off and the gateway's wait under RETRY_ON_TIMEOUT
 │   ├── adapters/
 │   │   ├── gateway/
-│   │   │   ├── GatewayApp.ts       # Express: /health, agent-card, /a2a/rpc, 404
+│   │   │   ├── GatewayApp.ts       # Express: /health, /ready, /startup, agent-card, /a2a/rpc, /mcp, /control/stop-all, 404
+│   │   │   ├── emergency-stop-ingress.ts  # STOP ALL over HTTP and Socket.io (token checks, rate limits)
+│   │   │   ├── rate-limiter.ts / request-timeouts.ts  # per-address limits; socket and request time limits
 │   │   │   └── SocketGateway.ts    # Socket.io + Redis pub/sub → board
 │   │   └── state/
 │   │       ├── distributedMiddleware.ts    # Zustand store subscription → board deltas
@@ -946,6 +974,8 @@ kaiban-distributed/
 │   │   │   ├── bullmq-driver.ts    # BullMQ Worker + Queue; optional TLS; no colons in queue names
 │   │   │   ├── kafka-driver.ts     # KafkaJS producer + consumer; optional SSL/mTLS
 │   │   │   └── amqp-driver.ts      # MESSAGING_DRIVER=amqp seam — unimplemented, throws on use (ADR-016)
+│   │   ├── control/
+│   │   │   └── control-channel.ts  # kaiban-control: ControlSubscriber, signed STOP ALL command (ADR-025)
 │   │   ├── federation/
 │   │   │   ├── a2a-executor.ts     # KaibanAgentExecutor: A2A v0.3 message/send → agent mailbox (ADR-015)
 │   │   │   ├── a2a-agent-card.ts   # buildAgentCard: v0.3 AgentCard (capabilities object + skills[])
@@ -978,6 +1008,7 @@ kaiban-distributed/
 │   ├── index.ts        # Library barrel (the published `kaiban-distributed` entry)
 │   └── main/
 │       ├── index.ts    # Entry point: picks the gateway or worker role from ROLE (ADR-013)
+│       ├── stop-all.ts # `npm run stop-all`: publishes the emergency stop to Redis
 │       ├── gateway.ts  # Gateway role: HTTP + Socket.io + A2A (+ MCP when enabled); runs no task actors
 │       ├── worker.ts   # Worker role: one LLM-backed AgentActor per id in AGENT_IDS
 │       ├── runtime.ts  # Messaging driver + telemetry setup shared by both roles
@@ -987,7 +1018,7 @@ kaiban-distributed/
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
-│       ├── horizontal-scaling-bullmq.test.ts  # Competing consumers, exact-once delivery
+│       ├── horizontal-scaling-bullmq.test.ts  # Competing consumers, at-least-once delivery
 │       ├── horizontal-scaling-kafka.test.ts   # Kafka consumer groups scaling
 │       ├── a2a-protocol.test.ts               # HTTP gateway + A2A
 │       ├── kafka-driver.test.ts               # Kafka pub/sub round-trip
@@ -1000,7 +1031,7 @@ kaiban-distributed/
 │           ├── securitySetup.ts           # Redis for the security suite
 │           └── globalSetup.live.ts        # global-research stack for the live (real LLM) suite
 ├── examples/
-│   └── global-research/                   # Multi-agent distributed researchers pipeline example
+│   ├── global-research/                   # Multi-agent distributed researchers pipeline example
 │   └── blog-team/                         # Three-agent editorial pipeline
 │       ├── team-config.ts                 # Agent configs (Ava, Kai, Morgan) + LLM factory
 │       ├── researcher-node.ts             # Ava worker entry point
@@ -1025,7 +1056,9 @@ kaiban-distributed/
 │   ├── fix-lockfile.sh                    # npm run lockfile:check / lockfile:fix (npm 10 + 11)
 │   ├── audit-gate.js                      # CI dependency audit: fails on HIGH+ except the dated .trivyignore entries
 │   ├── pack-staging.sh                    # Apache-2.0 library tarball from a staging dir (used by the release workflows)
-│   └── smoke-consumer.sh                  # Packs the tarball and imports both entry points in a fresh consumer
+│   ├── smoke-consumer.sh                  # Packs the tarball and imports both entry points in a fresh consumer
+│   ├── check-deploy-manifests.sh          # Renders every compose file and both Helm charts (CI deploy-manifests job)
+│   └── check-tag-version.sh               # Release tag must equal the package.json version
 ├── board/                                 # React + Vite + TypeScript board app (standalone)
 │   ├── src/
 │   │   ├── main.tsx / App.tsx             # Entry point + root layout
@@ -1044,6 +1077,8 @@ kaiban-distributed/
 
 ### Architecture Decisions
 
+The full record is in [docs/decisions/](docs/decisions/); the table lists the ones a reader meets first.
+
 | Decision | Rationale |
 |----------|-----------|
 | BullMQ as default | Lower ops overhead for dev; Kafka requires Zookeeper |
@@ -1058,7 +1093,6 @@ kaiban-distributed/
 | `forceFinalAnswer: true` on editor | Free 8B models reach max iterations without structured output |
 | SHA-256 hash prefix for agent IDs | 8-char prefix preserves debuggability while preventing PII leakage |
 | 64 KB cap on published message data | `AgentActor` truncates `result` before publishing to prevent oversized frames from overloading messaging layer |
-| `globalSetup` catches Redis port conflict | E2E tests are resilient when Redis is already running from another compose stack |
 | `healthcheck: disable: true` on workers | Workers are not HTTP servers; Dockerfile HEALTHCHECK checks port 3000 which is gateway-only |
 | React board uses custom Socket.io client, not `kaiban-board` npm package | `kaiban-board@0.4.3` requires a KaibanJS `Team` instance; the distributed board consumes `state:update` events directly |
 | Board HITL races readline vs Redis | `waitForHITLDecision()` in orchestrator resolves from whichever arrives first — terminal or board click; both remain usable simultaneously |
@@ -1142,20 +1176,20 @@ LOG_TAIL=200 QUEUE_POLL_SEC=3 \
 
 ### Common Issues
 
+Fixes of earlier bugs are listed in [CHANGELOG.md](CHANGELOG.md), not here.
+
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `401 User not found` | Invalid OpenRouter API key | Get valid key at https://openrouter.ai/keys |
 | `404 MODEL_NOT_FOUND` / data policy | Free model requires privacy opt-in | Enable https://openrouter.ai/settings/privacy or use paid model |
 | `No endpoints found matching your data policy` | Free tier data-sharing required | Enable https://openrouter.ai/settings/privacy |
-| `LLM instance is not initialized` | KaibanJS `llmInstance` not bootstrapped | No longer occurs — `Team` initialises the LLM automatically from the `env` map |
-| `Queue name cannot contain :` | Colon in BullMQ queue name | Fixed — all internal queues use dashes |
 | `Agent failed: Max retries exceeded` | LLM API error | Check API key and model name |
-| `Task incomplete: max iterations` | Small model can't produce structured output | Fixed — `forceFinalAnswer: true` on editor; increase `maxIterations` |
 | `network not found` on docker compose up | Stale network from previous compose stack | `docker compose down --remove-orphans && docker network prune --force` |
-| Worker shows `unhealthy` | Dockerfile HEALTHCHECK pings port 3000; workers aren't HTTP servers | Fixed — `healthcheck: disable: true` in worker services |
-| Kafka: orchestrator timeout on writing/revision | Second `subscribe()` after `consumer.run()` silently dropped | Fixed — TWO KafkaDriver instances with distinct consumer groups |
-| `Timeout waiting for research` | Task failed (DLQ) but orchestrator not notified | Fixed — `CompletionRouter` subscribes to both completed AND failed |
-| BullMQ E2E: port 6379 already in use | Another compose stack has Redis | Fixed — `globalSetup` catches and skips; or stop other stack first |
+| `NOAUTH Authentication required` from Redis | The Redis password is not in `REDIS_URL` (dotenv does not expand `${...}`) | Put the real password into `REDIS_URL`, e.g. `redis://:<password>@localhost:6379` |
+| `401 Missing board token` on STOP ALL | No token, or one signed with another secret, or expired (1 hour by default) | Mint a fresh token with the same `BOARD_JWT_SECRET` the gateway runs with ([SECURITY_FEATURES §1.1](docs/security/SECURITY_FEATURES.md#11-board-viewer-jwt-socketio)); `npm run stop-all` needs none |
+| A task ends with `emergency_stop` | A STOP ALL was issued after the task was sent | Replay it from the dead-letter channel with `replayDlq` once the cause is fixed |
+| A2A or MCP answers `-32602` for an agent id | The id is not in the gateway's `AGENT_IDS` | Add it to `AGENT_IDS` on the gateway |
+| Boot error `X is required in production` | `NODE_ENV=production` needs `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` (32+ bytes, all different) and, on the gateway, `SOCKET_CORS_ORIGINS` | Set them; with Docker Compose also see [which variables reach the containers](docs/deployment/DOCKER.md#which-variables-reach-the-containers) |
 | `No OTEL endpoint` warning on startup | `OTEL_EXPORTER_OTLP_ENDPOINT` not set — using verbose ConsoleSpanExporter | Expected in dev; set `OTEL_EXPORTER_OTLP_ENDPOINT` for production |
 
 ---
