@@ -141,6 +141,20 @@ describe("channel-signing", () => {
       expect(unwrapVerified(raw)).toBeNull();
     });
 
+    it("accepts an older message when the caller passes a longer window, and still checks the HMAC", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+      const raw = wrapSigned({ x: "durable" });
+      vi.advanceTimersByTime(120_000);
+      expect(unwrapVerified(raw)).toBeNull();
+      expect(unwrapVerified(raw, 300_000)).toEqual({ x: "durable" });
+      vi.advanceTimersByTime(200_000);
+      expect(unwrapVerified(raw, 300_000)).toBeNull();
+      const tampered = JSON.parse(raw) as Record<string, unknown>;
+      tampered["payload"] = { x: "forged" };
+      expect(unwrapVerified(JSON.stringify(tampered), 300_000)).toBeNull();
+    });
+
     it("accepts a message that is exactly within the 30 s window", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));

@@ -51,6 +51,13 @@ export interface HitlOptions {
 }
 
 /** Canonical map from board decision strings to HitlDecision. */
+/**
+ * Freshness window for a signed decision read from the durable list. The gateway
+ * keeps the list key for 300 s, so a decision pushed while the orchestrator was
+ * not yet waiting must still verify for that long (pub/sub keeps the 30 s default).
+ */
+const HITL_LIST_MAX_AGE_MS = 300_000;
+
 const BOARD_DECISION_MAP: Record<string, HitlDecision> = {
   PUBLISH: "PUBLISH",
   REVISE: "REVISE",
@@ -136,7 +143,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
           const item = await poller.brpop(listKey, 1);
           if (item && !resolved) {
             console.log(`[HITL] ✓ Received via list-poll path`);
-            handleBoardMessage(item[1], taskId, finish);
+            handleBoardMessage(item[1], taskId, finish, HITL_LIST_MAX_AGE_MS);
           }
         } catch (err) {
           /* v8 ignore next — FALSE branch: error fires after resolution (loop exits) */
@@ -180,14 +187,20 @@ function handleBoardMessage(
   msg: string,
   taskId: string,
   finish: (d: HitlDecision) => void,
+  maxAgeMs?: number,
 ): void {
   try {
-    const parsed = unwrapVerified(msg) as {
+    const parsed = unwrapVerified(msg, maxAgeMs) as {
       taskId?: string;
       decision?: string;
     } | null;
+    if (!parsed) {
+      console.warn(
+        "[HITL] Ignored a board message: invalid, tampered or expired signature",
+      );
+      return;
+    }
     if (
-      !parsed ||
       typeof parsed.taskId !== "string" ||
       typeof parsed.decision !== "string"
     )

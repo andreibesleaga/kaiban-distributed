@@ -51,8 +51,15 @@ export function wrapSigned(payload: Record<string, unknown>): string {
  *
  * When CHANNEL_SIGNING_SECRET is not set, parses as plain JSON (legacy pass-through).
  * Returns null on any JSON parse error regardless of mode.
+ *
+ * `maxAgeMs` is the freshness window (default 30 s). Durable list entries that
+ * legitimately wait longer than a pub/sub message (the HITL decision list lives
+ * 300 s) pass their own, longer window; the HMAC is still always checked.
  */
-export function unwrapVerified(raw: string): Record<string, unknown> | null {
+export function unwrapVerified(
+  raw: string,
+  maxAgeMs: number = MAX_CLOCK_SKEW_MS,
+): Record<string, unknown> | null {
   const secret = process.env["CHANNEL_SIGNING_SECRET"];
   if (!secret) {
     try {
@@ -72,7 +79,7 @@ export function unwrapVerified(raw: string): Record<string, unknown> | null {
   if (!isEnvelope(envelope)) return null;
 
   // Replay protection: reject messages older than MAX_CLOCK_SKEW_MS
-  if (Math.abs(Date.now() - envelope.ts) > MAX_CLOCK_SKEW_MS) return null;
+  if (Math.abs(Date.now() - envelope.ts) > maxAgeMs) return null;
 
   const body = `${envelope.ts}.${JSON.stringify(envelope.payload)}`;
   const expected = createHmac("sha256", secret).update(body).digest("hex");
