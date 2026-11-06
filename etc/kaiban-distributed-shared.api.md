@@ -540,8 +540,8 @@ export type WorkflowStopReason = "budget_exceeded";
 
 // Warnings were encountered during analysis:
 //
-// src/shared/build-security-deps.ts:73:3 - (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
-// src/shared/build-security-deps.ts:74:3 - (ae-forgotten-export) The symbol "ITokenProvider" needs to be exported by the entry point index.d.ts
+// dist/src/shared/build-security-deps.d.ts:26:5 - (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
+// dist/src/shared/build-security-deps.d.ts:27:5 - (ae-forgotten-export) The symbol "ITokenProvider" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

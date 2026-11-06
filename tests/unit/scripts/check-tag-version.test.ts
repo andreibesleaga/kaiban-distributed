@@ -5,7 +5,7 @@ import { join } from 'path';
 
 const SCRIPT = join(__dirname, '../../../scripts/check-tag-version.sh');
 
-function run(refType: string, refName: string, version = '2.1.1') {
+function run(refType: string, refName: string, version = '2.1.1'): { status: number | null; out: string } {
   const dir = mkdtempSync(join(tmpdir(), 'tagcheck-'));
   try {
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version }));
