@@ -50,7 +50,6 @@ export interface HitlOptions {
   signal?: AbortSignal;
 }
 
-/** Canonical map from board decision strings to HitlDecision. */
 /**
  * Freshness window for a signed decision read from the durable list. The gateway
  * keeps the list key for 300 s, so a decision pushed while the orchestrator was

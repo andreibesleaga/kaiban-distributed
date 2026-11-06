@@ -54,8 +54,13 @@ export function extractSearchResults(
 // ── State publisher ───────────────────────────────────────────────────────────
 
 export class ResearchStatePublisher extends OrchestratorStatePublisher {
-  workflowStarted(numSearchers: number): void {
-    this.publish({ teamWorkflowStatus: 'RUNNING', agents: buildSwarmAgents(numSearchers), metadata: { startTime: Date.now() } });
+  workflowStarted(numSearchers: number, query: string): void {
+    this.publish({
+      teamWorkflowStatus: 'RUNNING',
+      agents: buildSwarmAgents(numSearchers),
+      inputs: { topic: query },
+      metadata: { startTime: Date.now() },
+    });
   }
 
   searchingPhase(taskIds: string[]): void {

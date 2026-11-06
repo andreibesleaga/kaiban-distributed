@@ -228,12 +228,15 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 envelope `{ data, meta, errors }`; error responses: `{ data: null, meta: {}, errors: [{ message }] }`.
 `/a2a/rpc` answers in JSON-RPC 2.0 and the agent card is the bare AgentCard (both from `@a2a-js/sdk`).
 
-Limits (2.1.2): every route shares one rate limit of 100 requests per minute per client address,
-except `POST /control/stop-all` (5 per 10 s per token subject, refused attempts 30 per 10 s per
-address). Bodies are parsed per route after the rate limit: 1 MB on `/a2a/rpc` and `/mcp`, 16 kB on
+Limits (2.1.2): `/a2a/rpc`, `/mcp`, `/a2a/agents/:agentId/status` and unknown paths share one rate
+limit of 100 requests per minute per client address; the probes (`/health`, `/ready`, `/startup`)
+have 120 per minute per route per address; the agent card has no limit; `POST /control/stop-all`
+has its own (5 per 10 s per token subject, refused attempts 30 per 10 s per address). Bodies are
+parsed per route after the rate limit: 1 MB on `/a2a/rpc` and `/mcp`, 16 kB on
 `/control/stop-all`; a malformed or oversized body gets a JSON 400 or 413. `/a2a/rpc` and `/mcp`
-may stay open for at least 15 minutes (the longest task wait plus 60 s); every other route has a
-30 s timeout. `dispatch_task` and A2A `message/send` refuse an `agentId` that is not in `AGENT_IDS`.
+may stay open for at least 15 minutes (the longest task wait plus 60 s); `/control/stop-all` has
+a 30 s socket timeout; the other routes answer at once and keep Node's defaults. `dispatch_task`
+and A2A `message/send` refuse an `agentId` that is not in `AGENT_IDS`.
 
 ---
 

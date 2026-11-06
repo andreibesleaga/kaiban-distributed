@@ -8,7 +8,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.1.2] — 2026-11-06
 
-A correctness and security release from a full audit of the runtime, gateway, board, viewers, examples, packaging and documentation (157 findings, 7 areas). No new feature and no new dependency. Every fix is covered by a test that failed before it. Four changes need a word from operators, listed under **Migration** in [MIGRATION.md](MIGRATION.md#211--212-audit-fixes).
+A correctness and security release from a full audit of the runtime, gateway, board, viewers, examples, packaging and documentation (157 findings, 7 areas). No new feature and no new dependency. Every code fix has a test that failed before it; documentation, chart, compose and workflow fixes are checked by CI (`deploy-manifests`, lychee, api report). Four changes need a word from operators, listed under **Migration** in [MIGRATION.md](MIGRATION.md#211--212-audit-fixes).
 
 ### Fixed
 
@@ -85,7 +85,7 @@ A correctness and security release from a full audit of the runtime, gateway, bo
 - `validateTaskInput(params, allowedAgentIds?)` takes an optional allow-list; `createMcpHttpHandler(deps, limits?)` takes session limits; `GatewayApp` takes `longRequestTimeoutMs`; `SocketGateway` takes `trustProxy`.
 - `IStateMiddleware.attach` / `DistributedStateMiddleware.attach` take a subscribable store (`team.getStore()`), not a `setState` store.
 - `CompletionRouter.waitAll(taskIds, timeoutMs, label, signal?)`: with a signal, an abort rejects; without one, behaviour is unchanged.
-- New exports `otlpSignalUrls(endpoint)` and `UnwrapOptions`; `TlsConfig` and `loadTlsConfig` live in `src/infrastructure/security/tls-config.ts` (still exported from the root).
+- New exports `otlpSignalUrls(endpoint)`, the types `UnwrapOptions`, `McpSessionLimits`, `ObservableStore`, `KaibanStoreState`, `KaibanAgentLike`, `KaibanTaskLike`; `TlsConfig` and `loadTlsConfig` live in `src/infrastructure/security/tls-config.ts` (the `TlsConfig` type is still exported from the root).
 - Socket.io dev default CORS origin is the string `"*"` (the former `["*"]` matched no origin). Task card accessible name: "View details for task: <title>, status <status>".
 - All GitHub Actions are pinned to commit SHAs; Dependabot ignores major versions and groups `@opentelemetry/*`; CI gains a `deploy-manifests` job (`docker compose config`, `helm lint`, `helm template` for every stack and chart).
 

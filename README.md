@@ -823,7 +823,7 @@ Set `MESSAGING_DRIVER=kafka` (or `bullmq`) — the `IMessagingDriver` interface 
 | `POST` | `/a2a/rpc` | A2A v0.3 JSON-RPC: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel` |
 | `GET` | `/a2a/agents/:agentId/status` | Real last-known agent status (`AgentStatusTracker`) |
 | `POST` / `GET` / `DELETE` | `/mcp` | MCP server (Streamable HTTP), mounted only when `MCP_SERVER_ENABLED=true`; path from `MCP_SERVER_PATH` (see [docs/federation/MCP.md](docs/federation/MCP.md)) |
-| `POST` | `/control/stop-all` | Emergency STOP ALL (2.1.0), mounted only when `CONTROL_PLANE_ENABLED=true`. Needs `Authorization: Bearer <board token>` (refused while `BOARD_JWT_SECRET` is unset); body `{ "reason"?: string }`; 202 `{ commandId, issuedAt, saved }`, 401, 400, 429 (5 per 10 s per client) |
+| `POST` | `/control/stop-all` | Emergency STOP ALL (2.1.0), mounted only when `CONTROL_PLANE_ENABLED=true`. Needs `Authorization: Bearer <board token>` (refused while `BOARD_JWT_SECRET` is unset); body `{ "reason"?: string }`; 202 `{ commandId, issuedAt, saved }`, 401, 400, 429 (5 per 10 s per token subject; refused attempts 30 per 10 s per address) |
 
 The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId/status` and the 404 reply) answer in a `{ data, meta, errors }` envelope. `/a2a/rpc` answers in JSON-RPC 2.0 and the agent card is the bare A2A AgentCard, both served by `@a2a-js/sdk`.
 

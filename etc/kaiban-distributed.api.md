@@ -552,8 +552,6 @@ export function createEmergencyStopSignal(redisUrl: string, startedAt?: number):
 // @public
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
 
-// Warning: (ae-forgotten-export) The symbol "McpSessionLimits" needs to be exported by the entry point index.d.ts
-//
 // @public
 export function createMcpHttpHandler(deps: McpServerDeps, limits?: McpSessionLimits): McpHttpHandler;
 
@@ -600,7 +598,6 @@ export interface DistributedAgentState {
 // @public
 export class DistributedStateMiddleware {
     constructor(redisUrl: string, channelName?: string);
-    // Warning: (ae-forgotten-export) The symbol "ObservableStore" needs to be exported by the entry point index.d.ts
     attach(store: ObservableStore): ObservableStore;
     // (undocumented)
     disconnect(): Promise<void>;
@@ -967,6 +964,18 @@ export class KaibanAgentExecutor implements AgentExecutor {
     execute(ctx: RequestContext, eventBus: ExecutionEventBus): Promise<void>;
 }
 
+// @public
+export interface KaibanAgentLike {
+    // (undocumented)
+    id?: unknown;
+    // (undocumented)
+    name?: unknown;
+    // (undocumented)
+    role?: unknown;
+    // (undocumented)
+    status?: unknown;
+}
+
 // @public (undocumented)
 export interface KaibanExecutorDeps {
     agentIds?: readonly string[];
@@ -983,6 +992,32 @@ export type KaibanHandlerResult = {
     outputTokens: number;
     estimatedCost: number;
 };
+
+// @public
+export interface KaibanStoreState {
+    // (undocumented)
+    agents?: KaibanAgentLike[];
+    // (undocumented)
+    tasks?: KaibanTaskLike[];
+    // (undocumented)
+    teamWorkflowStatus?: unknown;
+}
+
+// @public
+export interface KaibanTaskLike {
+    // (undocumented)
+    agent?: {
+        id?: unknown;
+    } | null;
+    // (undocumented)
+    id?: unknown;
+    // (undocumented)
+    result?: unknown;
+    // (undocumented)
+    status?: unknown;
+    // (undocumented)
+    title?: unknown;
+}
 
 // @public @deprecated
 export class KaibanTeamBridge {
@@ -1122,6 +1157,14 @@ export interface McpServerDeps {
     version?: string;
 }
 
+// @public (undocumented)
+export interface McpSessionLimits {
+    // (undocumented)
+    idleTimeoutMs?: number;
+    // (undocumented)
+    maxSessions?: number;
+}
+
 // @public
 export interface MemoryEntry {
     // (undocumented)
@@ -1191,6 +1234,12 @@ export interface ModelPricing {
 // @public
 export abstract class NonRetryableError extends DomainError {
     abstract readonly reasonCode: string;
+}
+
+// @public
+export interface ObservableStore {
+    // (undocumented)
+    subscribe: (listener: (state: KaibanStoreState, prev: KaibanStoreState) => void) => () => void;
 }
 
 // @public (undocumented)

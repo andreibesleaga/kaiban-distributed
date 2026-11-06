@@ -108,6 +108,17 @@ describe("body parsing and errors (SEC-10)", () => {
     expect(res.json).toHaveBeenCalledWith({ data: null, meta: {}, errors: [{ message: "Internal Server Error" }] });
   });
 
+  it("another body-parser client error (415) keeps its status instead of becoming a 500", async () => {
+    const gw = build();
+    const handler = (gw as unknown as {
+      handleError: (e: unknown, q: unknown, r: unknown, n: unknown) => void;
+    }).handleError.bind(gw);
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    handler(Object.assign(new Error("unsupported"), { status: 415 }), {}, res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(415);
+    expect(res.json).toHaveBeenCalledWith({ data: null, meta: {}, errors: [{ message: "Bad Request" }] });
+  });
+
   it("unknown paths are rate-limited too (no free 1 MB parsing, no free probing)", async () => {
     const gw = build();
     let last = 0;

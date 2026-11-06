@@ -41,7 +41,7 @@ export function sanitizeDelta(partial: unknown): Record<string, unknown> {
 }
 
 /** The slice of a KaibanJS agent the board shows. */
-interface KaibanAgentLike {
+export interface KaibanAgentLike {
   id?: unknown;
   name?: unknown;
   role?: unknown;
@@ -49,7 +49,7 @@ interface KaibanAgentLike {
 }
 
 /** The slice of a KaibanJS task the board shows. */
-interface KaibanTaskLike {
+export interface KaibanTaskLike {
   id?: unknown;
   title?: unknown;
   status?: unknown;
@@ -58,14 +58,14 @@ interface KaibanTaskLike {
 }
 
 /** The slice of the KaibanJS store state the middleware reads. */
-interface KaibanStoreState {
+export interface KaibanStoreState {
   teamWorkflowStatus?: unknown;
   agents?: KaibanAgentLike[];
   tasks?: KaibanTaskLike[];
 }
 
 /** A Zustand vanilla store as `Team.getStore()` returns it. */
-interface ObservableStore {
+export interface ObservableStore {
   subscribe: (
     listener: (state: KaibanStoreState, prev: KaibanStoreState) => void,
   ) => () => void;

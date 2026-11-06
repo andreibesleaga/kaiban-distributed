@@ -97,6 +97,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       # Board/HTTP stop commands need a board token (unset = board auth off, stop refused).
       BOARD_JWT_SECRET: ${BOARD_JWT_SECRET:-}
       MESSAGING_DRIVER: kafka
@@ -135,6 +136,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-searcher
@@ -171,6 +173,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-writer
@@ -205,6 +208,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-reviewer
@@ -239,6 +243,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-editor
@@ -276,6 +281,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-orchestrator

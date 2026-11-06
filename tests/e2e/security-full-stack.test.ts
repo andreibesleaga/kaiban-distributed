@@ -789,31 +789,32 @@ describe("5. Redis Password Auth", () => {
     // The shipped worker and gateway build their drivers here, not by hand.
     const pub = createDriver("pw-pub");
     const sub = createDriver("pw-sub");
+    try {
+      const queueName = `sec-pw-cd-${randomUUID().slice(0, 8)}`;
+      const agentId = randomUUID().slice(0, 8);
 
-    const queueName = `sec-pw-cd-${randomUUID().slice(0, 8)}`;
-    const agentId = randomUUID().slice(0, 8);
+      let completed = false;
+      const actor = new AgentActor(agentId, sub, queueName, async () => "ok");
+      await actor.start();
+      await new Promise((r) => setTimeout(r, 200));
 
-    let completed = false;
-    const actor = new AgentActor(agentId, sub, queueName, async () => "ok");
-    await actor.start();
-    await new Promise((r) => setTimeout(r, 200));
+      await pub.subscribe(COMPLETED, async (p) => {
+        if (p.agentId === agentId) completed = true;
+      });
 
-    await pub.subscribe(COMPLETED, async (p) => {
-      if (p.agentId === agentId) completed = true;
-    });
+      await pub.publish(queueName, {
+        taskId: `pw-cd-task-${agentId}`,
+        agentId,
+        data: { instruction: "Redis auth via createDriver" },
+        timestamp: Date.now(),
+      });
 
-    await pub.publish(queueName, {
-      taskId: `pw-cd-task-${agentId}`,
-      agentId,
-      data: { instruction: "Redis auth via createDriver" },
-      timestamp: Date.now(),
-    });
-
-    await waitFor(() => completed, 5000);
-    expect(completed).toBe(true);
-
-    await pub.disconnect();
-    await sub.disconnect();
+      await waitFor(() => completed, 5000);
+      expect(completed).toBe(true);
+    } finally {
+      await pub.disconnect();
+      await sub.disconnect();
+    }
   });
 });
 

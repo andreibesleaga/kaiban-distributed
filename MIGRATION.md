@@ -142,12 +142,18 @@ Smaller points:
 - The example Redis and Kafka are published on `127.0.0.1` only; reach them from another machine
   through an SSH tunnel or change the published address in the compose file.
 - Kafka: a scaled agent (`--scale searcher=N`) shares work only when its task topic has at least N
-  partitions; the compose files now create topics with 4.
+  partitions; the compose files now create topics with 4. A worker whose consumer group has no
+  committed offset (first start, a new `KAFKA_GROUP_ID`, or offsets expired after the broker's
+  `offsets.retention.minutes`) now reads its mailbox from the beginning, so tasks the topic still
+  retains are run (again). Keep the topic retention shorter than the longest idle period, or
+  reset the group's offsets before restarting after a long pause.
+- global-research: `AUTO_PUBLISH` is no longer inferred from a missing terminal. A piped or CI run
+  must set `AUTO_PUBLISH=true` (or answer the review prompt), otherwise it waits for the decision.
 - `AGENT_TIMEOUT_MS` and `CIRCUIT_BREAKER_*` values that were silently mis-parsed now log a warning
   and use the default.
 - Code that called `DistributedStateMiddleware.attach` with its own store must give it
-  `subscribe(listener(state, prev))`; `unwrapVerified`'s optional second argument is now an
-  options object (`{ maxSkewMs }`).
+  `subscribe(listener(state, prev))`; `unwrapVerified(raw, { maxSkewMs })` gained an optional
+  skew window (the default 30 s is unchanged).
 
 ## 2.1.0 → 2.1.1 (STOP ALL in the static viewers, additive)
 

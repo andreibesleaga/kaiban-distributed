@@ -78,6 +78,31 @@ describe("wrapHandler — late results", () => {
     ).toEqual([]);
     const last = all.flatMap((d) => d.agents ?? []).at(-1)!;
     expect(last).toMatchObject({ status: "THINKING", currentTaskId: "t2" });
+    // The old task's card is closed, without touching the agent row.
+    const closing = all.filter((d) =>
+      (d.tasks ?? []).some((t) => t.taskId === "t1" && t.status === "BLOCKED"),
+    );
+    expect(closing).toHaveLength(1);
+    expect(closing[0]!.agents).toBeUndefined();
+  });
+
+  it("a superseded attempt of the same task publishes nothing: the retry owns the card", async () => {
+    let finishOld: (v: string) => void = () => undefined;
+    const handler = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise<string>((r) => (finishOld = r)))
+      .mockImplementationOnce(() => new Promise<string>(() => undefined));
+    const wrapped = publisher.wrapHandler(handler);
+    const oldAbort = new AbortController();
+    const oldRun = wrapped(payload("t1"), oldAbort.signal).catch(
+      (e: unknown) => e,
+    );
+    oldAbort.abort(new Error("task_timeout"));
+    void wrapped(payload("t1"), new AbortController().signal); // retry of t1
+    const before = mockPublish.mock.calls.length;
+    finishOld("late");
+    await oldRun;
+    expect(mockPublish.mock.calls.length).toBe(before);
   });
 
   it("a late result of the only attempt is reported as a failed task, not DONE", async () => {

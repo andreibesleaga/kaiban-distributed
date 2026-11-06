@@ -105,7 +105,7 @@ export function buildOwnedLlm(
   const fields: Record<string, unknown> = {
     ...config,
     model: config.model || "gpt-4o-mini",
-    maxRetries: config.maxRetries || 1,
+    maxRetries: config.maxRetries ?? 1,
   };
   delete fields["provider"];
   delete fields["apiBaseUrl"];

@@ -102,6 +102,12 @@ describe("buildOwnedLlm", () => {
     expect(ChatOpenAIMock.mock.calls[0]![0]).toMatchObject({ maxRetries: 1 });
   });
 
+  it("keeps an explicit maxRetries of 0 (no retry at all)", () => {
+    ChatOpenAIMock.mockClear();
+    buildOwnedLlm({ provider: "openai", apiKey: "k", maxRetries: 0 }, new AbortController().signal);
+    expect(ChatOpenAIMock.mock.calls[0]![0]).toMatchObject({ maxRetries: 0 });
+  });
+
   it("drops an empty apiKey so the environment applies", () => {
     ChatOpenAIMock.mockClear();
     buildOwnedLlm({ provider: "openai", apiKey: "" }, new AbortController().signal);

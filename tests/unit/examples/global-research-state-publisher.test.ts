@@ -104,7 +104,7 @@ describe("ResearchStatePublisher", () => {
   });
 
   it("workflowStarted() publishes RUNNING and does NOT reset the searcher id counter (WF-10)", () => {
-    pub.workflowStarted(2);
+    pub.workflowStarted(2, "The Future of AI Agents");
     // The searchers registered before the run; deleting the counter would hand a
     // restarted searcher the id of a live one.
     expect(mockDel).not.toHaveBeenCalled();
@@ -113,6 +113,8 @@ describe("ResearchStatePublisher", () => {
       unknown
     >;
     expect(msg["teamWorkflowStatus"]).toBe("RUNNING");
+    // The board and the viewer show the query from `inputs.topic`.
+    expect(msg["inputs"]).toEqual({ topic: "The Future of AI Agents" });
     const agents = msg["agents"] as Array<{ agentId: string }>;
     expect(agents.some((a) => a.agentId === "searcher-0")).toBe(true);
   });

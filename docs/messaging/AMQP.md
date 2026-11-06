@@ -4,7 +4,8 @@ kaiban-distributed ships a **universal AMQP driver seam** but **does not impleme
 The two supported messaging drivers are **BullMQ/Redis** (default) and **Kafka**.
 
 - `MESSAGING_DRIVER=amqp` selects `AmqpDriver` (`src/infrastructure/messaging/amqp-driver.ts`),
-  whose methods throw `AMQP driver is not implemented (roadmap)`. The slot exists so a future
+  whose methods throw `AMQP driver is not implemented (roadmap)`; since 2.1.2 the gateway refuses
+  to start with it instead of failing every request. The slot exists so a future
   release can add a real AMQP driver without a public-API change (`AmqpDriver` is already exported).
 
 ## Implementing it later (roadmap)

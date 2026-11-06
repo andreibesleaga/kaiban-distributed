@@ -392,6 +392,10 @@ export class GatewayApp {
       res.status(413).json(apiError("Payload Too Large"));
     } else if (status === 400) {
       res.status(400).json(apiError("Bad Request"));
+    } else if (typeof status === "number" && status >= 400 && status < 500) {
+      // Other body-parser client errors (415 Unsupported Media Type, …): the
+      // client's fault, answered as such, with no stack trace and no error log.
+      res.status(status).json(apiError("Bad Request"));
     } else {
       log.error({ err }, "Unhandled request error");
       res.status(500).json(apiError("Internal Server Error"));

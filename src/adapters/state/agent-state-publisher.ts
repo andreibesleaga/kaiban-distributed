@@ -431,8 +431,12 @@ export class AgentStatePublisher {
         // A failed attempt that already spent tokens counts against the caps
         // BEFORE the actor retries; reaching one ends the task non-retryably.
         const failure = this.accountFailedAttempt(payload.taskId, err);
-        // A newer attempt already took over this agent: report nothing for the old one.
-        if (attempt !== this.attemptSeq) throw failure;
+        // A newer attempt already took over this agent: leave the agent row to
+        // it, and close only the old task's card when it is a different task.
+        if (attempt !== this.attemptSeq) {
+          this.publishSupersededFailure(payload, title);
+          throw failure;
+        }
         // → ERROR (published once; the failure stays visible on the task card)
         pub({
           agents: [
@@ -490,6 +494,26 @@ export class AgentStatePublisher {
   /** Report how this node handled an emergency STOP ALL (ADR-025, ES-9). */
   publishControlAck(ack: ControlAck): void {
     this.publish({ control: ack });
+  }
+
+  /**
+   * A task whose attempt was superseded by another task's attempt (a deaf
+   * handler returned after its timeout while the agent moved on) still gets its
+   * card closed as BLOCKED; the agent row belongs to the running attempt. A
+   * superseded attempt of the same task publishes nothing: the retry owns it.
+   */
+  private publishSupersededFailure(payload: MessagePayload, title: string): void {
+    if (payload.taskId === this.currentTaskId) return;
+    this.publish({
+      tasks: [
+        {
+          taskId: payload.taskId,
+          title,
+          status: "BLOCKED",
+          assignedToAgentId: this.agentInfo.agentId,
+        },
+      ],
+    });
   }
 
   /**

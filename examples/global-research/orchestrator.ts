@@ -110,7 +110,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   const { ctx, orch, router, pub, driver, rl, runLog, signal } = deps;
   const budget = workflowBudgetFromEnv();
 
-  pub.workflowStarted(NUM_SEARCHERS);
+  pub.workflowStarted(NUM_SEARCHERS, QUERY);
   if (await orch.isResuming()) log.info('Resuming from a prior checkpoint (completed phases will be skipped)\n');
 
   // STEP 1 — Fan-Out (checkpoint→resume via the shared orchestrator)

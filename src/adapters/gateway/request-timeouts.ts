@@ -19,10 +19,13 @@ export const DEFAULT_LONG_REQUEST_TIMEOUT_MS = 900_000;
 /** Added to the longest task wait so the answer is never cut at the wait's own end. */
 export const LONG_REQUEST_HEADROOM_MS = 60_000;
 
-/** The long limit for a gateway whose tasks may take up to `taskWaitMs`. */
+/** Largest delay a Node timer accepts (2^31 − 1 ms, about 24.8 days). */
+const MAX_TIMER_MS = 2_147_483_647;
+
+/** The long limit for a gateway whose tasks may take up to `taskWaitMs`, within Node's timer range. */
 export function longRequestTimeoutFor(taskWaitMs: number): number {
-  return Math.max(
-    DEFAULT_LONG_REQUEST_TIMEOUT_MS,
-    taskWaitMs + LONG_REQUEST_HEADROOM_MS,
+  return Math.min(
+    MAX_TIMER_MS,
+    Math.max(DEFAULT_LONG_REQUEST_TIMEOUT_MS, taskWaitMs + LONG_REQUEST_HEADROOM_MS),
   );
 }
