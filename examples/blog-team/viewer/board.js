@@ -15,21 +15,22 @@ function escHTML(str) {
 
 // ── Config ───────────────────────────────────────────────────────────────
 
-const GATEWAY_URL = window.GATEWAY_URL
-  || new URLSearchParams(location.search).get('gateway')
-  || 'http://localhost:3000';
-
-document.getElementById('gateway-url-display').textContent = GATEWAY_URL;
-
 // Board token for a gateway that sets BOARD_JWT_SECRET (and for STOP ALL): read from the URL
 // fragment #token=... or window.BOARD_TOKEN. The fragment is removed from the address bar at once.
 // The token is kept only in this constant: never logged, never in a query string, never stored.
-function readBoardToken() {
-  const fromHash = new URLSearchParams(location.hash.replace(/^#/, '')).get('token');
-  if (fromHash) window.history.replaceState(null, '', location.pathname + location.search);
-  return fromHash || window.BOARD_TOKEN || '';
-}
-const BOARD_TOKEN = readBoardToken();
+const TOKEN_FROM_HASH = new URLSearchParams(location.hash.replace(/^#/, '')).get('token') || '';
+if (TOKEN_FROM_HASH) window.history.replaceState(null, '', location.pathname + location.search);
+const BOARD_TOKEN = TOKEN_FROM_HASH || window.BOARD_TOKEN || '';
+
+// A link must not choose where a configured token goes. With a window.BOARD_TOKEN, ?gateway= is
+// ignored (set window.GATEWAY_URL instead). A #token= belongs to the gateway named in that same address.
+const QUERY_GATEWAY = new URLSearchParams(location.search).get('gateway');
+const QUERY_GATEWAY_IGNORED = Boolean(QUERY_GATEWAY && BOARD_TOKEN && !TOKEN_FROM_HASH);
+const GATEWAY_URL = window.GATEWAY_URL
+  || (QUERY_GATEWAY_IGNORED ? '' : QUERY_GATEWAY)
+  || 'http://localhost:3000';
+
+document.getElementById('gateway-url-display').textContent = GATEWAY_URL;
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ function makeTaskCard(task) {
   const resultText  = parseTaskResult(task.result);
   const resultHtml  = resultText
     ? resultText.length > 400
-      ? `<details class="task-result${resultClass}">
+      ? `<details class="task-result${resultClass}" data-task-id="${escHTML(task.taskId)}">
            <summary>${escHTML(resultText.slice(0, 120))}…</summary>
            <div class="task-result-full">${escHTML(resultText)}</div>
          </details>`
@@ -142,6 +143,8 @@ function makeTaskCard(task) {
 }
 
 function renderTasks() {
+  // The columns are rebuilt on every update; keep the long results the user has open.
+  const open = new Set(Array.from(document.querySelectorAll('details[open][data-task-id]'), d => d.dataset.taskId));
   const cols = { TODO: [], DOING: [], AWAITING_VALIDATION: [], DONE: [], BLOCKED: [] };
 
   for (const task of state.tasks) {
@@ -163,6 +166,10 @@ function renderTasks() {
   document.getElementById('cnt-await').textContent   = cols.AWAITING_VALIDATION.length;
   document.getElementById('cnt-done').textContent    = cols.DONE.length;
   document.getElementById('cnt-blocked').textContent = cols.BLOCKED.length;
+
+  document.querySelectorAll('details[data-task-id]').forEach(d => {
+    if (open.has(d.dataset.taskId)) d.open = true;
+  });
 }
 
 function renderWorkflow() {
@@ -190,9 +197,6 @@ function renderBanners() {
     const pub = doneTasks.find(t => String(t.result || '').includes('Published'));
     document.getElementById('banner-finished-msg').textContent =
       pub ? `"${pub.title}" was published successfully` : 'Blog post published';
-    // Highlight economics section on completion
-    const econSection = document.querySelector('.swarm-meta');
-    if (econSection) econSection.classList.add('economics-finished');
 
   } else if (ws === 'STOPPED') {
     bannerStopped.style.display = 'block';
@@ -241,31 +245,32 @@ function renderBanners() {
   }
 }
 
+function setMeta(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+/** Fill the panel from state.metadata; a field the run has not produced yet shows "—". */
 function renderEconomics() {
-  const meta = state.metadata;
-  if (!meta) return;
-  if (meta.totalTokens !== undefined) {
-    document.getElementById('meta-tokens').textContent = Number(meta.totalTokens).toLocaleString();
-  }
-  if (meta.estimatedCost !== undefined) {
-    document.getElementById('meta-cost').textContent = `$${Number(meta.estimatedCost).toFixed(4)}`;
-  }
-  if (meta.startTime) {
-    document.getElementById('meta-start').textContent = new Date(meta.startTime).toLocaleTimeString();
-  }
-  if (meta.endTime) {
-    document.getElementById('meta-end').textContent = new Date(meta.endTime).toLocaleTimeString();
-  }
+  const meta = state.metadata || {};
+  const running = state.workflowStatus === 'RUNNING';
+  setMeta('meta-tokens', meta.totalTokens !== undefined ? Number(meta.totalTokens).toLocaleString() : '—');
+  setMeta('meta-cost', meta.estimatedCost !== undefined ? `$${Number(meta.estimatedCost).toFixed(4)}` : '—');
+  setMeta('meta-start', meta.startTime ? new Date(meta.startTime).toLocaleTimeString() : '—');
+  setMeta('meta-end', meta.endTime ? new Date(meta.endTime).toLocaleTimeString() : running ? 'running…' : '—');
   // Duration — live while running, fixed once ended
-  const durEl = document.getElementById('meta-duration');
-  if (durEl && meta.startTime) {
-    const startMs  = Number(new Date(meta.startTime));
-    const endMs    = meta.endTime ? Number(new Date(meta.endTime)) : Date.now();
-    const totalSec = Math.floor((endMs - startMs) / 1000);
+  let duration = '—';
+  if (meta.startTime) {
+    const endMs = meta.endTime ? Number(new Date(meta.endTime)) : Date.now();
+    const totalSec = Math.max(0, Math.floor((endMs - Number(new Date(meta.startTime))) / 1000));
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
-    durEl.textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
+    duration = m > 0 ? `${m}m ${s}s` : `${s}s`;
   }
+  setMeta('meta-duration', duration);
+  // The green "finished" highlight belongs to a finished run only
+  const section = document.getElementById('economics-section') || document.querySelector('.swarm-meta');
+  if (section) section.classList.toggle('economics-finished', state.workflowStatus === 'FINISHED');
 }
 
 function render() {
@@ -350,6 +355,9 @@ function logDelta(delta) {
 
   if (Array.isArray(delta.agents)) {
     for (const a of delta.agents) {
+      // A worker heartbeat repeats an unchanged agent state every 15 s: not an event.
+      const before = state.agents.find(x => x.agentId === a.agentId);
+      if (before && before.status === a.status && before.currentTaskId === a.currentTaskId) continue;
       const icon    = AGENT_ICONS[a.status] || '⬡';
       const taskRef = a.currentTaskId ? ` [${a.currentTaskId.slice(-8)}]` : '';
       const hi      = a.status === 'EXECUTING' || a.status === 'ERROR';
@@ -473,6 +481,9 @@ function wireStopAll() {
 // ── Socket.io ────────────────────────────────────────────────────────────
 
 addLog('INIT', `Connecting to ${GATEWAY_URL}`);
+if (QUERY_GATEWAY_IGNORED) {
+  addLog('INIT', 'Ignoring ?gateway=: a board token is configured. Set window.GATEWAY_URL to change the gateway.', true);
+}
 
 const socket = io(GATEWAY_URL, {
   transports: ['websocket', 'polling'],
@@ -489,8 +500,8 @@ socket.on('connect', () => {
   state.controlPlane = null;
   state.metadata = null;
   if (durationTimer) { clearInterval(durationTimer); durationTimer = null; }
-  // Request full snapshot replay from gateway
-  socket.emit('state:request');
+  // No 'state:request': the gateway sends the snapshot on connection, and asking again
+  // would apply (and log) it twice.
 
   document.getElementById('conn-badge').className    = 'badge badge-live';
   document.getElementById('conn-badge').textContent  = '● LIVE';
@@ -514,13 +525,9 @@ socket.on('connect_error', err => {
 });
 
 socket.on('state:update', delta => {
+  logDelta(delta); // first: a heartbeat is told from a change by the previous agent state
   applyDelta(delta);
-  logDelta(delta);
   render();
-});
-
-socket.on('task:completed', data => {
-  addLog('DONE', `Task ${data.taskId} completed by ${data.agentId}`, true);
 });
 
 wireStopAll();

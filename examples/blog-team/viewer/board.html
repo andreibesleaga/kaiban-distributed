@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self' https://cdn.socket.io; style-src 'self'; connect-src ws: wss: http: https:; img-src 'none';">
-  <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta name="referrer" content="no-referrer">
   <title>Kaiban Distributed — Live Board</title>
   <link rel="stylesheet" href="board.css">
@@ -15,7 +14,6 @@
 <header>
   <h1>⬡ Kaiban Distributed — Live Board</h1>
   <span class="badge badge-connecting" id="conn-badge">Connecting...</span>
-  <span id="workflow-badge" style="font-size:0.75rem; color:#475569"></span>
   <button type="button" id="stop-all-btn" class="stop-all-btn" aria-haspopup="dialog" hidden>STOP ALL</button>
   <span id="control-error" class="control-error" role="alert" hidden></span>
 </header>
@@ -47,7 +45,7 @@
 <div class="workflow-bar" id="workflow-bar">
   <span class="workflow-label">Workflow:</span>
   <span class="workflow-status ws-initial" id="workflow-status">INITIAL</span>
-  <span id="topic-label" style="font-size:0.8rem; color:#475569; margin-left:8px"></span>
+  <span id="topic-label" class="topic-label"></span>
 </div>
 
 <!-- Agents -->
