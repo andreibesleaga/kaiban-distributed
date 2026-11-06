@@ -463,7 +463,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 125 unit-test files / 1396 tests (30 Oct 2026), 100% coverage of src (board tests run separately via `cd board && npm test`)
+# → 151 unit-test files / 1778 tests (6 Nov 2026), 100% coverage of src (board tests run separately via `cd board && npm test`)
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
@@ -664,6 +664,8 @@ cd board && npm run build      # → board/dist/
 # Serve with any static host or CDN
 npx serve board/dist
 ```
+
+Set `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff` as response headers on the host; browsers ignore them in `<meta>` tags (see `board/README.md`, "Production hosting").
 
 Point to a remote gateway at runtime with `?gateway=`:
 ```

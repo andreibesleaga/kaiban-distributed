@@ -175,4 +175,16 @@ describe("loadConfig — TLS fields", () => {
     const config = loadConfig();
     expect(config.redis.tls!.rejectUnauthorized).toBe(false);
   });
+
+  it("TLS_REJECT_UNAUTHORIZED keeps verification on for any value but the opt-out literals", () => {
+    process.env["REDIS_TLS_CA"] = "/path/to/ca.crt";
+    process.env["REDIS_TLS_CERT"] = "/path/to/cert.crt";
+    process.env["REDIS_TLS_KEY"] = "/path/to/key.pem";
+    for (const value of ["True", "no", "off", "yes", "2", " "]) {
+      process.env["TLS_REJECT_UNAUTHORIZED"] = value;
+      expect(loadConfig().redis.tls!.rejectUnauthorized, value).toBe(true);
+    }
+    process.env["TLS_REJECT_UNAUTHORIZED"] = "0";
+    expect(loadConfig().redis.tls!.rejectUnauthorized).toBe(false);
+  });
 });

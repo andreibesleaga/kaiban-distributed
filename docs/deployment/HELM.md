@@ -47,11 +47,11 @@ This installs the chart with release name `blog-team` using default values (Bull
 
 ```yaml
 image:
-  repository: kaiban-distributed
+  repository: ghcr.io/andreibesleaga/kaiban-distributed
   pullPolicy: IfNotPresent
-  # Empty tag → uses Chart.AppVersion. A default `helm install` therefore pulls
-  # kaiban-distributed:<AppVersion>; if you built a local `:latest` image, tag it
-  # with the AppVersion or install with `--set image.tag=latest`.
+  # Empty tag → uses Chart.AppVersion, the release image tag (for example 2.1.2).
+  # For a local image built as in KUBERNETES.md, install with
+  # `--set image.repository=kaiban-distributed --set image.tag=latest`.
   tag: ""
 
 redis:
@@ -78,10 +78,15 @@ agents:
 config:
   MESSAGING_DRIVER: "bullmq"
   LLM_MODEL: "gpt-4o-mini"
+  # Emergency STOP ALL (2.1.0, ADR-025): "true" on every pod turns it on (also set secrets.BOARD_JWT_SECRET).
+  CONTROL_PLANE_ENABLED: "false"
+  REDIS_URL: ""                    # empty = the in-cluster Redis; set it when redis.enabled=false
 
-secrets:
-  OPENAI_API_KEY: ""        # required — pass via --set or external secret manager
-  OPENROUTER_API_KEY: ""    # optional
+secrets:                           # plain text: the chart base64-encodes them
+  OPENAI_API_KEY: ""               # required — pass via --set or external secret manager
+  OPENROUTER_API_KEY: ""           # optional; when set it takes precedence over OPENAI_API_KEY
+  BOARD_JWT_SECRET: ""             # needed for board/HTTP stop; rendered only when non-empty
+  CHANNEL_SIGNING_SECRET: ""       # optional; rendered only when non-empty
 ```
 
 ---
@@ -115,13 +120,14 @@ helm install blog-team examples/blog-team/infra/helm \
 
 ### External Redis (disable in-cluster Redis)
 
+Point the pods at your Redis with `config.REDIS_URL` (include the password and use `rediss://` for TLS). The URL is stored in the ConfigMap, so for a production password prefer a managed secret over `--set`:
+
 ```bash
 helm install blog-team examples/blog-team/infra/helm \
   --set redis.enabled=false \
+  --set config.REDIS_URL="redis://:your-password@redis.example.com:6379" \
   --set secrets.OPENAI_API_KEY="sk-your-key"
 ```
-
-> You must also override `REDIS_URL` in the ConfigMap template, or pass it via a custom values file.
 
 ### Custom values file
 
@@ -200,7 +206,7 @@ helm upgrade --install blog-team examples/blog-team/infra/helm \
 
 **Option B — External Secrets Operator**
 
-Disable the built-in secret (`secrets.OPENAI_API_KEY=""`) and create a matching `ExternalSecret` resource that populates `<release>-kaiban-blog-team-secrets`.
+The chart always renders its own Secret, and an empty `secrets.OPENAI_API_KEY` still renders it (with an empty key), so a second Secret of the same name conflicts. Either delete the chart's Secret template for your install, or point the Deployments at a differently named Secret that the `ExternalSecret` populates.
 
 **Option C — Sealed Secrets**
 
@@ -222,7 +228,7 @@ The chart uses the standard Helm `fullname` helper. With release name `blog-team
 | Writer Deployment | `blog-team-kaiban-blog-team-writer` |
 | Editor Deployment | `blog-team-kaiban-blog-team-editor` |
 
-The `REDIS_URL` in the ConfigMap template is automatically constructed:
+Unless `config.REDIS_URL` is set, the `REDIS_URL` in the ConfigMap is constructed as:
 ```
 redis://{{ fullname }}-redis:6379
 ```

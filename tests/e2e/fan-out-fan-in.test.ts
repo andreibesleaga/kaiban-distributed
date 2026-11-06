@@ -11,13 +11,19 @@
  * All tests run against a real Redis broker (started by globalSetup.ts).
  * Each test uses UUID-prefixed queue names for full isolation.
  *
+ * What these tests guard: the BullMQ fan-out/retry/DLQ round trip with real
+ * AgentActors. `runAggregator` and `runAutoApprover` are helpers defined in
+ * this file (a model of an orchestrator), NOT product code; the product's fan-in
+ * is `CompletionRouter.waitAll`, covered in global-research-flow.test.ts
+ * (Scenario 6) and completion-router-routing.test.ts.
+ *
  * Scenarios:
  *   1. Golden Path         — 4 agents, all succeed, approver passes
  *   2. Scaled 8-node       — 8 agents, all succeed (proves horizontal fan-out)
  *   3. Partial Failure     — 1 of 4 agents fails once, retries, recovers
  *   4. Total Failure       — All agents exhaust retries → DLQ, workflow partial
  *   5. Late-joining agent  — Agent starts after tasks published, BullMQ delivers
- *   6. Duplicate Task IDs  — Same taskId published twice, processed exactly once
+ *   6. Duplicate Task IDs  — Same taskId published twice; the test aggregator counts it once
  *   7. Approver Rejects    — Summary below threshold → rejected
  */
 import { describe, it, expect, afterEach } from "vitest";
@@ -414,7 +420,7 @@ describe("E2E: Fan-Out / Fan-In Workflow (BullMQ)", () => {
   //   at the aggregator level that the completion set only counts once
   //   per unique taskId (Set semantics).
   // ─────────────────────────────────────────────────────────────────────
-  it("Scenario 6 — Duplicate task IDs: aggregator counts each taskId only once", async () => {
+  it("Scenario 6 — Duplicate task IDs: the test aggregator (a Set) counts each taskId only once", async () => {
     const workflowId = `wf-dup-${randomUUID()}`;
     const QUEUE = `fan-out-${workflowId}`;
     const AGENT_ID = `agent-${workflowId}`;

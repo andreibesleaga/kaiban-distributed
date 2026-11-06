@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import 'dotenv/config';
-import { Redis } from 'ioredis';
+import { hostname } from 'os';
 import { AgentActor, type TaskHandler } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import type { MessagePayload } from '../../src/infrastructure/messaging/interfaces';
@@ -11,32 +11,33 @@ import {
   attachEmergencyStop,
 } from '../../src/shared';
 import { searcherConfig, SEARCHER_QUEUE } from './team-config';
+import { assignSearcherId } from './searcher-id';
 import { buildSecurityDeps } from '../../src/shared';
+import { actorTimeoutOptionsFromEnv, registerWorkerDrain } from '../../src/shared/agent-node';
+import { createRedisClient } from '../../src/shared/redis-connection';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const CHAOS_MODE = process.env['CHAOS_MODE'] === 'true';
 
 /**
- * Each replica atomically claims the next available index from a Redis counter
- * that the orchestrator resets at workflow start.  This gives each container/process
- * a unique ID (searcher-0, searcher-1, …) matching the orchestrator's buildSwarmAgents()
- * entries so the board shows exactly the indexed Zara-N cards and nothing else.
- *
- * Set SEARCHER_ID explicitly to override (e.g. for local single-process dev).
+ * A replica claims the next free index (searcher-0, searcher-1, …) matching the
+ * orchestrator's buildSwarmAgents() cards, and keeps it across an in-place restart
+ * (see searcher-id.ts). Set SEARCHER_ID explicitly to override (single-process dev).
  */
-async function assignSearcherId(): Promise<string> {
+async function claimSearcherId(): Promise<string> {
   if (process.env['SEARCHER_ID']) return process.env['SEARCHER_ID'];
-  const tmp = new Redis(REDIS_URL);
+  const tmp = createRedisClient(REDIS_URL);
   try {
-    const idx = (await tmp.incr('kaiban:searcher:reg')) - 1;
-    return `searcher-${idx}`;
+    // Host name alone would make local replicas on one machine share an id; the
+    // pid tells them apart, and in a restarted container it is the same again.
+    return await assignSearcherId(tmp, `${hostname()}:${process.pid}`);
   } finally {
     await tmp.quit();
   }
 }
 
 async function main(): Promise<void> {
-  const SEARCHER_ID = await assignSearcherId();
+  const SEARCHER_ID = await claimSearcherId();
 
   const driver = createDriver('searcher');
   const { actorDeps, tokenProvider } = buildSecurityDeps();
@@ -67,8 +68,10 @@ async function main(): Promise<void> {
     CHAOS_MODE ? wrapWithChaos(baseHandler) : baseHandler
   );
   // Routing ID is 'searcher' (matches agentId in tasks); display ID via statePublisher is SEARCHER_ID
+  // Same AGENT_TIMEOUT_MS / RETRY_ON_TIMEOUT handling and bounded drain as startAgentNode.
   const actor = new AgentActor('searcher', driver, SEARCHER_QUEUE, handler, {
     ...actorDeps,
+    ...actorTimeoutOptionsFromEnv(),
     onEmergencyStop: (payload): void => statePublisher.publishStopped(payload),
   });
 
@@ -84,9 +87,7 @@ async function main(): Promise<void> {
   console.log(`[Searcher:${SEARCHER_ID}] Zara started → ${SEARCHER_QUEUE}${CHAOS_MODE ? ' [CHAOS]' : ''}`);
   statePublisher.publishIdle();
 
-  process.on('SIGTERM', async () => {
-    await actor.stop(); await control?.close(); await driver.disconnect(); await statePublisher.disconnect(); process.exit(0);
-  });
+  registerWorkerDrain({ actor, control, driver, statePublisher });
 }
 
 main().catch((err: unknown) => {

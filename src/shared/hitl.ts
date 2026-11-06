@@ -22,7 +22,7 @@
  *   // Waits only for a board signal; call is unresolved until one arrives.
  */
 
-import { Redis } from "ioredis";
+import { createRedisClient } from "./redis-connection";
 import readline from "readline";
 import { unwrapVerified } from "../infrastructure/security/channel-signing";
 
@@ -50,7 +50,13 @@ export interface HitlOptions {
   signal?: AbortSignal;
 }
 
-/** Canonical map from board decision strings to HitlDecision. */
+/**
+ * Freshness window for a signed decision read from the durable list. The gateway
+ * keeps the list key for 300 s, so a decision pushed while the orchestrator was
+ * not yet waiting must still verify for that long (pub/sub keeps the 30 s default).
+ */
+const HITL_LIST_MAX_AGE_MS = 300_000;
+
 const BOARD_DECISION_MAP: Record<string, HitlDecision> = {
   PUBLISH: "PUBLISH",
   REVISE: "REVISE",
@@ -94,7 +100,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     // ── Board path A: pub/sub (fast — delivers in <1ms when timing is right) ─
     // Register handler BEFORE subscribe() to avoid the race where a message
     // arrives between subscribe completing and .then() continuation.
-    const sub = new Redis(redisUrl, { lazyConnect: false });
+    const sub = createRedisClient(redisUrl, { lazyConnect: false });
 
     sub.on("error", (err: unknown) => {
       /* v8 ignore next — FALSE branch: error fires after resolution (already disconnected) */
@@ -124,7 +130,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     // ── Board path B: BRPOP polling (reliable — works even if pub/sub races) ─
     // The gateway writes to `kaiban-hitl-decisions:<taskId>` via LPUSH so the
     // message persists in Redis until BRPOP consumes it — no timing dependency.
-    const poller = new Redis(redisUrl, { lazyConnect: false });
+    const poller = createRedisClient(redisUrl, { lazyConnect: false });
 
     poller.on("error", (err: unknown) => {
       if (!resolved) console.warn("[HITL] Redis poller error:", err);
@@ -136,7 +142,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
           const item = await poller.brpop(listKey, 1);
           if (item && !resolved) {
             console.log(`[HITL] ✓ Received via list-poll path`);
-            handleBoardMessage(item[1], taskId, finish);
+            handleBoardMessage(item[1], taskId, finish, HITL_LIST_MAX_AGE_MS);
           }
         } catch (err) {
           /* v8 ignore next — FALSE branch: error fires after resolution (loop exits) */
@@ -180,14 +186,20 @@ function handleBoardMessage(
   msg: string,
   taskId: string,
   finish: (d: HitlDecision) => void,
+  maxAgeMs?: number,
 ): void {
   try {
-    const parsed = unwrapVerified(msg) as {
+    const parsed = unwrapVerified(msg, { maxSkewMs: maxAgeMs }) as {
       taskId?: string;
       decision?: string;
     } | null;
+    if (!parsed) {
+      console.warn(
+        "[HITL] Ignored a board message: invalid, tampered or expired signature",
+      );
+      return;
+    }
     if (
-      !parsed ||
       typeof parsed.taskId !== "string" ||
       typeof parsed.decision !== "string"
     )

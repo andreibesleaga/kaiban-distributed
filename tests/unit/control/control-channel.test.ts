@@ -3,7 +3,15 @@
  * schema, issuing (stop moment saved in Redis, then a signed publish), reading
  * the saved stop, and the subscriber every node runs (ES-3, ES-6, ES-11).
  */
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  type Mock,
+} from "vitest";
 
 const mockLog = vi.hoisted(() => ({
   info: vi.fn(),
@@ -37,7 +45,8 @@ vi.mock("ioredis", () => ({
       subscribe: vi.fn().mockResolvedValue(1),
       get: vi.fn(async () => stored.value),
       quit: vi.fn().mockResolvedValue("OK"),
-      emit: (event, ...args) => r.listeners.get(event)?.forEach((l) => l(...args)),
+      emit: (event, ...args) =>
+        r.listeners.get(event)?.forEach((l) => l(...args)),
     };
     r.on.mockImplementation((event: string, l: Listener) => {
       r.listeners.set(event, [...(r.listeners.get(event) ?? []), l]);
@@ -86,7 +95,9 @@ afterEach(() => {
 describe("parseStopAllCommand", () => {
   it("accepts a well-formed command, with or without a reason", () => {
     expect(parseStopAllCommand(cmd())).toEqual(cmd());
-    expect(parseStopAllCommand(cmd({ reason: "runaway" }))).toEqual(cmd({ reason: "runaway" }));
+    expect(parseStopAllCommand(cmd({ reason: "runaway" }))).toEqual(
+      cmd({ reason: "runaway" }),
+    );
   });
 
   it.each([
@@ -132,7 +143,10 @@ describe("issueStopAll", () => {
     );
     const [channel, msg] = r.publish.mock.calls[0] as [string, string];
     expect(channel).toBe(CONTROL_CHANNEL);
-    expect(JSON.parse(msg)).toMatchObject({ payload: cmd(), sig: expect.any(String) });
+    expect(JSON.parse(msg)).toMatchObject({
+      payload: cmd(),
+      sig: expect.any(String),
+    });
   });
 
   it("still publishes when a later stop is already saved (saved: false)", async () => {
@@ -153,18 +167,24 @@ describe("issueStopAll", () => {
 });
 
 describe("readLastStop", () => {
-  const reader = (value: string | null): { get: Mock<ControlReader["get"]> } => ({
+  const reader = (
+    value: string | null,
+  ): { get: Mock<ControlReader["get"]> } => ({
     get: vi.fn<ControlReader["get"]>().mockResolvedValue(value),
   });
 
   it("returns the saved command", async () => {
-    await expect(readLastStop(reader(JSON.stringify(cmd())))).resolves.toEqual(cmd());
+    await expect(readLastStop(reader(JSON.stringify(cmd())))).resolves.toEqual(
+      cmd(),
+    );
   });
 
   it("returns null when nothing is saved, or the value is not JSON or not a command (logged)", async () => {
     await expect(readLastStop(reader(null))).resolves.toBeNull();
     await expect(readLastStop(reader("{not json"))).resolves.toBeNull();
-    await expect(readLastStop(reader(JSON.stringify({ a: 1 })))).resolves.toBeNull();
+    await expect(
+      readLastStop(reader(JSON.stringify({ a: 1 }))),
+    ).resolves.toBeNull();
     await expect(readLastStop(reader("null"))).resolves.toBeNull();
     expect(mockLog.warn).toHaveBeenCalledWith(
       expect.anything(),
@@ -174,39 +194,66 @@ describe("readLastStop", () => {
 
   it("rejects when Redis fails (the caller decides)", async () => {
     await expect(
-      readLastStop({ get: vi.fn<ControlReader["get"]>().mockRejectedValue(new Error("down")) }),
+      readLastStop({
+        get: vi.fn<ControlReader["get"]>().mockRejectedValue(new Error("down")),
+      }),
     ).rejects.toThrow("down");
   });
 });
 
 describe("saved commands are signed durably when CHANNEL_SIGNING_SECRET is set", () => {
   it("without a secret: plain JSON in schema key order, accepted back", () => {
-    const shuffled = { issuedAt: 5, reason: "r", command: "STOP_ALL", issuedBy: "x", commandId: "c" } as StopAllCommand;
+    const shuffled = {
+      issuedAt: 5,
+      reason: "r",
+      command: "STOP_ALL",
+      issuedBy: "x",
+      commandId: "c",
+    } as StopAllCommand;
     const sealed = sealStopCommand(shuffled);
-    expect(sealed).toBe('{"commandId":"c","command":"STOP_ALL","issuedBy":"x","issuedAt":5,"reason":"r"}');
+    expect(sealed).toBe(
+      '{"commandId":"c","command":"STOP_ALL","issuedBy":"x","issuedAt":5,"reason":"r"}',
+    );
     expect(openSavedStopCommand(sealed)).toEqual(shuffled);
   });
 
   it("with a secret: a sig is stored; a signed value opens, however old it is", () => {
     process.env["CHANNEL_SIGNING_SECRET"] = "s".repeat(32);
     const sealed = sealStopCommand(cmd());
-    expect(JSON.parse(sealed)).toMatchObject({ ...cmd(), sig: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(JSON.parse(sealed)).toMatchObject({
+      ...cmd(),
+      sig: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
     expect(openSavedStopCommand(sealed)).toEqual(cmd());
   });
 
   it("with a secret: unsigned, forged or edited values are refused", () => {
     process.env["CHANNEL_SIGNING_SECRET"] = "s".repeat(32);
-    const sealed = JSON.parse(sealStopCommand(cmd())) as Record<string, unknown>;
+    const sealed = JSON.parse(sealStopCommand(cmd())) as Record<
+      string,
+      unknown
+    >;
     expect(openSavedStopCommand(JSON.stringify(cmd()))).toBeNull();
-    expect(openSavedStopCommand(JSON.stringify({ ...sealed, sig: "0".repeat(64) }))).toBeNull();
-    expect(openSavedStopCommand(JSON.stringify({ ...sealed, sig: "abc" }))).toBeNull();
-    expect(openSavedStopCommand(JSON.stringify({ ...sealed, sig: 7 }))).toBeNull();
-    expect(openSavedStopCommand(JSON.stringify({ ...sealed, issuedAt: 1 }))).toBeNull();
+    expect(
+      openSavedStopCommand(JSON.stringify({ ...sealed, sig: "0".repeat(64) })),
+    ).toBeNull();
+    expect(
+      openSavedStopCommand(JSON.stringify({ ...sealed, sig: "abc" })),
+    ).toBeNull();
+    expect(
+      openSavedStopCommand(JSON.stringify({ ...sealed, sig: 7 })),
+    ).toBeNull();
+    expect(
+      openSavedStopCommand(JSON.stringify({ ...sealed, issuedAt: 1 })),
+    ).toBeNull();
   });
 
   it("issueStopAll saves the sealed form", async () => {
     process.env["CHANNEL_SIGNING_SECRET"] = "s".repeat(32);
-    const r = { eval: vi.fn<ControlPublisher["eval"]>().mockResolvedValue(1), publish: vi.fn<ControlPublisher["publish"]>().mockResolvedValue(1) };
+    const r = {
+      eval: vi.fn<ControlPublisher["eval"]>().mockResolvedValue(1),
+      publish: vi.fn<ControlPublisher["publish"]>().mockResolvedValue(1),
+    };
     await issueStopAll(r, cmd());
     expect(r.eval.mock.calls[0]![4]).toBe(sealStopCommand(cmd()));
   });
@@ -224,6 +271,65 @@ describe("ControlSubscriber", () => {
     subscriber!.emit("message", CONTROL_CHANNEL, wrapSigned(cmd()));
     expect(onStop).toHaveBeenCalledWith(cmd(), "channel");
     await sub.close();
+  });
+
+  it("delivers a correctly signed STOP ALL from a host whose clock is 31 s off", async () => {
+    process.env["CHANNEL_SIGNING_SECRET"] = "s".repeat(32);
+    const onStop = vi.fn();
+    const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop });
+    await sub.start();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-01T12:00:31Z"));
+      const raw = wrapSigned(cmd()); // issuer clock is 31 s ahead
+      vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+      instances[0]!.emit("message", CONTROL_CHANNEL, raw);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(onStop).toHaveBeenCalledWith(cmd(), "channel");
+    await sub.close();
+  });
+
+  it("warns that the channel is unsigned when CHANNEL_SIGNING_SECRET is not set (outside production)", async () => {
+    const sub = new ControlSubscriber({
+      redisUrl: "redis://x",
+      onStop: vi.fn(),
+    });
+    await sub.start();
+    expect(mockLog.warn).toHaveBeenCalledWith(
+      { channel: CONTROL_CHANNEL },
+      expect.stringContaining("unsigned"),
+    );
+    await sub.close();
+  });
+
+  it("refuses to start unsigned in production, unless ALLOW_INSECURE_PRODUCTION=true (ES-6)", async () => {
+    const env = process.env as Record<string, string | undefined>;
+    const before = {
+      NODE_ENV: env["NODE_ENV"],
+      ALLOW: env["ALLOW_INSECURE_PRODUCTION"],
+    };
+    env["NODE_ENV"] = "production";
+    try {
+      const sub = new ControlSubscriber({
+        redisUrl: "redis://x",
+        onStop: vi.fn(),
+      });
+      await expect(sub.start()).rejects.toThrow("CHANNEL_SIGNING_SECRET");
+      expect(instances).toHaveLength(0);
+      env["ALLOW_INSECURE_PRODUCTION"] = "true";
+      await expect(sub.start()).resolves.toBeUndefined();
+      await sub.close();
+    } finally {
+      for (const [k, v] of [
+        ["NODE_ENV", before.NODE_ENV],
+        ["ALLOW_INSECURE_PRODUCTION", before.ALLOW],
+      ] as const) {
+        if (v === undefined) delete env[k];
+        else env[k] = v;
+      }
+    }
   });
 
   it("ignores and logs a message whose signature does not verify (ES-6)", async () => {
@@ -246,7 +352,11 @@ describe("ControlSubscriber", () => {
     const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop });
     await sub.start();
 
-    instances[0]!.emit("message", CONTROL_CHANNEL, JSON.stringify({ command: "PAUSE" }));
+    instances[0]!.emit(
+      "message",
+      CONTROL_CHANNEL,
+      JSON.stringify({ command: "PAUSE" }),
+    );
     expect(onStop).not.toHaveBeenCalled();
     expect(mockLog.warn).toHaveBeenCalledWith(
       expect.anything(),
@@ -262,7 +372,9 @@ describe("ControlSubscriber", () => {
     await sub.start();
     expect(onStop).toHaveBeenCalledWith(cmd(), "saved");
 
-    stored.value = JSON.stringify(cmd({ commandId: "c-2", issuedAt: cmd().issuedAt + 1 }));
+    stored.value = JSON.stringify(
+      cmd({ commandId: "c-2", issuedAt: cmd().issuedAt + 1 }),
+    );
     instances[0]!.emit("ready");
     await flush();
     expect(onStop).toHaveBeenLastCalledWith(
@@ -281,7 +393,10 @@ describe("ControlSubscriber", () => {
   });
 
   it("start() fails closed when the saved stop cannot be read", async () => {
-    const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop: vi.fn() });
+    const sub = new ControlSubscriber({
+      redisUrl: "redis://x",
+      onStop: vi.fn(),
+    });
     const pending = sub.start();
     instances[1]!.get.mockRejectedValueOnce(new Error("down"));
     await expect(pending).rejects.toThrow("down");
@@ -290,10 +405,16 @@ describe("ControlSubscriber", () => {
 
   it("after a reconnect, a failed read is retried until it succeeds", async () => {
     const onStop = vi.fn();
-    const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop, retryDelayMs: 1 });
+    const sub = new ControlSubscriber({
+      redisUrl: "redis://x",
+      onStop,
+      retryDelayMs: 1,
+    });
     await sub.start();
     stored.value = JSON.stringify(cmd());
-    instances[1]!.get.mockRejectedValueOnce(new Error("down")).mockRejectedValueOnce(new Error("down"));
+    instances[1]!.get
+      .mockRejectedValueOnce(new Error("down"))
+      .mockRejectedValueOnce(new Error("down"));
     instances[0]!.emit("ready");
     await new Promise((r) => setTimeout(r, 30));
     expect(mockLog.warn).toHaveBeenCalledWith(
@@ -305,7 +426,11 @@ describe("ControlSubscriber", () => {
   });
 
   it("retrying stops once the subscriber is closed", async () => {
-    const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop: vi.fn(), retryDelayMs: 5 });
+    const sub = new ControlSubscriber({
+      redisUrl: "redis://x",
+      onStop: vi.fn(),
+      retryDelayMs: 5,
+    });
     await sub.start();
     instances[1]!.get.mockRejectedValue(new Error("down"));
     instances[0]!.emit("ready");
@@ -319,11 +444,16 @@ describe("ControlSubscriber", () => {
     const onStop = vi.fn();
     const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop });
     await sub.start();
-    const signing = await import("../../../src/infrastructure/security/channel-signing");
-    const spy = vi.spyOn(signing, "unwrapVerified").mockImplementationOnce(() => {
-      throw new TypeError("boom");
-    });
-    expect(() => instances[0]!.emit("message", CONTROL_CHANNEL, "null")).not.toThrow();
+    const signing =
+      await import("../../../src/infrastructure/security/channel-signing");
+    const spy = vi
+      .spyOn(signing, "unwrapVerified")
+      .mockImplementationOnce(() => {
+        throw new TypeError("boom");
+      });
+    expect(() =>
+      instances[0]!.emit("message", CONTROL_CHANNEL, "null"),
+    ).not.toThrow();
     instances[0]!.emit("message", CONTROL_CHANNEL, "null");
     expect(onStop).not.toHaveBeenCalled();
     spy.mockRestore();
@@ -331,8 +461,12 @@ describe("ControlSubscriber", () => {
   });
 
   it("logs Redis connection errors on either client", async () => {
-    const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop: vi.fn() });
+    const sub = new ControlSubscriber({
+      redisUrl: "redis://x",
+      onStop: vi.fn(),
+    });
     await sub.start();
+    mockLog.warn.mockClear(); // drop the "unsigned channel" start-up warning
     instances[0]!.emit("error", new Error("boom"));
     instances[1]!.emit("error", new Error("boom"));
     expect(mockLog.warn).toHaveBeenCalledTimes(2);
@@ -340,9 +474,15 @@ describe("ControlSubscriber", () => {
   });
 
   it("close() quits both connections, and is safe before start()", async () => {
-    const idle = new ControlSubscriber({ redisUrl: "redis://x", onStop: vi.fn() });
+    const idle = new ControlSubscriber({
+      redisUrl: "redis://x",
+      onStop: vi.fn(),
+    });
     await idle.close();
-    const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop: vi.fn() });
+    const sub = new ControlSubscriber({
+      redisUrl: "redis://x",
+      onStop: vi.fn(),
+    });
     await sub.start();
     await sub.close();
     expect(instances[0]!.quit).toHaveBeenCalledOnce();

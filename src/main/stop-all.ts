@@ -10,7 +10,7 @@
  *   node dist/src/main/stop-all.js --reason "runaway loop"   (in the image)
  */
 import "dotenv/config";
-import { Redis } from "ioredis";
+import { createRedisClient } from "../shared/redis-connection";
 import {
   issueStopAll,
   type ControlPublisher,
@@ -40,7 +40,10 @@ export function parseStopAllArgs(argv: string[], env: Env): StopAllArgs {
       args.help = true;
       continue;
     }
-    const [flag, inline] = arg.split(/=(.*)/s, 2) as [string, string | undefined];
+    const [flag, inline] = arg.split(/=(.*)/s, 2) as [
+      string,
+      string | undefined,
+    ];
     if (flag !== "--reason" && flag !== "--by") {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -54,14 +57,27 @@ export function parseStopAllArgs(argv: string[], env: Env): StopAllArgs {
 
 export interface StopAllDeps {
   env: Env;
-  connect: (redisUrl: string) => ControlPublisher & { quit(): Promise<unknown> };
+  connect: (
+    redisUrl: string,
+  ) => ControlPublisher & { quit(): Promise<unknown> };
   now?: () => number;
   out?: (line: string) => void;
   err?: (line: string) => void;
 }
 
+/** Signing nodes ignore an unsigned stop, so say so before sending one. */
+function warnIfUnsigned(env: Env, err: (line: string) => void): void {
+  if (env["CHANNEL_SIGNING_SECRET"]) return;
+  err(
+    "warning: CHANNEL_SIGNING_SECRET is not set; nodes that sign their channels will ignore this stop.",
+  );
+}
+
 /** Run the CLI; resolves with the exit code (0 issued, 1 failed). */
-export async function runStopAll(argv: string[], deps: StopAllDeps): Promise<number> {
+export async function runStopAll(
+  argv: string[],
+  deps: StopAllDeps,
+): Promise<number> {
   const out = deps.out ?? ((line: string): void => console.log(line));
   const err = deps.err ?? ((line: string): void => console.error(line));
   let args: StopAllArgs;
@@ -75,9 +91,14 @@ export async function runStopAll(argv: string[], deps: StopAllDeps): Promise<num
     out(STOP_ALL_USAGE);
     return 0;
   }
+  warnIfUnsigned(deps.env, err);
   const redis = deps.connect(deps.env["REDIS_URL"] ?? "redis://localhost:6379");
   try {
-    const cmd = createStopAllCommand(args.by, args.reason, (deps.now ?? Date.now)());
+    const cmd = createStopAllCommand(
+      args.by,
+      args.reason,
+      (deps.now ?? Date.now)(),
+    );
     const { saved } = await issueStopAll(redis, cmd);
     out(
       JSON.stringify({
@@ -97,11 +118,21 @@ export async function runStopAll(argv: string[], deps: StopAllDeps): Promise<num
   }
 }
 
+/** The CLI's Redis client: full URL (password, `rediss://`) plus `REDIS_TLS_*`. */
+export function connectRedis(
+  url: string,
+): ReturnType<typeof createRedisClient> {
+  return createRedisClient(url, {
+    lazyConnect: false,
+    maxRetriesPerRequest: 2,
+  });
+}
+
 /* v8 ignore start — process entrypoint; runStopAll itself is covered. */
 if (require.main === module) {
   void runStopAll(process.argv.slice(2), {
     env: process.env,
-    connect: (url) => new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 2 }),
+    connect: connectRedis,
   }).then((code) => process.exit(code));
 }
 /* v8 ignore stop */

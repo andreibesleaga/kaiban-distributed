@@ -34,7 +34,8 @@
  * broker; the result/HITL channels are unchanged); I3 (`taskId` dedup).
  */
 
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import { createRedisClient } from "./redis-connection";
 import {
   BudgetExceededError,
   cleanSpendAmount,
@@ -453,6 +454,9 @@ export class WorkflowOrchestrator {
    * This is how the example orchestrators consume the shared orchestrator while
    * keeping their phase functions intact: each phase call is wrapped in
    * `memoize(stepName, () => runXxxPhase(...))`.
+   *
+   * A producer that returns `undefined` (a void step) is checkpointed as JSON
+   * `null`, so a resume replays `null` instead of failing to parse.
    */
   async memoize<T>(name: string, produce: () => Promise<T>): Promise<T> {
     this.assertStepName(name);
@@ -464,7 +468,7 @@ export class WorkflowOrchestrator {
     this.assertDispatchAllowed();
     const value = await this.untilStopped(produce());
 
-    cp[name] = { taskId: `memoize:${name}`, result: JSON.stringify(value) };
+    cp[name] = { taskId: `memoize:${name}`, result: JSON.stringify(value ?? null) };
     this.account(value); // before the save — see runStep
     await this.persist();
     return value;
@@ -605,7 +609,7 @@ export class RedisCheckpointStore implements CheckpointStore {
   private readonly ttlSeconds: number;
 
   constructor(redisUrl: string, opts?: RedisCheckpointStoreOptions) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false });
+    this.redis = createRedisClient(redisUrl, { lazyConnect: false });
     this.ttlSeconds = opts?.ttlSeconds ?? DEFAULT_TTL_SECONDS;
   }
 

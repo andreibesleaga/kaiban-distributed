@@ -48,6 +48,7 @@ vi.mock("socket.io", () => ({
     return {
       adapter: vi.fn(),
       emit: mockIoEmit,
+      local: { emit: mockIoEmit },
       close: vi.fn((cb?: () => void) => cb?.()),
       on: vi.fn((event: string, cb: (s: MockSocket) => void) => {
         if (event === "connection") connectionHandler = cb;

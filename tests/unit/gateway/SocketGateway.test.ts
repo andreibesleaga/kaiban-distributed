@@ -37,6 +37,7 @@ const redisSubscriber = mockRedisSubscriber as unknown as Redis;
 const redisPublisher = mockRedisPublisher as unknown as Redis;
 
 const mockEmit = vi.fn();
+const mockDisconnectSockets = vi.fn();
 const mockIoClose = vi.fn().mockImplementation((cb?: () => void) => {
   if (cb) cb();
 });
@@ -66,6 +67,7 @@ vi.mock("socket.io", () => ({
     return {
       adapter: mockAdapter,
       emit: mockEmit,
+      local: { emit: mockEmit, disconnectSockets: mockDisconnectSockets },
       close: mockIoClose,
       on: mockIoOn,
       use: vi.fn(),

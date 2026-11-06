@@ -27,7 +27,8 @@
  *   await pub.disconnect();
  */
 
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import { createRedisClient } from "./redis-connection";
 import { wrapSigned } from "../infrastructure/security/channel-signing";
 import { createStructuredLogger } from "./structured-logger";
 
@@ -37,7 +38,7 @@ export class OrchestratorStatePublisher {
   protected readonly redis: Redis;
 
   constructor(redisUrl: string) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false });
+    this.redis = createRedisClient(redisUrl, { lazyConnect: false });
   }
 
   /**

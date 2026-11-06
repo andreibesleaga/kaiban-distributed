@@ -58,7 +58,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
   to bound Redis growth, optional TLS) and `KafkaDriver` (a unique consumer group per worker role,
   optional SSL/mTLS, poison-message tolerance). **Value:** production-grade queueing semantics
   (durability, backpressure, competing consumers) without binding business logic to a specific broker.
-- **Five canonical channels with a deliberate durable/ephemeral split.** Task mailboxes,
+- **Six canonical channels with a deliberate durable/ephemeral split** (the sixth, `kaiban-control`, exists only with `CONTROL_PLANE_ENABLED`). Task mailboxes,
   `kaiban-events-completed`, and `kaiban-events-failed` (DLQ) flow over the durable driver; the
   `kaiban-state-events` and `kaiban-hitl-decisions` channels are **pinned to Redis Pub/Sub regardless
   of `MESSAGING_DRIVER`**. **Value:** durable task work and ephemeral UI/decision signalling each get
@@ -72,7 +72,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
   scale horizontally.
 - **Location transparency & horizontal scale.** Actors on one host or a global cluster look identical
   to the rest of the system; competing consumers (BullMQ round-robin / Kafka group rebalance) spread
-  load. **Value:** "horizontal scale is one command" (`docker compose up --scale searcher=N` or
+  load. On Kafka, replicas share the load only when the task topic has at least as many partitions as replicas (an auto-created topic has one), and a consumer group reads a topic from its start on a partition it has no committed offset for (a task mailbox's backlog is run; a completion published before the orchestrator's consumer joined is not lost); the group's committed offsets expire after the broker's `offsets.retention.minutes` (7 days by default), after which, or after a change of `KAFKA_GROUP_ID`, every task the topic still retains is run again. **Value:** "horizontal scale is one command" (`docker compose up --scale searcher=N` or
   `kubectl scale --replicas=N`), and agents can be placed near data or specialized hardware (run
   searchers in one region, the writer in another).
 - **W3C trace-context propagation.** `traceparent`/`tracestate` headers ride every message across
@@ -99,7 +99,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
 - **In-process actor dispatch and fan-out/fan-in.** `dispatchToAgent` hands an instruction straight
   to an agent mailbox; `CompletionRouter` maps `taskId → pending Promise` (with `waitAll` for fan-in).
   **Value:** orchestrate your own deployed nodes without going through the HTTP A2A surface, while
-  keeping the same input caps and dedup guarantees.
+  without the A2A input caps or in-flight dedup (callers validate; `dispatchToAgent` itself checks nothing).
 - **KaibanJS bridge.** `KaibanAgentBridge` wraps a KaibanJS agent in a per-task `Team` and returns a
   token-tracked result; `KaibanTeamBridge` runs a local KaibanJS `Team` whose state syncs to the
   distributed board. **Value:** existing KaibanJS agents drop straight into distributed worker
@@ -137,10 +137,10 @@ And the design stance that distinguishes it from most JS agent frameworks:
 - **Dual decision channels, durable-first delivery.** A decision can arrive from the React board or
   the terminal, raced fairly ("first to respond wins"); the gateway writes the durable per-task list
   entry **before** the pub/sub publish, and the board is ACK'd only after both succeed. **Value:** a
-  missed pub/sub message stays recoverable via the list fallback, so an approval is never silently lost.
+  missed pub/sub message stays recoverable via the list fallback, so an approval is not lost (a signed list entry stays valid for its 300 s lifetime; a decision rejected for a bad signature or age is logged).
 - **Emergency STOP ALL (2.1.0, opt-in).** With `CONTROL_PLANE_ENABLED=true`, one press of the
   board's STOP ALL button, one `POST /control/stop-all`, or `npm run stop-all` kills every running
-  model call, task and workflow sent up to that moment: model requests are cancelled mid-call,
+  model call, task and workflow sent up to that moment: model requests on the OpenAI-compatible provider are cancelled mid-call (other providers stop at the next agent-loop step),
   queued tasks are refused, workflows end `STOPPED`, and anything started afterwards runs normally
   ([ADR-025](decisions/ADR-025-emergency-stop-control-channel.md)). Board and HTTP commands need a
   board token; every node acknowledges on the state channel. **Value:** an operator can halt a
@@ -297,7 +297,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
   abuse has a narrower blast radius.
 - **Byte-accurate data caps & PII minimization.** A 64 KB outbound-message cap and 20 KB state-event-
   result cap measured in **UTF-8 bytes** (truncating on codepoint boundaries), SHA-256-hashed agent IDs
-  in logs, and `sanitizeDelta` PII stripping (email/name/phone/IP/secrets) on the state path. **Value:**
+  in logs, and `sanitizeDelta` stripping of PII-named top-level delta keys (email/name/phone/IP/secrets; nested keys are not inspected) on the state path. **Value:**
   one chatty actor can't congest the broker, and the observable stream meets GDPR data-minimization by
   default.
 - **Supply-chain security.** The published library ships **0 HIGH/CRITICAL advisories**; the release
@@ -407,7 +407,7 @@ custom A2A connector, an MCP *client*, env-gated security controls, and a full C
 > The published v2.0 surface was verified locally at **108 test files / 1155 unit tests / 100% coverage
 > of `src/**`** (see [`docs/VERIFICATION.md`](VERIFICATION.md)); the e2e (real-broker), mutation and
 > supply-chain gates run in CI (the Playwright visual tests run by hand). `v2.0.0` was tagged and
-> published on 2026-06-22; on 30 Oct 2026 the unit suite is 125 files / 1396 tests.
+> published on 2026-06-22; on 6 Nov 2026 the unit suite is 151 files / 1778 tests.
 
 ---
 
@@ -471,9 +471,9 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 6. `CompletionRouter` with lazy subscription, duplicate-`wait()` rejection, and `taskId`-keyed dispatch.
 
 **Channels, state & checkpoint/resume**
-7. Five canonical channels with the durable/ephemeral split (durable broker vs. Redis Pub/Sub).
+7. Six canonical channels (the sixth, `kaiban-control`, only with `CONTROL_PLANE_ENABLED`) with the durable/ephemeral split (durable broker vs. Redis Pub/Sub).
 8. `AgentStatePublisher` (IDLE/THINKING/EXECUTING/ERROR + task deltas, 15 s heartbeat) and `OrchestratorStatePublisher` (workflow lifecycle).
-9. `DistributedStateMiddleware` intercepts Zustand `setState()` and publishes PII-stripped deltas.
+9. `DistributedStateMiddleware` subscribes to the KaibanJS team's Zustand store and publishes each change as a signed, PII-stripped board delta.
 10. Redis checkpoint→resume in the single-active orchestrator; idempotent re-advance by `taskId`.
 11. DLQ (`kaiban-events-failed`) with a typed taxonomy and safe replay (skips non-retryable poison).
 
@@ -515,7 +515,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 34. Clean/hexagonal 4-layer architecture; `Result<T,E>` monad + typed `DomainError`s.
 35. Apache-2.0 CORE-ONLY publish; `.` + `./shared` exports; two-entry api-extractor with committed `etc/*.api.md`; staging-dir pack; `smoke-consumer.sh`.
 36. Strict TypeScript, ESLint zero-warnings (complexity ≤ 10, no `any`), madge no-cycles gate.
-37. **Test/quality posture:** 100% `src/**` coverage (125 files / 1396 unit tests on 30 Oct 2026), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
+37. **Test/quality posture:** 100% `src/**` coverage (151 files / 1778 unit tests on 6 Nov 2026), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
 38. **Supply chain / SLSA:** CycloneDX SBOM, SLSA provenance, cosign keyless signing, Trivy image scan, gitleaks, OSV-Scanner, CodeQL, OpenSSF Scorecard; `npm audit` blocking on HIGH+.
 39. 21 ADRs (`docs/decisions/ADR-001..021`) recording every significant decision; a `MIGRATION.md`, `COMPLIANCE.md`, `VERIFICATION.md`, and a `docs/roadmap/V2.1-ROADMAP.md`.
 

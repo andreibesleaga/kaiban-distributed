@@ -63,7 +63,7 @@ header h1 { font-size: 1.4rem; font-weight: 700; }
 
 .banner-stopped { background: #1e293b; border: 1px solid #64748b; }
 .banner-stopped .banner-title { font-size: 0.95rem; color: #94a3b8; }
-.banner-stopped .banner-msg   { color: #64748b; }
+.banner-stopped .banner-msg   { color: #94a3b8; }
 
 /* ── Workflow status bar ── */
 .workflow-bar {
@@ -108,7 +108,7 @@ header h1 { font-size: 1.4rem; font-weight: 700; }
 }
 .agent-name { font-size: 0.85rem; font-weight: 700; }
 .agent-role { font-size: 0.7rem; color: #94a3b8; margin: 2px 0 8px; }
-.agent-task { font-size: 0.68rem; color: #475569; margin-top: 6px; }
+.agent-task { font-size: 0.68rem; color: #94a3b8; margin-top: 6px; }
 
 .agent-status {
   font-size: 0.7rem;
@@ -117,7 +117,7 @@ header h1 { font-size: 1.4rem; font-weight: 700; }
   border-radius: 20px;
   display: inline-block;
 }
-.status-idle      { background: #1e293b; color: #64748b; border: 1px solid #334155; }
+.status-idle      { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
 .status-thinking  { background: #1e3a5f; color: #60a5fa; }
 .status-executing { background: #052e16; color: #4ade80; }
 .status-error     { background: #450a0a; color: #f87171; }
@@ -213,11 +213,11 @@ details.task-result[open] summary::before { content: '▼ '; }
   font-weight: 700;
   margin-left: 6px;
 }
-.task-badge-hitl  { background: #7c2d12; color: #fb923c; }
-.task-tokens { font-size: 0.7rem; color: #64748b; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.task-badge-hitl  { background: #7c2d12; color: #fdba74; }
+.task-tokens { font-size: 0.7rem; color: #94a3b8; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .task-badge-error { background: #450a0a; color: #f87171; }
 
-.empty { color: #475569; font-size: 0.8rem; text-align: center; padding: 20px; }
+.empty { color: #94a3b8; font-size: 0.8rem; text-align: center; padding: 20px; }
 
 /* ── Swarm metadata ── */
 .swarm-meta {
@@ -235,7 +235,7 @@ details.task-result[open] summary::before { content: '▼ '; }
   gap: 16px;
 }
 .meta-item  { display: flex; flex-direction: column; gap: 4px; }
-.meta-label { font-size: 0.68rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+.meta-label { font-size: 0.68rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; }
 .meta-value { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; }
 .meta-nodes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 
@@ -268,8 +268,8 @@ details.task-result[open] summary::before { content: '▼ '; }
   grid-template-columns: 70px 80px 1fr;
   gap: 8px;
 }
-.log-time             { color: #475569; }
-.log-type             { color: #7c3aed; font-weight: 600; }
+.log-time             { color: #94a3b8; }
+.log-type             { color: #a78bfa; font-weight: 600; }
 .log-type.llm         { color: #8b5cf6; }
 .log-msg              { color: #94a3b8; }
 .log-msg.highlight    { color: #e2e8f0; }
@@ -381,3 +381,7 @@ details.task-result[open] summary::before { content: '▼ '; }
 .stop-all-cancel:hover { background: #475569; }
 .task-card.stopped { border-left-color: #f59e0b; background: #1c1206; }
 .task-badge-stopped { background: #78350f; color: #fcd34d; }
+
+/* Query label in the workflow bar and the empty node list (were inline styles, which the page's CSP blocks) */
+.topic-label { font-size: 0.8rem; color: #94a3b8; margin-left: 8px; }
+.meta-placeholder { font-size: 0.8rem; color: #94a3b8; }

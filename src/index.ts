@@ -88,6 +88,7 @@ export type {
   McpAgentStatusDetail,
 } from "./infrastructure/federation/mcp-server";
 export { createMcpHttpHandler } from "./infrastructure/federation/mcp-http";
+export type { McpSessionLimits } from "./infrastructure/federation/mcp-http";
 export type { McpHttpHandler } from "./infrastructure/federation/mcp-http";
 
 // ── Orchestration / resilience (master plan §B5.1 Phase R, ADR-018) ──────────
@@ -249,6 +250,12 @@ export type {
   StopSource,
 } from "./infrastructure/control/control-channel";
 export { DistributedStateMiddleware } from "./adapters/state/distributedMiddleware";
+export type {
+  ObservableStore,
+  KaibanStoreState,
+  KaibanAgentLike,
+  KaibanTaskLike,
+} from "./adapters/state/distributedMiddleware";
 
 // ── Security ─────────────────────────────────────────────────────────────────
 export { HeuristicFirewall } from "./infrastructure/security/heuristic-firewall";

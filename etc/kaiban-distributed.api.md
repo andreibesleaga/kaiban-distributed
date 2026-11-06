@@ -128,6 +128,9 @@ export const AGENT_CARD_PATH = ".well-known/agent-card.json";
 // @public
 export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
 
+// @public
+export const AGENT_MAILBOX_PREFIX = "kaiban-agents-";
+
 // @public (undocumented)
 export class AgentActor {
     constructor(id: string, driver: IMessagingDriver, queueName: string, taskHandler?: TaskHandler, deps?: AgentActorDeps);
@@ -550,7 +553,7 @@ export function createEmergencyStopSignal(redisUrl: string, startedAt?: number):
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
 
 // @public
-export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
+export function createMcpHttpHandler(deps: McpServerDeps, limits?: McpSessionLimits): McpHttpHandler;
 
 // @public
 export function createStopAllCommand(issuedBy: string, reason?: string, now?: number): StopAllCommand;
@@ -592,16 +595,12 @@ export interface DistributedAgentState {
     version: string;
 }
 
-// @public (undocumented)
+// @public
 export class DistributedStateMiddleware {
     constructor(redisUrl: string, channelName?: string);
-    // Warning: (ae-forgotten-export) The symbol "ZustandStore" needs to be exported by the entry point index.d.ts
-    //
-    // (undocumented)
-    attach(store: ZustandStore): ZustandStore;
+    attach(store: ObservableStore): ObservableStore;
     // (undocumented)
     disconnect(): Promise<void>;
-    // (undocumented)
     listen(onStateChange: (delta: Record<string, unknown>) => void): Promise<void>;
 }
 
@@ -805,6 +804,7 @@ export class GatewayApp {
 export interface GatewayAppDeps {
     // Warning: (ae-forgotten-export) The symbol "EmergencyStopIngress" needs to be exported by the entry point index.d.ts
     emergencyStop?: EmergencyStopIngress;
+    longRequestTimeoutMs?: number;
     mcpHandler?: McpHttpHandler;
     mcpPath?: string;
     readinessProbe?: () => Promise<ProbeResult>;
@@ -964,8 +964,21 @@ export class KaibanAgentExecutor implements AgentExecutor {
     execute(ctx: RequestContext, eventBus: ExecutionEventBus): Promise<void>;
 }
 
+// @public
+export interface KaibanAgentLike {
+    // (undocumented)
+    id?: unknown;
+    // (undocumented)
+    name?: unknown;
+    // (undocumented)
+    role?: unknown;
+    // (undocumented)
+    status?: unknown;
+}
+
 // @public (undocumented)
 export interface KaibanExecutorDeps {
+    agentIds?: readonly string[];
     driver: Pick<IMessagingDriver, "publish">;
     router: Pick<CompletionRouter, "wait">;
     taskStore: TaskStore;
@@ -979,6 +992,32 @@ export type KaibanHandlerResult = {
     outputTokens: number;
     estimatedCost: number;
 };
+
+// @public
+export interface KaibanStoreState {
+    // (undocumented)
+    agents?: KaibanAgentLike[];
+    // (undocumented)
+    tasks?: KaibanTaskLike[];
+    // (undocumented)
+    teamWorkflowStatus?: unknown;
+}
+
+// @public
+export interface KaibanTaskLike {
+    // (undocumented)
+    agent?: {
+        id?: unknown;
+    } | null;
+    // (undocumented)
+    id?: unknown;
+    // (undocumented)
+    result?: unknown;
+    // (undocumented)
+    status?: unknown;
+    // (undocumented)
+    title?: unknown;
+}
 
 // @public @deprecated
 export class KaibanTeamBridge {
@@ -1118,6 +1157,14 @@ export interface McpServerDeps {
     version?: string;
 }
 
+// @public (undocumented)
+export interface McpSessionLimits {
+    // (undocumented)
+    idleTimeoutMs?: number;
+    // (undocumented)
+    maxSessions?: number;
+}
+
 // @public
 export interface MemoryEntry {
     // (undocumented)
@@ -1189,8 +1236,20 @@ export abstract class NonRetryableError extends DomainError {
     abstract readonly reasonCode: string;
 }
 
+// @public
+export interface ObservableStore {
+    // (undocumented)
+    subscribe: (listener: (state: KaibanStoreState, prev: KaibanStoreState) => void) => () => void;
+}
+
 // @public (undocumented)
 export function ok<T>(value: T): Result<T, never>;
+
+// @public
+export function otlpSignalUrls(endpoint: string): {
+    traces: string;
+    metrics: string;
+};
 
 // @public
 export function overBudgetReason(totals: SpendTotals, budget: WorkflowBudget): string | null;
@@ -1429,9 +1488,10 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
 
 // @public
 export class SlidingWindowRateLimiter {
-    constructor(windowMs?: number, maxRequests?: number);
+    constructor(windowMs?: number, maxRequests?: number, maxKeys?: number);
     // (undocumented)
     isAllowed(key: string): boolean;
+    get size(): number;
 }
 
 // @public (undocumented)
@@ -1440,7 +1500,9 @@ export class SocketGateway {
         validHitlDecisions?: string[];
         hitlPublisher?: Redis;
         control?: EmergencyStopIngress;
+        trustProxy?: boolean;
     });
+    disconnectClients(): void;
     // (undocumented)
     initialize(): void;
     noteStop(cmd: {
@@ -1548,13 +1610,12 @@ export type TaskStatus = "TODO" | "DOING" | "AWAITING_VALIDATION" | "DONE" | "BL
 
 // @public (undocumented)
 export interface TelemetryConfig {
-    // (undocumented)
     exporterEndpoint?: string;
     // (undocumented)
     serviceName: string;
 }
 
-// @public (undocumented)
+// @public
 export interface TlsConfig {
     // (undocumented)
     ca: Buffer;
@@ -1584,8 +1645,13 @@ export const UNLIMITED: number;
 // @public
 export const UNLIMITED_SENTINEL = "unlimited";
 
+// @public (undocumented)
+export interface UnwrapOptions {
+    maxSkewMs?: number;
+}
+
 // @public
-export function unwrapVerified(raw: string): Record<string, unknown> | null;
+export function unwrapVerified(raw: string, opts?: UnwrapOptions): Record<string, unknown> | null;
 
 // @public
 export interface ValidatedTaskInput {
@@ -1602,7 +1668,7 @@ export interface ValidatedTaskInput {
 }
 
 // @public
-export function validateTaskInput(params: Record<string, unknown> | undefined): ValidationResult;
+export function validateTaskInput(params: Record<string, unknown> | undefined, allowedAgentIds?: readonly string[]): ValidationResult;
 
 // @public (undocumented)
 export class ValidationError extends DomainError {

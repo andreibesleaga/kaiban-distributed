@@ -71,7 +71,7 @@
       behind the existing helmet + rate-limit + JWT chain. **Env-gated OFF by default**
       (`MCP_SERVER_ENABLED`; `MCP_DISPATCH_CONSENT` fail-closed; optional
       `MCP_ALLOWED_{TOOLS,RESOURCES,PROMPTS}` least-privilege filters — see `.env.example` +
-      `docs/federation/MCP.md`). Dispatch reuses the A2A `validateTaskInput` caps + `taskId` dedup.
+      `docs/federation/MCP.md`). Dispatch reuses the A2A `validateTaskInput` caps (no `taskId` dedup).
       **New direct dependency:** `zod ^4.4.3` (already present transitively via the MCP SDK).
       **Library API (additive):** new exports `buildMcpServer`, `createMcpHttpHandler` + the `Mcp*`
       types and `MCP_*` capability-name constants; `McpConfig` added to `AppConfig`. A2A stays the
@@ -109,6 +109,53 @@
       Cost-reservation enforcement is added when a fleet `CostLimiterPort` is injected. See
       `docs/decisions/ADR-021`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)
+
+## 2.1.1 → 2.1.2 (audit fixes)
+
+Four operator-facing changes; everything else is a bug fix that needs no action.
+
+1. **Production control plane needs the signing secret.** With `NODE_ENV=production` and
+   `CONTROL_PLANE_ENABLED=true`, a node refuses to start unless `CHANNEL_SIGNING_SECRET` is set
+   (or `ALLOW_INSECURE_PRODUCTION=true`). Set the same secret on every gateway, worker and
+   orchestrator, and in the shell that runs `npm run stop-all`.
+2. **`REDIS_URL` credentials are now used everywhere.** A password, user, database number or
+   `rediss://` scheme in `REDIS_URL` now reaches the BullMQ task queues too (before, only the
+   state and control clients used them). If your Redis has an ACL user for this app, make sure
+   it may run the BullMQ commands (`EVAL`, `XADD`, `BZPOPMIN`, …) as well as `PUBLISH`/`SUBSCRIBE`.
+3. **Agent ids are checked at the gateway.** A2A and MCP `dispatch_task` refuse an `agentId` that
+   is not in `AGENT_IDS`. List every agent that callers address.
+4. **Origins and proxies.** The `SOCKET_CORS_ORIGINS` allowlist now also applies to WebSocket
+   connections (a browser Origin that was ignored before must be listed). Behind a proxy or
+   ingress set `TRUST_PROXY=true`, otherwise all clients share the proxy's address for the
+   refused-attempt limit on STOP ALL.
+
+Smaller points:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT` is the OTLP/HTTP base URL (`http://collector:4318`); a value that
+  ends in `/v1/traces` still works.
+- A viewer opened with `?gateway=<url>` and a token from `window.BOARD_TOKEN` now connects to
+  `window.GATEWAY_URL` (or `localhost:3000`) and logs "Ignoring ?gateway=". Put the gateway in
+  `window.GATEWAY_URL`, or pass the token as `#token=` in the same address. A board built with
+  `VITE_BOARD_TOKEN` honours `?gateway=` only for the origin of `VITE_GATEWAY_URL`.
+- Helm: the charts default to `ghcr.io/andreibesleaga/kaiban-distributed:<appVersion>`. For a
+  locally built image set `--set image.repository=kaiban-distributed --set image.tag=latest`.
+- The example Redis and Kafka are published on `127.0.0.1` only; reach them from another machine
+  through an SSH tunnel or change the published address in the compose file.
+- Kafka: a scaled agent (`--scale searcher=N`) shares work only when its task topic has at least N
+  partitions; the compose files now create topics with 4. A worker whose consumer group has no
+  committed offset (first start, a new `KAFKA_GROUP_ID`, or offsets expired after the broker's
+  `offsets.retention.minutes`) now reads its mailbox from the beginning, so tasks the topic still
+  retains are run (again). Keep the topic retention shorter than the longest idle period, or
+  reset the group's offsets before restarting after a long pause. The completed and failed
+  channels follow the same rule: a new orchestrator or gateway consumer group replays the
+  retained events once (results for tasks nobody waits for are dropped with a log line).
+- global-research: `AUTO_PUBLISH` is no longer inferred from a missing terminal. A piped or CI run
+  must set `AUTO_PUBLISH=true` (or answer the review prompt), otherwise it waits for the decision.
+- `AGENT_TIMEOUT_MS` and `CIRCUIT_BREAKER_*` values that were silently mis-parsed now log a warning
+  and use the default.
+- Code that called `DistributedStateMiddleware.attach` with its own store must give it
+  `subscribe(listener(state, prev))`; `unwrapVerified(raw, { maxSkewMs })` gained an optional
+  skew window (the default 30 s is unchanged).
 
 ## 2.1.0 → 2.1.1 (STOP ALL in the static viewers, additive)
 

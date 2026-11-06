@@ -57,6 +57,9 @@ emergency stop of everything.
 - Nothing is resumed: stopped work is replayed from the failure queue, on purpose.
 - The stop moment is compared with each task's send time from the sender's clock, so the hosts'
   clocks must be synchronised (NTP); a task sent within the skew can fall on either side.
+  The live command is verified by its signature only, without the 30-second freshness window of the
+  state channel, so a stop from a host whose clock is off is never dropped; an older stop replayed
+  later is a no-op because the stop moment only moves forward.
 - Redis becomes a hard dependency of the control plane, including Kafka deployments (already true
   for state and review decisions).
 - Every board token can stop everything; per-role authorisation comes with a later version.

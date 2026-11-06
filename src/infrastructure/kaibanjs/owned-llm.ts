@@ -29,6 +29,15 @@ export interface OwnedLlmConfig {
   model?: string;
   apiKey?: string;
   apiBaseUrl?: string;
+  /** Retries of a failed provider request; unset behaves as in KaibanJS (1). */
+  maxRetries?: number;
+  temperature?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  n?: number;
+  stream?: boolean;
+  configuration?: { baseURL: string };
 }
 
 /** A LangChain config object that may carry an AbortSignal. */
@@ -88,14 +97,24 @@ export function buildOwnedLlm(
   const provider = config.provider ?? "openai";
   if (provider !== "openai") return undefined;
 
+  // KaibanJS hands the whole llmConfig to its own OpenAI constructor, so pass
+  // every field (temperature, topP, penalties, n, …) through, with the same two
+  // defaults it applies: model gpt-4o-mini and maxRetries 1 (LangChain's own
+  // default would be 6). An empty apiKey is dropped so the environment applies.
+  const { apiBaseUrl, apiKey } = config;
   const fields: Record<string, unknown> = {
-    model: config.model ?? "gpt-4o-mini",
+    ...config,
+    model: config.model || "gpt-4o-mini",
+    maxRetries: config.maxRetries ?? 1,
   };
-  if (config.apiKey) fields["apiKey"] = config.apiKey;
+  delete fields["provider"];
+  delete fields["apiBaseUrl"];
+  delete fields["apiKey"];
+  if (apiKey) fields["apiKey"] = apiKey;
   // KaibanJS maps apiBaseUrl → configuration.baseURL for the openai provider;
   // mirror that so OpenRouter / OpenAI-compatible endpoints work identically.
-  if (config.apiBaseUrl) {
-    fields["configuration"] = { baseURL: config.apiBaseUrl };
+  if (apiBaseUrl) {
+    fields["configuration"] = { baseURL: apiBaseUrl };
   }
 
   const model = new ChatOpenAI(fields) as unknown as BaseChatModel;

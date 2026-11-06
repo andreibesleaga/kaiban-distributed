@@ -74,8 +74,9 @@ export interface DlqReplayDeps {
   /** The dead-letter records to consider for replay. */
   records: DlqRecord[];
   /**
-   * Override the poison-reason set (e.g. to add `"policy_blocked"` once the
-   * governance gate lands). Defaults to {@link DLQ_POISON_REASONS}.
+   * Override the poison-reason set (e.g. to add `"blocked_by_admission_gate"`,
+   * which is replayable by default because an operator may replay after changing
+   * a policy or a limit). Defaults to {@link DLQ_POISON_REASONS}.
    */
   poisonReasons?: ReadonlySet<string>;
   /** Resolve the mailbox queue name for an agent. Defaults to `kaiban-agents-<id>`. */

@@ -37,7 +37,8 @@ const GATE_ACTIONS: readonly GateAction[] = [
 
 function isGateAction(value: unknown): value is GateAction {
   return (
-    typeof value === "string" && (GATE_ACTIONS as readonly string[]).includes(value)
+    typeof value === "string" &&
+    (GATE_ACTIONS as readonly string[]).includes(value)
   );
 }
 
@@ -76,7 +77,11 @@ export class PolicyEngine implements GateValidator {
   }
 
   /** True when every provided field of `rule` matches `ctx`. */
-  private ruleMatches(rule: PolicyRule, ctx: GateContext, haystack: string): boolean {
+  private ruleMatches(
+    rule: PolicyRule,
+    ctx: GateContext,
+    haystack: string,
+  ): boolean {
     return (
       this.operationMatches(rule, ctx) &&
       this.agentMatches(rule, ctx) &&
@@ -109,20 +114,45 @@ function validateRule(raw: unknown, index: number): PolicyRule {
     throw new Error(`Invalid policy: rule at index ${index} must be an object`);
   }
   if (typeof raw["id"] !== "string") {
-    throw new Error(`Invalid policy: rule at index ${index} must have a string "id"`);
+    throw new Error(
+      `Invalid policy: rule at index ${index} must have a string "id"`,
+    );
   }
   if (!isGateAction(raw["effect"])) {
     throw new Error(
       `Invalid policy: rule "${raw["id"]}" has an invalid "effect" (must be a GateAction)`,
     );
   }
+  rejectNonString(raw, "operation");
+  rejectNonString(raw, "agentId");
+  if (raw["matchAny"] !== undefined) {
+    const list = raw["matchAny"];
+    if (!Array.isArray(list) || !list.every((t) => typeof t === "string")) {
+      throw new Error(
+        `Invalid policy: rule "${raw["id"]}" has a "matchAny" that is not a list of strings`,
+      );
+    }
+  }
   return raw as unknown as PolicyRule;
+}
+
+/** Throws when an optional rule field is present but not a string. */
+function rejectNonString(
+  raw: Record<string, unknown>,
+  field: "operation" | "agentId",
+): void {
+  if (raw[field] !== undefined && typeof raw[field] !== "string") {
+    throw new Error(
+      `Invalid policy: rule "${raw["id"]}" has a "${field}" that is not a string`,
+    );
+  }
 }
 
 /**
  * Parse + minimally validate YAML into a {@link PolicySet}.
  * @throws {Error} when the shape is invalid (not an object, bad `default`,
- *   `rules` not an array, or any rule missing `id` / having a bad `effect`).
+ *   `rules` not an array, or any rule missing `id`, with a bad `effect`, or with
+ *   a non-string `operation` / `agentId` or a `matchAny` that is not a list of strings).
  */
 export function loadPolicySet(yamlText: string): PolicySet {
   const parsed: unknown = parse(yamlText);

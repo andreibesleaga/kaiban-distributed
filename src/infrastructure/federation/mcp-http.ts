@@ -13,6 +13,11 @@
  * keeps responses plain JSON (no lingering SSE) — this is an internal RPC surface,
  * not a streaming one. Mounted behind the gateway's helmet + rate-limit + JWT chain.
  *
+ * Sessions are bounded: one idle for `idleTimeoutMs` (default 30 min) is closed
+ * the next time a session is opened, and above `maxSessions` (default 200) an
+ * `initialize` is refused with 503. Clients that never send DELETE therefore
+ * cannot grow the gateway's memory without limit.
+ *
  * Session lifecycle uses the transport's `onsessioninitialized` / `onsessionclosed`
  * callbacks (each handed a guaranteed session id) rather than the nullable
  * `transport.sessionId`, so registration and teardown are exact.
@@ -27,10 +32,21 @@ import { createStructuredLogger } from "../../shared/structured-logger";
 const log = createStructuredLogger({ component: "McpHttp" });
 
 const SESSION_HEADER = "mcp-session-id";
+/** A session with no request for this long is closed when the next one opens. */
+export const MCP_SESSION_IDLE_MS = 30 * 60_000;
+/** Live sessions at most; above it `initialize` gets 503. */
+export const MCP_MAX_SESSIONS = 200;
 
 interface McpSession {
   transport: StreamableHTTPServerTransport;
   close(): Promise<void>;
+  /** Epoch ms of the session's last request. */
+  lastSeenAt: number;
+}
+
+export interface McpSessionLimits {
+  idleTimeoutMs?: number;
+  maxSessions?: number;
 }
 
 export interface McpHttpHandler {
@@ -70,7 +86,16 @@ function jsonRpcError(
 class StreamableMcpHandler implements McpHttpHandler {
   private readonly sessions = new Map<string, McpSession>();
 
-  constructor(private readonly deps: McpServerDeps) {}
+  private readonly idleTimeoutMs: number;
+  private readonly maxSessions: number;
+
+  constructor(
+    private readonly deps: McpServerDeps,
+    limits: McpSessionLimits = {},
+  ) {
+    this.idleTimeoutMs = limits.idleTimeoutMs ?? MCP_SESSION_IDLE_MS;
+    this.maxSessions = limits.maxSessions ?? MCP_MAX_SESSIONS;
+  }
 
   public sessionCount(): number {
     return this.sessions.size;
@@ -85,6 +110,7 @@ class StreamableMcpHandler implements McpHttpHandler {
     if (sessionId !== undefined) {
       const existing = this.sessions.get(sessionId);
       if (!existing) return jsonRpcError(res, 404, "Unknown MCP session");
+      existing.lastSeenAt = Date.now();
       return existing.transport.handleRequest(req, res, parsedBody);
     }
     if (!isInitializeRequest(parsedBody)) {
@@ -105,6 +131,7 @@ class StreamableMcpHandler implements McpHttpHandler {
     const existing =
       sessionId !== undefined ? this.sessions.get(sessionId) : undefined;
     if (!existing) return jsonRpcError(res, 404, "Unknown MCP session");
+    existing.lastSeenAt = Date.now();
     return existing.transport.handleRequest(req, res);
   }
 
@@ -113,6 +140,11 @@ class StreamableMcpHandler implements McpHttpHandler {
     res: ServerResponse,
     parsedBody: unknown,
   ): Promise<void> {
+    await this.closeIdleSessions();
+    if (this.sessions.size >= this.maxSessions) {
+      log.warn({ max: this.maxSessions }, "MCP session limit reached");
+      return jsonRpcError(res, 503, "Too many MCP sessions");
+    }
     const server = buildMcpServer(this.deps);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: (): string => randomUUID(),
@@ -121,6 +153,7 @@ class StreamableMcpHandler implements McpHttpHandler {
         this.sessions.set(sessionId, {
           transport,
           close: (): Promise<void> => server.close(),
+          lastSeenAt: Date.now(),
         });
         log.info({ sessionId }, "MCP session opened");
       },
@@ -131,6 +164,22 @@ class StreamableMcpHandler implements McpHttpHandler {
     });
     await server.connect(transport);
     await transport.handleRequest(req, res, parsedBody);
+  }
+
+  /** Close every session that has been idle for `idleTimeoutMs`. */
+  private async closeIdleSessions(): Promise<void> {
+    const cutoff = Date.now() - this.idleTimeoutMs;
+    for (const [id, session] of [...this.sessions]) {
+      if (session.lastSeenAt >= cutoff) continue;
+      this.sessions.delete(id);
+      log.info({ sessionId: id }, "MCP session closed (idle)");
+      try {
+        await session.transport.close();
+        await session.close();
+      } catch (err) {
+        log.warn({ err, sessionId: id }, "Closing an idle MCP session failed");
+      }
+    }
   }
 
   public async close(): Promise<void> {
@@ -147,6 +196,9 @@ class StreamableMcpHandler implements McpHttpHandler {
  * Create the gateway-mountable MCP Streamable-HTTP handler. The returned object's
  * `handlePost`/`handleSession` wire to Express routes; `close()` runs on drain.
  */
-export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler {
-  return new StreamableMcpHandler(deps);
+export function createMcpHttpHandler(
+  deps: McpServerDeps,
+  limits?: McpSessionLimits,
+): McpHttpHandler {
+  return new StreamableMcpHandler(deps, limits);
 }

@@ -32,7 +32,10 @@ A2A_JWT_SECRET=<random 32+ bytes>
 The surface is **Streamable HTTP** at `${MCP_SERVER_PATH}`:
 `POST` (initialize / call), `GET` (notification stream), `DELETE` (terminate). It runs **stateful**
 (one session per `mcp-session-id`) so elicitation can round-trip; responses are plain JSON
-(`enableJsonResponse`), not SSE.
+(`enableJsonResponse`), not SSE. Session limits (2.1.2): when a new session initialises, sessions
+idle for 30 minutes are closed first (idle = no request started in that time, so a single call
+that blocks longer than 30 minutes can be closed by another client's `initialize`); above 200
+live sessions `initialize` answers 503.
 
 ## Capabilities (curated, allow-listed)
 
@@ -40,7 +43,7 @@ The surface is **Streamable HTTP** at `${MCP_SERVER_PATH}`:
 - **`dispatch_task`** — hand an instruction to an allow-listed agent.
   Input: `{ agentId, instruction, expectedOutput? }`. **Side-effecting** → gated by **elicitation
   consent** (see below). Publishes to the agent mailbox (`kaiban-agents-{agentId}`) through the same
-  `validateTaskInput` caps + `taskId` dedup as A2A. Returns `{ dispatched, taskId, status }`.
+  `validateTaskInput` caps as A2A. Each call mints a fresh `taskId`, so a client retry runs a second task: there is no dedup on this path. Returns `{ dispatched, taskId, status }`.
 
 ### Resources (read-only grounding context)
 - **`kaiban://agents`** — the agents this gateway can route to, with last-known status.

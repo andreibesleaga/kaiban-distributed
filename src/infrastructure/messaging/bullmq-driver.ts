@@ -8,6 +8,7 @@ import {
   sanitizeTraceHeaders,
 } from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
+import { isMessagePayload } from "./payload-guard";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "BullMQDriver" });
@@ -82,6 +83,13 @@ export class BullMQDriver implements IMessagingDriver {
       const worker = new Worker(
         queueName,
         async (job) => {
+          if (!isMessagePayload(job.data)) {
+            log.warn(
+              { queue: queueName, jobId: job.id },
+              "Skipping a BullMQ job that is not a task payload",
+            );
+            return;
+          }
           // Sanitize possibly-crafted trace headers (incl. malformed traceparent)
           // before extraction — shared with the Kafka driver.
           const ctx = extractTraceContext(
@@ -97,7 +105,10 @@ export class BullMQDriver implements IMessagingDriver {
       // this listener BullMQ emits an 'error' on an EventEmitter with no
       // handler, which can crash the process (S9).
       worker.on("error", (err: Error) => {
-        log.error({ err: err.message, queue: queueName }, "BullMQ worker error");
+        log.error(
+          { err: err.message, queue: queueName },
+          "BullMQ worker error",
+        );
       });
       this.workers.set(queueName, worker);
     }

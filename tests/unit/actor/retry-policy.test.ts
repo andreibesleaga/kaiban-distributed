@@ -21,3 +21,10 @@ describe("taskWaitMs", () => {
     );
   });
 });
+
+describe("taskWaitMs timer limit", () => {
+  it("never exceeds Node's 2 147 483 647 ms timer limit (a larger wait fires after 1 ms)", () => {
+    expect(taskWaitMs(1_000_000_000, true)).toBe(2_147_483_647);
+    expect(taskWaitMs(2_147_483_647, false)).toBe(2_147_483_647);
+  });
+});

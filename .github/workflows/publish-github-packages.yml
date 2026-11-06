@@ -12,8 +12,10 @@ name: Publish to GitHub Packages (npm mirror)
 # `packages: write` — no extra secret. Provenance is npmjs-only, so it is turned
 # off here (the npm publish in publish-npm.yml keeps it).
 #
-# Triggers: every version tag (alongside release.yml) and manual dispatch, which
-# backfills whatever version the checked-out ref carries. Re-runs are safe: a
+# Triggers: every version tag (alongside release.yml) and manual dispatch on a tag
+# (`gh workflow run publish-github-packages.yml --ref vX.Y.Z`), which backfills that
+# tag. A run on a branch, or on a tag that differs from the package.json version,
+# fails in the first step (scripts/check-tag-version.sh). Re-runs are safe: a
 # version already on GitHub Packages is skipped, never overwritten.
 
 on:
@@ -32,8 +34,10 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Tag must equal the package.json version
+        run: bash scripts/check-tag-version.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: "npm"

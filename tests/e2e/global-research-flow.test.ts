@@ -14,13 +14,14 @@
  *   3. HITL REVISE           — editor → REVISE → revised writer task → HITL PUBLISH → FINISHED
  *   4. Governance REJECTED   — reviewer returns REJECTED → workflow STOPPED before editorial
  *   5. Partial searcher fail — 1/4 searchers fails → writer uses 3 results → pipeline continues
- *   6. Fan-in verification   — CompletionRouter.waitAll pattern: all 4 search tasks collected before writer
+ *   6. Fan-in verification   — the real CompletionRouter.waitAll releases only after all 4 search tasks completed
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { randomUUID } from "crypto";
 import { Redis } from "ioredis";
 import { BullMQDriver } from "../../src/infrastructure/messaging/bullmq-driver";
 import { AgentActor } from "../../src/application/actor/AgentActor";
+import { CompletionRouter } from "../../src/shared/completion-router";
 import { wrapSigned } from "../../src/infrastructure/security/channel-signing";
 import type { MessagePayload } from "../../src/infrastructure/messaging/interfaces";
 
@@ -762,9 +763,10 @@ describe("E2E: Global Research Swarm Full Flow (BullMQ + HITL)", () => {
   }, 45_000);
 
   // ─────────────────────────────────────────────────────────────────
-  // Scenario 6 — Fan-in gate: all 4 search tasks complete before writer dispatched
+  // Scenario 6 — Fan-in gate: the real CompletionRouter.waitAll releases only
+  // when ALL 4 search tasks have completed
   // ─────────────────────────────────────────────────────────────────
-  it("Scenario 6 — Fan-in verification: all 4 search results collected before writer task dispatched", async () => {
+  it("Scenario 6 — Fan-in verification: CompletionRouter.waitAll resolves only after all 4 searches finished", async () => {
     const wfId = `wf-gr-fanin-${randomUUID()}`;
     const SEARCHER_Q = `gr-searcher-${wfId}`;
     const WRITER_Q = `gr-writer-${wfId}`;
@@ -776,26 +778,32 @@ describe("E2E: Global Research Swarm Full Flow (BullMQ + HITL)", () => {
     );
     const writeTaskId = `${wfId}-write`;
 
-    const oracleDriver = new BullMQDriver(connConfig());
-    drivers.push(oracleDriver);
-    const oracle = createOracle(oracleDriver);
+    // One consumer of the completed queue only: a second subscriber (an oracle)
+    // would compete with the router for the completions (BullMQ queues are
+    // work queues, see CompletionRouter.ensureSubscribed) and starve the gate.
+    const taskDriver = new BullMQDriver(connConfig());
+    const routerDriver = new BullMQDriver(connConfig());
+    drivers.push(taskDriver, routerDriver);
+    const router = new CompletionRouter(routerDriver);
 
-    const searchCompletionTimestamps: number[] = [];
-
+    // Fixed, distinct latencies (no randomness): task 0 is fastest, task 3 slowest.
+    // A waitAll that resolved after the first result would see only 1 finished.
+    const handlerFinished: string[] = [];
     await spawnAgents(drivers, NUM, "searcher", SEARCHER_Q, async (p) => {
-      // Simulate variable latency to stress-test fan-in ordering
-      const delay = Math.floor(Math.random() * 800);
-      await new Promise((r) => setTimeout(r, delay));
-      searchCompletionTimestamps.push(Date.now());
+      const index = searchTaskIds.indexOf(p.taskId);
+      await new Promise((r) => setTimeout(r, index * 250));
+      handlerFinished.push(p.taskId);
       return makeSearchResult(p.taskId);
     });
 
     await spawnAgent(drivers, "writer", WRITER_Q, async () => WRITE_RESULT);
 
-    // Fan-out
+    // Register the waits first, then fan out
+    const fanIn = router.waitAll(searchTaskIds, 20_000, "search");
+    await new Promise((r) => setTimeout(r, 200));
     await Promise.all(
       searchTaskIds.map((taskId) =>
-        oracleDriver.publish(SEARCHER_Q, {
+        taskDriver.publish(SEARCHER_Q, {
           taskId,
           agentId: "searcher",
           timestamp: Date.now(),
@@ -804,39 +812,27 @@ describe("E2E: Global Research Swarm Full Flow (BullMQ + HITL)", () => {
       ),
     );
 
-    // Wait for ALL searchers to finish (fan-in gate)
-    const searchPhase = await oracle.waitFor(searchTaskIds, 20_000);
-    expect(searchPhase.success.size).toBe(NUM);
+    const results = await fanIn;
 
-    // Record when writer is dispatched — must be AFTER all searches complete
-    const writerDispatchTimestamp = Date.now();
+    // Key invariant: the gate opened only after every search handler had finished
+    expect(handlerFinished).toHaveLength(NUM);
+    expect(results).toHaveLength(NUM);
+    expect(results.every((r) => r.error === undefined)).toBe(true);
+    expect(results.map((r) => r.taskId).sort()).toEqual([...searchTaskIds].sort());
 
-    await oracleDriver.publish(WRITER_Q, {
+    const writeWait = router.wait(writeTaskId, 12_000, "write");
+    await taskDriver.publish(WRITER_Q, {
       taskId: writeTaskId,
       agentId: "writer",
       timestamp: Date.now(),
       data: {
         instruction: "Synthesise all search results",
-        searchResults: Array.from(searchPhase.success.values()).map((d) =>
-          getHandlerResult(d),
-        ),
+        searchResults: results.map((r) => r.result),
       },
     });
 
-    const writePhase = await oracle.waitFor([writeTaskId], 12_000);
-    expect(writePhase.success.size).toBe(1);
-
-    // Key invariant: writer was dispatched only after all 4 searches completed
-    expect(searchCompletionTimestamps).toHaveLength(NUM);
-    const lastSearchCompletedAt = Math.max(...searchCompletionTimestamps);
-    expect(writerDispatchTimestamp).toBeGreaterThanOrEqual(
-      lastSearchCompletedAt,
-    );
-
-    // Verify writer result contains expected content
-    const writeResult = JSON.parse(
-      String(getHandlerResult(writePhase.success.get(writeTaskId))),
-    ) as { answer: string };
+    // The router hands back the handler's result string.
+    const writeResult = JSON.parse(await writeWait) as { answer: string };
     expect(writeResult.answer).toContain("AI");
   }, 45_000);
 });

@@ -99,13 +99,20 @@ function checkTotalSize(
   return undefined;
 }
 
-function validateAgentId(raw: unknown): string | { error: A2AInputError } {
+function validateAgentId(
+  raw: unknown,
+  allowed: readonly string[] | undefined,
+): string | { error: A2AInputError } {
   const agentId = String(raw ?? "");
   if (!agentId) return invalidParam("agentId is required");
   if (agentId.length > MAX_AGENT_ID_LEN || !AGENT_ID_PATTERN.test(agentId)) {
     return invalidParam(
       `Invalid agentId: must be alphanumeric/hyphens, max ${MAX_AGENT_ID_LEN} chars`,
     );
+  }
+  // An id nobody serves would create a queue (and a Redis connection) for nothing.
+  if (allowed && !allowed.includes(agentId)) {
+    return invalidParam("Unknown agentId: not served by this gateway");
   }
   return agentId;
 }
@@ -156,16 +163,19 @@ function buildValidated(
 /**
  * Validate a task-creation payload. On success returns the size-capped params;
  * otherwise a JSON-RPC `-32602` error describing the first violation.
+ * With `allowedAgentIds` (the gateway's `AGENT_IDS`) an id outside the list is
+ * refused; without it only the id's shape is checked.
  */
 export function validateTaskInput(
   params: Record<string, unknown> | undefined,
+  allowedAgentIds?: readonly string[],
 ): ValidationResult {
   const p = params ?? {};
 
   const sizeError = checkTotalSize(p);
   if (sizeError) return sizeError;
 
-  const agentId = validateAgentId(p["agentId"]);
+  const agentId = validateAgentId(p["agentId"], allowedAgentIds);
   if (typeof agentId !== "string") return agentId;
 
   return buildValidated(agentId, p);

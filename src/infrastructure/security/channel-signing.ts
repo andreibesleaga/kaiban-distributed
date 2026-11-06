@@ -42,6 +42,16 @@ export function wrapSigned(payload: Record<string, unknown>): string {
   return JSON.stringify(envelope);
 }
 
+export interface UnwrapOptions {
+  /**
+   * Largest accepted difference between the envelope time and this node's clock
+   * (default 30 000 ms). `Infinity` checks the signature only. The control
+   * channel uses that: a STOP ALL must not be lost to clock skew, and a replayed
+   * older stop is already a no-op there (ES-8).
+   */
+  maxSkewMs?: number;
+}
+
 /**
  * Verify and unwrap a signed envelope from a Redis channel.
  * Returns the inner payload on success, or null if:
@@ -51,8 +61,15 @@ export function wrapSigned(payload: Record<string, unknown>): string {
  *
  * When CHANNEL_SIGNING_SECRET is not set, parses as plain JSON (legacy pass-through).
  * Returns null on any JSON parse error regardless of mode.
+ *
+ * `maxSkewMs` (in the options) is the freshness window (default 30 s). Durable list entries that
+ * legitimately wait longer than a pub/sub message (the HITL decision list lives
+ * 300 s) pass their own, longer window; the HMAC is still always checked.
  */
-export function unwrapVerified(raw: string): Record<string, unknown> | null {
+export function unwrapVerified(
+  raw: string,
+  opts: UnwrapOptions = {},
+): Record<string, unknown> | null {
   const secret = process.env["CHANNEL_SIGNING_SECRET"];
   if (!secret) {
     try {
@@ -72,7 +89,8 @@ export function unwrapVerified(raw: string): Record<string, unknown> | null {
   if (!isEnvelope(envelope)) return null;
 
   // Replay protection: reject messages older than MAX_CLOCK_SKEW_MS
-  if (Math.abs(Date.now() - envelope.ts) > MAX_CLOCK_SKEW_MS) return null;
+  const maxSkew = opts.maxSkewMs ?? MAX_CLOCK_SKEW_MS;
+  if (Math.abs(Date.now() - envelope.ts) > maxSkew) return null;
 
   const body = `${envelope.ts}.${JSON.stringify(envelope.payload)}`;
   const expected = createHmac("sha256", secret).update(body).digest("hex");

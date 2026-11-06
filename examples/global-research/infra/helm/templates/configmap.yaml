@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "kaiban-global-research.labels" . | nindent 4 }}
 data:
-  REDIS_URL: "redis://{{ include "kaiban-global-research.fullname" . }}-redis:6379"
+  REDIS_URL: {{ .Values.config.REDIS_URL | default (printf "redis://%s-redis:6379" (include "kaiban-global-research.fullname" .)) | quote }}
   MESSAGING_DRIVER: {{ .Values.config.MESSAGING_DRIVER | quote }}
   PORT: {{ .Values.gateway.port | quote }}
   SERVICE_NAME: "kaiban-gateway"
@@ -24,3 +24,9 @@ type: Opaque
 data:
   OPENAI_API_KEY: {{ .Values.secrets.OPENAI_API_KEY | b64enc | quote }}
   OPENROUTER_API_KEY: {{ .Values.secrets.OPENROUTER_API_KEY | b64enc | quote }}
+  {{- with .Values.secrets.BOARD_JWT_SECRET }}
+  BOARD_JWT_SECRET: {{ . | b64enc | quote }}
+  {{- end }}
+  {{- with .Values.secrets.CHANNEL_SIGNING_SECRET }}
+  CHANNEL_SIGNING_SECRET: {{ . | b64enc | quote }}
+  {{- end }}

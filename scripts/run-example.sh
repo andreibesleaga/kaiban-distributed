@@ -300,8 +300,19 @@ wait_for_gateway
 verify_worker_llm_credentials
 
 cd "$ROOT"
-npx ts-node "$EXAMPLE_PATH/orchestrator.ts" &
+# The orchestrator runs as a child with this shell's stdin (an explicit
+# redirection, so the prompt for the human decision still reads the terminal),
+# while the shell itself waits: a SIGTERM/SIGINT (or `stop`, through the PID
+# file) is then handled at once, forwarded to the child, and the EXIT trap
+# tears the stack down. A foreground child would have deferred the trap until
+# the orchestrator exited on its own.
+echo "$$" > "$PID_FILE"
+ORCH_PID=""
+forward_signal() {
+  if [[ -n "$ORCH_PID" ]]; then kill -TERM "$ORCH_PID" 2>/dev/null || true; wait "$ORCH_PID" 2>/dev/null || true; fi
+  cleanup
+}
+trap forward_signal INT TERM
+npx ts-node "$EXAMPLE_PATH/orchestrator.ts" <&0 &
 ORCH_PID=$!
-echo "$ORCH_PID" > "$PID_FILE"
-
 wait "$ORCH_PID"

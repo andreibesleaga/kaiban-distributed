@@ -282,9 +282,9 @@ flowchart TD
 
 ```mermaid
 stateDiagram-v2
-    [*] --> TODO : task.create
+    [*] --> TODO : message/send (A2A)
     note right of TODO
-        API response: status='QUEUED'
+        API response: A2A task state 'submitted'
     end note
     TODO --> DOING : Worker Claims Task
 
@@ -313,10 +313,10 @@ stateDiagram-v2
 | `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker; outbound message data capped at 64 KB |
 | `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS agent in a per-task `Team`; calls `team.start()`; returns token-tracked `KaibanHandlerResult`; optional JIT token provider |
 | `KaibanTeamBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync |
-| `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
+| `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/THINKING/EXECUTING/ERROR agent status to Redis Pub/Sub; 15s heartbeat; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
 | `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); optional TLS; no colon queue names |
 | `KafkaDriver` | `src/infrastructure/messaging/` | Kafka-backed messaging; optional SSL/mTLS; unique consumer group per worker role |
-| `DistributedStateMiddleware` | `src/adapters/state/` | Intercepts Zustand store `setState()` and publishes deltas to messaging layer |
+| `DistributedStateMiddleware` | `src/adapters/state/` | Subscribes to the Zustand store and publishes each change as a signed board delta |
 | `GatewayApp` | `src/adapters/gateway/` | Express HTTP: `/health`, `/.well-known/agent-card.json`, `/a2a/rpc` |
 | `SocketGateway` | `src/adapters/gateway/` | Socket.io server + Redis pub/sub subscriber; broadcasts `state:update` to board |
 | A2A stack (`buildA2AStack`: `KaibanAgentExecutor` + `RedisTaskStore` + `AgentStatusTracker`) | `src/infrastructure/federation/` | Official `@a2a-js/sdk` v0.3 server; `message/send` validates + publishes to the agent mailbox (ADR-015) |
@@ -417,7 +417,7 @@ npm ci
 npm run dev               # → http://localhost:5173
 ```
 
-**Production build** outputs static files to `board/dist/` — deploy anywhere (nginx, CDN, etc.).
+**Production build** outputs static files to `board/dist/` — deploy anywhere (nginx, CDN, etc.). Set `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff` as response headers on the host: browsers ignore them in `<meta>` tags (see `board/README.md`, "Production hosting").
 
 ![(React Board running example)](docs/images/ReactBoard2.png)
 
@@ -497,7 +497,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```
 Worker nodes (each):
   AgentStatePublisher.publishIdle()     → Redis PUBLISH kaiban-state-events { agents: [IDLE] }
-  AgentStatePublisher.wrapHandler()     → EXECUTING → DONE/ERROR → Redis PUBLISH
+  AgentStatePublisher.wrapHandler()     → EXECUTING → THINKING → IDLE/ERROR → Redis PUBLISH
   15-second heartbeat                   → re-publishes current agent status
   (heartbeat NEVER sets teamWorkflowStatus — only the orchestrator does)
 
@@ -584,6 +584,8 @@ http://localhost:5173?gateway=http://my-gateway.example.com:3000
 2. `VITE_GATEWAY_URL` build-time env var (`.env` file)
 3. `http://localhost:3000` fallback
 
+**A board token is never sent to a gateway chosen by a link.** When `VITE_BOARD_TOKEN` is built in, the React board honours `?gateway=` only for the origin of `VITE_GATEWAY_URL`; any other value is ignored and the configured gateway is used. The static viewers ignore `?gateway=` when the token comes from `window.BOARD_TOKEN`; a token given in the address fragment (`#token=`) is sent to the gateway named in that same address.
+
 **Layout** (top → bottom):
 - **Header** — logo, topic, gateway URL chip, workflow status pill, connection badge
 - **WorkflowBanner** — conditional banner: HITL Approve/Revise/Reject buttons (when any task is `AWAITING_VALIDATION`), FINISHED, STOPPED, or ERRORED states
@@ -655,7 +657,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "name": "kaiban-gateway",
   "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
   "url": "http://localhost:3000/a2a/rpc",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
     { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }
@@ -788,7 +790,7 @@ KAFKA_GROUP_ID=kaiban-group
 | orchestrator (completed events) | `kaiban-group-orchestrator-completed` |
 | orchestrator (failed/DLQ events) | `kaiban-group-orchestrator-failed` |
 
-**Long tasks and heartbeats** — while a task handler runs, the Kafka worker sends a consumer-group heartbeat every 3 s (`eachMessage` heartbeat, cleared when the handler ends; heartbeat errors are logged, never thrown). A task running longer than the ~30 s session timeout therefore no longer gets its worker evicted and re-run elsewhere. The timeouts themselves are unchanged (KafkaJS defaults: session 30 s, rebalance 60 s). Known limit: if a real group rebalance happens while a task runs, the offset commit can still fail and the task may be delivered again to another worker; task-level de-duplication is planned for 2.1. BullMQ has its own lock renewal and is not affected.
+**Long tasks and heartbeats** — while a task handler runs, the Kafka worker sends a consumer-group heartbeat every 3 s (`eachMessage` heartbeat, cleared when the handler ends; heartbeat errors are logged, never thrown). A task running longer than the ~30 s session timeout therefore no longer gets its worker evicted and re-run elsewhere. The timeouts themselves are unchanged (KafkaJS defaults: session 30 s, rebalance 60 s). Known limit: if a real group rebalance happens while a task runs, the offset commit can still fail and the task may be delivered again to another worker; task-level de-duplication is planned (roadmap §7.2, item 5). BullMQ has its own lock renewal and is not affected.
 
 > Task queues use Kafka topics. State broadcast (`kaiban-state-events`) always uses Redis Pub/Sub — `SocketGateway` reads directly from Redis regardless of `MESSAGING_DRIVER`.
 
@@ -821,7 +823,7 @@ Set `MESSAGING_DRIVER=kafka` (or `bullmq`) — the `IMessagingDriver` interface 
 | `POST` | `/a2a/rpc` | A2A v0.3 JSON-RPC: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel` |
 | `GET` | `/a2a/agents/:agentId/status` | Real last-known agent status (`AgentStatusTracker`) |
 | `POST` / `GET` / `DELETE` | `/mcp` | MCP server (Streamable HTTP), mounted only when `MCP_SERVER_ENABLED=true`; path from `MCP_SERVER_PATH` (see [docs/federation/MCP.md](docs/federation/MCP.md)) |
-| `POST` | `/control/stop-all` | Emergency STOP ALL (2.1.0), mounted only when `CONTROL_PLANE_ENABLED=true`. Needs `Authorization: Bearer <board token>` (refused while `BOARD_JWT_SECRET` is unset); body `{ "reason"?: string }`; 202 `{ commandId, issuedAt, saved }`, 401, 400, 429 (5 per 10 s per client) |
+| `POST` | `/control/stop-all` | Emergency STOP ALL (2.1.0), mounted only when `CONTROL_PLANE_ENABLED=true`. Needs `Authorization: Bearer <board token>` (refused while `BOARD_JWT_SECRET` is unset); body `{ "reason"?: string }`; 202 `{ commandId, issuedAt, saved }`, 401, 400, 429 (5 per 10 s per token subject; refused attempts 30 per 10 s per address) |
 
 The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId/status` and the 404 reply) answer in a `{ data, meta, errors }` envelope. `/a2a/rpc` answers in JSON-RPC 2.0 and the agent card is the bare A2A AgentCard, both served by `@a2a-js/sdk`.
 
@@ -829,7 +831,7 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 
 | Event | Direction | Payload |
 |-------|-----------|---------|
-| `state:update` | server → client | `StateDelta` (PII-sanitized) |
+| `state:update` | server → client | `StateDelta` (top-level PII keys stripped) |
 | `hitl:decision` | client → server | `{ taskId: string, decision: 'PUBLISH' \| 'REVISE' \| 'REJECT' }` |
 | `control:stop-all` | client → server | `{ reason?: string }`, acked with `{ ok, commandId, issuedAt, saved }` or `{ ok: false, error }` (2.1.0, only with `CONTROL_PLANE_ENABLED=true`; needs the handshake board token) |
 
@@ -842,7 +844,7 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 | `kaiban-events-failed` | BullMQ / Kafka | DLQ after 3 retry failures, or after one non-retryable failure (budget breach, timeout, worker stopping); the record keeps the task inputs (up to 64 KB) so it can be replayed |
 | `kaiban-state-events` | Redis Pub/Sub | Agent/workflow state → board |
 | `kaiban-hitl-decisions` | Redis Pub/Sub | Board HITL decisions → orchestrator |
-| `kaiban-control` | Redis Pub/Sub | Emergency STOP ALL → every worker and orchestrator (2.1.0, [ADR-025](docs/decisions/ADR-025-emergency-stop-control-channel.md)); signed with `CHANNEL_SIGNING_SECRET` when set; the latest stop is also kept in the Redis key `kaiban-control:stopped-at` |
+| `kaiban-control` | Redis Pub/Sub | Emergency STOP ALL → every worker and orchestrator (2.1.0, [ADR-025](docs/decisions/ADR-025-emergency-stop-control-channel.md)); signed with `CHANNEL_SIGNING_SECRET` when set (with `NODE_ENV=production` a node refuses to attach the control channel without it, unless `ALLOW_INSECURE_PRODUCTION=true`); the latest stop is also kept in the Redis key `kaiban-control:stopped-at` |
 
 ---
 
@@ -879,12 +881,12 @@ The full list is [`.env.example`](.env.example); it also covers the variables no
 
 #### Emergency STOP ALL (2.1.0)
 
-With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every running model call, every task and every workflow at once:
+With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every running model call on the OpenAI-compatible provider (the one the built-in worker handler uses; other providers stop at their next agent-loop step), every task and every workflow at once:
 
-- **From the board:** the **STOP ALL** button in the header (shown only when the gateway has the control plane on), then confirm. The board needs `VITE_BOARD_TOKEN`, and the gateway `BOARD_JWT_SECRET`.
+- **From the board:** the **STOP ALL** button in the header (shown only when the gateway has the control plane on), then confirm. The board needs `VITE_BOARD_TOKEN` (local development only: a token built into a production bundle is public, and it can issue STOP ALL), and the gateway `BOARD_JWT_SECRET`.
 - **From the static HTML viewers (2.1.1):** the same **STOP ALL** button, confirmation and banner in `examples/blog-team/viewer/board.html` and `examples/global-research/viewer/board.html`. When the gateway sets `BOARD_JWT_SECRET`, open the viewer with the token in the address fragment, for example `board.html#token=<board token>` (or `board.html?gateway=http://localhost:3000#token=<board token>`), or set `window.BOARD_TOKEN`. The fragment is removed from the address bar after it is read, and the token is never logged or stored.
 - **Over HTTP:** `curl -X POST http://localhost:3000/control/stop-all -H "Authorization: Bearer <board token>" -H "content-type: application/json" -d '{"reason":"runaway loop"}'`
-- **From a shell:** `npm run build` once, then `npm run stop-all -- --reason "runaway loop"` (in the image: `node dist/src/main/stop-all.js`). It needs only `REDIS_URL` (and `CHANNEL_SIGNING_SECRET` when the deployment signs its channels).
+- **From a shell:** `npm run build` once, then `npm run stop-all -- --reason "runaway loop"` (in the image: `node dist/src/main/stop-all.js`). It needs only `REDIS_URL` (and `CHANNEL_SIGNING_SECRET` when the deployment signs its channels; without it the command prints a warning, because signing nodes ignore an unsigned stop). A signed stop is accepted whatever the clock difference between the host that issues it and the node.
 
 The stop is a moment, not a mode. Every task sent before it ends: a running one has its model request cancelled mid-call and settles at once; a queued one is refused when it is delivered. Every workflow running then ends `STOPPED` (the examples exit with code 2). Anything started after the stop runs normally, so there is nothing to release. Stopped tasks show as `STOPPED` on the board, sit in the dead-letter channel as `emergency_stop` with their inputs, and can be replayed with `replayDlq`. Each node acknowledges on the state channel, and the board shows the last stop with its acknowledgement count. The moment is kept in Redis, so a node that missed the message or restarts still refuses the old tasks. Keep the hosts' clocks synchronised (NTP): a task sent within the clock skew of the stop can fall on either side. Pause, resume and stopping one task, agent or workflow are planned for a later version ([roadmap §6.10](docs/roadmap/V2.1-ROADMAP.md)).
 
@@ -902,7 +904,7 @@ There was no operator stop command before 2.1.0 (see Emergency STOP ALL above). 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VITE_GATEWAY_URL` | `http://localhost:3000` | Gateway WebSocket URL (build-time; overridable via `?gateway=` query param at runtime) |
-| `VITE_BOARD_TOKEN` | — | Board token sent in the socket handshake; needed when the gateway sets `BOARD_JWT_SECRET`, and for the STOP ALL button |
+| `VITE_BOARD_TOKEN` | — | Board token sent in the socket handshake; needed when the gateway sets `BOARD_JWT_SECRET`, and for the STOP ALL button. Local development only: the value is compiled into the bundle, so do not build a production bundle with a real token |
 
 #### Security (all opt-in, disabled by default)
 
@@ -912,7 +914,7 @@ There was no operator stop command before 2.1.0 (see Emergency STOP ALL above). 
 | `KAFKA_SSL_CA` / `KAFKA_SSL_CERT` / `KAFKA_SSL_KEY` | — | Paths to Kafka mTLS certificates |
 | `TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` for self-signed certs in staging |
 | `SEMANTIC_FIREWALL_ENABLED` | `false` | Enable heuristic prompt injection firewall |
-| `SEMANTIC_FIREWALL_LLM_URL` | — | Optional local LLM endpoint for deep analysis |
+| `SEMANTIC_FIREWALL_LLM_URL` | — | Reserved, not used yet: the firewall is always the built-in regex `HeuristicFirewall` |
 | `JIT_TOKENS_ENABLED` | `false` | Enable JIT token provider for LLM API keys |
 | `CIRCUIT_BREAKER_ENABLED` | `false` | Enable sliding-window circuit breaker |
 | `CIRCUIT_BREAKER_THRESHOLD` | `10` | Failures before breaker trips |
@@ -956,7 +958,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 | Capability | Implementation | Supports |
 |------------|----------------|----------|
 | PII minimisation in logs | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` | GDPR |
-| PII stripping in state deltas | `sanitizeDelta()` strips `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` (applied on both the middleware and worker-publisher paths) | GDPR |
+| PII stripping in state deltas | `sanitizeDelta()` strips the top-level delta keys `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`; nested keys are not inspected (applied on both the middleware and worker-publisher paths) | GDPR |
 | Data minimisation | `result` capped at 20,000 UTF-8 bytes (≈20 KB) in state events; outbound data capped at 64 KB in `AgentActor` | GDPR |
 | Least-privilege container | Dockerfile non-root `USER kaiban` | SOC 2 (CC6) |
 | Secret hygiene | Secrets via env vars only; `.env` gitignored; `.env.example` placeholders | SOC 2 |
@@ -973,7 +975,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 1396 unit tests (no external deps)
+npm run test           # 1778 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -988,7 +990,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 1396 tests, 125 files | None (all mocked) |
+| Unit | `npm test` | 1778 tests, 151 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 69 tests, 11 files | Docker Redis (auto-managed by globalSetup) |
 | Security E2E | `npm run test:e2e:security` | 37 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 3 tests, 2 files | Docker Kafka + Zookeeper |
@@ -1030,7 +1032,7 @@ kaiban-distributed/
 │   │   │   ├── GatewayApp.ts       # Express: /health, agent-card, /a2a/rpc, 404
 │   │   │   └── SocketGateway.ts    # Socket.io + Redis pub/sub → board
 │   │   └── state/
-│   │       ├── distributedMiddleware.ts    # Intercepts Zustand setState → messaging
+│   │       ├── distributedMiddleware.ts    # Zustand store subscription → board deltas
 │   │       └── agent-state-publisher.ts   # Direct Redis pub/sub; 15s heartbeat; lifecycle
 │   ├── infrastructure/
 │   │   ├── messaging/
@@ -1076,7 +1078,7 @@ kaiban-distributed/
 │       ├── runtime.ts  # Messaging driver + telemetry setup shared by both roles
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 1396 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 1778 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)

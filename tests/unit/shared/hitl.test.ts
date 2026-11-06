@@ -591,7 +591,7 @@ describe("waitForHITLDecision — board path", () => {
   it("ignores malformed (invalid JSON) board messages — unwrapVerified returns null, no throw", async () => {
     // unwrapVerified catches JSON.parse errors internally and returns null.
     // The try/catch in handleBoardMessage is only hit when unwrapVerified itself throws
-    // (e.g. HMAC buffer size mismatch). For plain bad JSON, the message is silently ignored.
+    // (e.g. HMAC buffer size mismatch). For plain bad JSON, the message is ignored with a warning.
     const { rl, sendAnswer } = makeRlMock();
     const promise = waitForHITLDecision({
       taskId: "malformed-task",
@@ -599,7 +599,7 @@ describe("waitForHITLDecision — board path", () => {
       redisUrl: "redis://localhost:6379",
     });
     await Promise.resolve();
-    // unwrapVerified returns null for bad JSON → parsed is null → early return, no warn
+    // unwrapVerified returns null for bad JSON → parsed is null → warned and ignored
     state.capturedMessageHandler!("kaiban-hitl-decisions", "{{not json}}");
     // Promise remains pending — resolve via terminal
     sendAnswer("1");
@@ -626,6 +626,40 @@ describe("waitForHITLDecision — BRPOP path", () => {
     });
 
     await expect(promise).resolves.toBe("PUBLISH");
+  });
+
+  it("verifies a durable list entry with the 300 s window, pub/sub keeps the default", async () => {
+    const taskId = "brpop-window-task";
+    const listKey = `kaiban-hitl-decisions:${taskId}`;
+    mockBrpop.mockResolvedValueOnce([listKey, boardMsg(taskId, "PUBLISH")]);
+    await waitForHITLDecision({
+      taskId,
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+    expect(mockUnwrapVerified).toHaveBeenCalledWith(
+      boardMsg(taskId, "PUBLISH"),
+      { maxSkewMs: 300_000 },
+    );
+  });
+
+  it("warns when a board message fails signature or freshness verification", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { rl, sendAnswer } = makeRlMock();
+    const promise = waitForHITLDecision({
+      taskId: "stale-task",
+      rl,
+      redisUrl: "redis://localhost:6379",
+    });
+    await Promise.resolve();
+    mockUnwrapVerified.mockReturnValueOnce(null);
+    state.capturedMessageHandler!("kaiban-hitl-decisions", "stale");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("invalid, tampered or expired signature"),
+    );
+    warnSpy.mockRestore();
+    sendAnswer("1");
+    await promise;
   });
 
   it("skips null BRPOP result (timeout) and resolves on next successful poll", async () => {

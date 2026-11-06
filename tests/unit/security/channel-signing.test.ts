@@ -141,6 +141,20 @@ describe("channel-signing", () => {
       expect(unwrapVerified(raw)).toBeNull();
     });
 
+    it("accepts an older message when the caller passes a longer window, and still checks the HMAC", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+      const raw = wrapSigned({ x: "durable" });
+      vi.advanceTimersByTime(120_000);
+      expect(unwrapVerified(raw)).toBeNull();
+      expect(unwrapVerified(raw, { maxSkewMs: 300_000 })).toEqual({ x: "durable" });
+      vi.advanceTimersByTime(200_000);
+      expect(unwrapVerified(raw, { maxSkewMs: 300_000 })).toBeNull();
+      const tampered = JSON.parse(raw) as Record<string, unknown>;
+      tampered["payload"] = { x: "forged" };
+      expect(unwrapVerified(JSON.stringify(tampered), { maxSkewMs: 300_000 })).toBeNull();
+    });
+
     it("accepts a message that is exactly within the 30 s window", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
@@ -171,5 +185,29 @@ describe("channel-signing", () => {
       envelope.sig = "abcd"; // wrong length — timingSafeEqual will throw internally
       expect(unwrapVerified(JSON.stringify(envelope))).toBeNull();
     });
+  });
+});
+
+describe("unwrapVerified maxSkewMs", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env["CHANNEL_SIGNING_SECRET"];
+  });
+
+  it("checks only the signature when maxSkewMs is Infinity", () => {
+    process.env["CHANNEL_SIGNING_SECRET"] = "k".repeat(32);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+    const raw = wrapSigned({ x: "old" });
+    vi.advanceTimersByTime(3_600_000);
+    expect(unwrapVerified(raw)).toBeNull();
+    expect(unwrapVerified(raw, { maxSkewMs: Infinity })).toEqual({ x: "old" });
+  });
+
+  it("still rejects a forged envelope with maxSkewMs Infinity", () => {
+    process.env["CHANNEL_SIGNING_SECRET"] = "k".repeat(32);
+    const env = JSON.parse(wrapSigned({ x: 1 })) as Record<string, unknown>;
+    env["payload"] = { x: 2 };
+    expect(unwrapVerified(JSON.stringify(env), { maxSkewMs: Infinity })).toBeNull();
   });
 });

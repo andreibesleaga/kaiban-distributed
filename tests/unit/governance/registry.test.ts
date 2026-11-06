@@ -81,6 +81,22 @@ describe("AgentRegistry.status", () => {
     expect(registry.status("agent-1")).toEqual({ active: true, reason: "active" });
   });
 
+  it("compares instants, not strings: an expiry with a UTC offset (SEC-12)", () => {
+    const registry = new AgentRegistry();
+    registry.register(reg({ expiresAt: "2026-01-01T11:00:00+02:00" })); // 09:00Z
+    expect(registry.status("agent-1", { now: "2026-01-01T10:00:00.000Z" }).reason).toBe("expired");
+    expect(registry.status("agent-1", { now: "2026-01-01T08:00:00.000Z" }).active).toBe(true);
+  });
+
+  it("fails closed on an unparsable expiresAt or now (SEC-12)", () => {
+    const registry = new AgentRegistry();
+    registry.register(reg({ expiresAt: "not a date" }));
+    expect(registry.status("agent-1", { now: NOW }).reason).toBe("expired");
+    const other = new AgentRegistry();
+    other.register(reg({ expiresAt: LATER }));
+    expect(other.status("agent-1", { now: "garbage" }).reason).toBe("expired");
+  });
+
   it("is active when expiresAt is after now", () => {
     const registry = new AgentRegistry();
     registry.register(reg({ expiresAt: LATER }));

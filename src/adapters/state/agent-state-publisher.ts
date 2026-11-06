@@ -8,7 +8,8 @@
  * Each worker node creates one publisher, registers its agent, and wraps its task
  * handler so the board sees IDLE → EXECUTING → DONE transitions in real-time.
  */
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import { createRedisClient } from "../../shared/redis-connection";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import type { TaskHandler } from "../../application/actor/AgentActor";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
@@ -45,12 +46,7 @@ interface TaskState {
   taskId: string;
   title: string;
   status:
-    | "TODO"
-    | "DOING"
-    | "DONE"
-    | "BLOCKED"
-    | "AWAITING_VALIDATION"
-    | "STOPPED";
+    "TODO" | "DOING" | "DONE" | "BLOCKED" | "AWAITING_VALIDATION" | "STOPPED";
   assignedToAgentId: string;
   result?: string;
   tokens?: number;
@@ -132,13 +128,15 @@ export class AgentStatePublisher {
   private readonly maxTaskTokenBudget: number | null;
   /** Tokens consumed so far per taskId (bounded to MAX_TRACKED_TASKS entries). */
   private readonly taskTokensUsed = new Map<string, number>();
+  /** Counts wrapped attempts; a late attempt (older number) must not overwrite the agent state. */
+  private attemptSeq = 0;
 
   constructor(
     redisUrl: string,
     agentInfo: AgentInfo,
     opts?: AgentStatePublisherOpts,
   ) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false });
+    this.redis = createRedisClient(redisUrl, { lazyConnect: false });
     this.agentInfo = agentInfo;
     this.maxTokenBudget = cappedAt(opts?.maxTokenBudget);
     this.maxTaskTokenBudget = cappedAt(opts?.maxTaskTokenBudget);
@@ -165,7 +163,10 @@ export class AgentStatePublisher {
       );
     }
     const taskUsed = this.taskTokensUsed.get(taskId) ?? 0;
-    if (this.maxTaskTokenBudget !== null && taskUsed >= this.maxTaskTokenBudget) {
+    if (
+      this.maxTaskTokenBudget !== null &&
+      taskUsed >= this.maxTaskTokenBudget
+    ) {
       throw new BudgetExceededError(
         `Task token budget exceeded before task ${taskId}: ` +
           `${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}`,
@@ -193,7 +194,10 @@ export class AgentStatePublisher {
       const oldest = this.taskTokensUsed.keys().next().value as string;
       this.taskTokensUsed.delete(oldest);
     }
-    if (this.maxTaskTokenBudget !== null && taskUsed >= this.maxTaskTokenBudget) {
+    if (
+      this.maxTaskTokenBudget !== null &&
+      taskUsed >= this.maxTaskTokenBudget
+    ) {
       return new BudgetExceededError(
         `Task token budget exceeded: ${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}${suffix}`,
         "task_token_budget_exceeded",
@@ -222,9 +226,7 @@ export class AgentStatePublisher {
     // (the middleware path already sanitizes via DistributedStateMiddleware).
     this.redis
       .publish(STATE_CHANNEL, wrapSigned(sanitizeDelta(delta)))
-      .catch((err: unknown) =>
-        log.error({ err }, "Failed to publish state"),
-      );
+      .catch((err: unknown) => log.error({ err }, "Failed to publish state"));
   }
 
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -313,6 +315,7 @@ export class AgentStatePublisher {
       signal?: AbortSignal,
     ): Promise<unknown> => {
       const title = taskTitle(payload);
+      const attempt = ++this.attemptSeq;
 
       try {
         // Pre-flight (roadmap §7.2 item 2): a task that finds a cap already met
@@ -358,13 +361,7 @@ export class AgentStatePublisher {
         });
 
         const result = await handler(payload, signal);
-        const stopped = emergencyAbort(signal);
-        if (stopped) {
-          // A handler that ignored an emergency stop returned late (ES-12):
-          // its tokens were spent and count, but it never shows as DONE.
-          this.countLateTokens(payload.taskId, result);
-          throw stopped;
-        }
+        this.rejectLateResult(payload.taskId, result, signal);
 
         // → DONE
         this.currentStatus = "IDLE";
@@ -375,7 +372,10 @@ export class AgentStatePublisher {
         // Token budget check (task cap, then agent cap); the breach is
         // non-retryable so the paid attempt is the only one.
         if (tokenMeta) {
-          const breach = this.accountTokens(payload.taskId, tokenMeta.totalTokens);
+          const breach = this.accountTokens(
+            payload.taskId,
+            tokenMeta.totalTokens,
+          );
           if (breach) {
             pub({
               agents: [
@@ -419,7 +419,9 @@ export class AgentStatePublisher {
                 : {}),
             },
           ],
-          ...(tokenMeta ? { metadata: tokenMeta } : {}),
+          // No run-level `metadata` here: this task's usage rides on the task card
+          // (`tokens` / `cost`); the orchestrator owns the run totals, and a
+          // per-task `metadata` would overwrite them on the board.
         });
 
         return result;
@@ -429,8 +431,13 @@ export class AgentStatePublisher {
         // A failed attempt that already spent tokens counts against the caps
         // BEFORE the actor retries; reaching one ends the task non-retryably.
         const failure = this.accountFailedAttempt(payload.taskId, err);
-        // → ERROR
-        this.currentStatus = "ERROR";
+        // A newer attempt already took over this agent: leave the agent row to
+        // it, and close only the old task's card when it is a different task.
+        if (attempt !== this.attemptSeq) {
+          this.publishSupersededFailure(payload, title);
+          throw failure;
+        }
+        // → ERROR (published once; the failure stays visible on the task card)
         pub({
           agents: [
             {
@@ -450,6 +457,10 @@ export class AgentStatePublisher {
             },
           ],
         });
+        // The agent is free again: the heartbeat must report IDLE, not keep
+        // re-announcing ERROR on this finished task (or override the next run's reset).
+        this.currentStatus = "IDLE";
+        this.currentTaskId = null;
         throw failure;
       }
     };
@@ -486,6 +497,26 @@ export class AgentStatePublisher {
   }
 
   /**
+   * A task whose attempt was superseded by another task's attempt (a deaf
+   * handler returned after its timeout while the agent moved on) still gets its
+   * card closed as BLOCKED; the agent row belongs to the running attempt. A
+   * superseded attempt of the same task publishes nothing: the retry owns it.
+   */
+  private publishSupersededFailure(payload: MessagePayload, title: string): void {
+    if (payload.taskId === this.currentTaskId) return;
+    this.publish({
+      tasks: [
+        {
+          taskId: payload.taskId,
+          title,
+          status: "BLOCKED",
+          assignedToAgentId: this.agentInfo.agentId,
+        },
+      ],
+    });
+  }
+
+  /**
    * The emergency stop that ended this attempt — the error itself, or the
    * signal's reason when a handler that ignored the stop failed late (its paid
    * usage still counts). Publishes STOPPED, never ERROR/BLOCKED (ES-12).
@@ -495,11 +526,27 @@ export class AgentStatePublisher {
     err: unknown,
     signal?: AbortSignal,
   ): EmergencyStopError | null {
-    const stop = err instanceof EmergencyStopError ? err : emergencyAbort(signal);
+    const stop =
+      err instanceof EmergencyStopError ? err : emergencyAbort(signal);
     if (!stop) return null;
     if (stop !== err) this.accountFailedAttempt(payload.taskId, err);
     this.publishStopped(payload);
     return stop;
+  }
+
+  /**
+   * A handler that returns after its attempt was ended (emergency stop, task
+   * timeout, node stop) is late: its tokens were spent and count, but the result
+   * never shows as DONE and never resets the agent state (ES-12).
+   */
+  private rejectLateResult(
+    taskId: string,
+    result: unknown,
+    signal?: AbortSignal,
+  ): void {
+    if (!signal?.aborted) return;
+    this.countLateTokens(taskId, result);
+    throw emergencyAbort(signal) ?? signal.reason;
   }
 
   /** Count a late result's tokens; a cap it reaches applies to the next task. */
@@ -522,7 +569,8 @@ export class AgentStatePublisher {
     const usage: Partial<AttemptUsage> | undefined = err.usage;
     const breach = this.accountTokens(
       taskId,
-      cleanSpendAmount(usage?.inputTokens) + cleanSpendAmount(usage?.outputTokens),
+      cleanSpendAmount(usage?.inputTokens) +
+        cleanSpendAmount(usage?.outputTokens),
       `failed attempt: ${err.message}`,
     );
     if (!breach) return err;

@@ -59,6 +59,8 @@ export interface KaibanExecutorDeps {
   taskStore: TaskStore;
   /** Per-task wait timeout (ms). */
   timeoutMs: number;
+  /** Agent ids tasks may be routed to; an id outside it is rejected. Unset: any well-formed id. */
+  agentIds?: readonly string[];
 }
 
 interface InFlight {
@@ -163,15 +165,18 @@ export class KaibanAgentExecutor implements AgentExecutor {
       typeof meta["instruction"] === "string"
         ? (meta["instruction"] as string)
         : this.textOf(ctx.userMessage);
-    return validateTaskInput({
-      agentId: meta["agentId"],
-      ...(instruction ? { instruction } : {}),
-      ...(meta["expectedOutput"] !== undefined
-        ? { expectedOutput: meta["expectedOutput"] }
-        : {}),
-      ...(meta["context"] !== undefined ? { context: meta["context"] } : {}),
-      ...(meta["inputs"] !== undefined ? { inputs: meta["inputs"] } : {}),
-    });
+    return validateTaskInput(
+      {
+        agentId: meta["agentId"],
+        ...(instruction ? { instruction } : {}),
+        ...(meta["expectedOutput"] !== undefined
+          ? { expectedOutput: meta["expectedOutput"] }
+          : {}),
+        ...(meta["context"] !== undefined ? { context: meta["context"] } : {}),
+        ...(meta["inputs"] !== undefined ? { inputs: meta["inputs"] } : {}),
+      },
+      this.deps.agentIds,
+    );
   }
 
   private textOf(message: Message): string {

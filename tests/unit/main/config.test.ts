@@ -185,6 +185,14 @@ describe("loadConfig", () => {
     expect(loadConfig().agentTimeoutMs).toBe(300000);
   });
 
+  it.each(["0", "-1", "5m", "1e6", "3000000000"])(
+    "falls back to the default agentTimeoutMs for AGENT_TIMEOUT_MS=%s (same rule as the worker)",
+    (v) => {
+      process.env["AGENT_TIMEOUT_MS"] = v;
+      expect(loadConfig().agentTimeoutMs).toBe(300000);
+    },
+  );
+
   it("reads a valid AGENT_TIMEOUT_MS", () => {
     process.env["AGENT_TIMEOUT_MS"] = "120000";
     expect(loadConfig().agentTimeoutMs).toBe(120000);

@@ -20,6 +20,18 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
   private opened = false;
 
   constructor(threshold: number, windowMs: number) {
+    // A threshold below 1 would open on the first failure and never close; a
+    // non-finite window would record nothing. Fail at construction, not at run time.
+    if (!Number.isInteger(threshold) || threshold < 1) {
+      throw new RangeError(
+        `Circuit breaker threshold must be an integer >= 1, got ${threshold}`,
+      );
+    }
+    if (!Number.isFinite(windowMs) || windowMs <= 0) {
+      throw new RangeError(
+        `Circuit breaker window must be a positive number of ms, got ${windowMs}`,
+      );
+    }
     this.threshold = threshold;
     this.windowMs = windowMs;
   }

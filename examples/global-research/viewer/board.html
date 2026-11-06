@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' https://cdn.socket.io; style-src 'self'; connect-src ws: wss: http: https:; img-src 'none';">
+  <meta name="referrer" content="no-referrer">
   <title>Kaiban Distributed — Global Research Swarm</title>
   <link rel="stylesheet" href="board.css">
 </head>
@@ -11,7 +14,6 @@
 <header>
   <h1>Kaiban Distributed — Global Research Swarm</h1>
   <span class="badge badge-connecting" id="conn-badge">Connecting...</span>
-  <span id="workflow-badge" style="font-size:0.75rem; color:#475569"></span>
   <button type="button" id="stop-all-btn" class="stop-all-btn" aria-haspopup="dialog" hidden>STOP ALL</button>
   <span id="control-error" class="control-error" role="alert" hidden></span>
 </header>
@@ -43,7 +45,7 @@
 <div class="workflow-bar">
   <span class="workflow-label">Workflow:</span>
   <span class="workflow-status ws-initial" id="workflow-status">INITIAL</span>
-  <span id="query-label" style="font-size:0.8rem; color:#475569; margin-left:8px"></span>
+  <span id="query-label" class="topic-label"></span>
 </div>
 
 <!-- Swarm agents -->
@@ -86,7 +88,7 @@
     <div class="meta-item">
       <span class="meta-label">Active Nodes</span>
       <div class="meta-nodes" id="meta-nodes">
-        <span style="color:#475569; font-size:0.8rem">Waiting...</span>
+        <span class="meta-placeholder">Waiting...</span>
       </div>
     </div>
     <div class="meta-item">
@@ -143,7 +145,9 @@
   </form>
 </dialog>
 
-<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
+<script src="https://cdn.socket.io/4.8.0/socket.io.min.js"
+        integrity="sha384-OoIbkvzsFFQAG88r+IqMAjyOtYDPGO0cqK5HF5Uosdy/zUEGySeAzytENMDynREd"
+        crossorigin="anonymous"></script>
 <script src="board.js"></script>
 </body>
 </html>

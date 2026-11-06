@@ -59,12 +59,13 @@ const REVIEW_WAIT_MS = parseInt(process.env['REVIEW_WAIT_MS'] ?? '180000', 10);
 const EDIT_WAIT_MS   = parseInt(process.env['EDIT_WAIT_MS']   ?? '300000', 10);
 
 /**
- * When AUTO_PUBLISH=1, skip all readline prompts and auto-approve HITL as PUBLISH.
- * Also activates automatically when stdin is not a TTY (CI / piped usage).
+ * Explicit opt-in only: when AUTO_PUBLISH=1 (or "true"), skip all readline
+ * prompts and auto-approve HITL as PUBLISH (CI / unattended runs). Never inferred
+ * from a missing TTY: a human gate must not be skipped because stdin is a pipe.
+ * Without it, the decision comes from the terminal or from the board.
  */
 const AUTO_PUBLISH = process.env['AUTO_PUBLISH'] === '1'
-                  || process.env['AUTO_PUBLISH'] === 'true'
-                  || !process.stdin.isTTY;
+                  || process.env['AUTO_PUBLISH'] === 'true';
 
 // ── Pipeline: all research steps extracted so main() stays under complexity 10 ──
 
@@ -109,7 +110,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   const { ctx, orch, router, pub, driver, rl, runLog, signal } = deps;
   const budget = workflowBudgetFromEnv();
 
-  pub.workflowStarted(NUM_SEARCHERS);
+  pub.workflowStarted(NUM_SEARCHERS, QUERY);
   if (await orch.isResuming()) log.info('Resuming from a prior checkpoint (completed phases will be skipped)\n');
 
   // STEP 1 — Fan-Out (checkpoint→resume via the shared orchestrator)
@@ -119,7 +120,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.info(`Sub-topics: ${subTopics.map((t, i) => `\n  ${i + 1}. ${t}`).join('')}\n`);
 
   restore(ctx, await orch.memoize<CtxSnapshot>('search', async () => {
-    await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, driver, runLog);
+    await runSearchPhase(ctx, QUERY, NUM_SEARCHERS, SEARCH_WAIT_MS, router, pub, driver, runLog, signal);
     return snapshot(ctx);
   }));
 
@@ -130,7 +131,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.separator('='); log.info('STEP 2 — Fan-In: Atlas (Writer) synthesising research...'); log.separator('=');
 
   restore(ctx, await orch.memoize<CtxSnapshot>('write', async () => {
-    await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, driver, runLog);
+    await runWritePhase(ctx, QUERY, WRITE_WAIT_MS, router, pub, driver, runLog, signal);
     return snapshot(ctx);
   }));
 
@@ -141,7 +142,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.separator('='); log.info('STEP 3 — Sage (Reviewer) running governance compliance check...'); log.separator('=');
 
   const govStep = await orch.memoize('governance', async () => {
-    const result = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, driver, runLog);
+    const result = await runGovernancePhase(ctx, QUERY, REVIEW_WAIT_MS, router, pub, driver, runLog, signal);
     return { gov: result, snap: snapshot(ctx) };
   });
   restore(ctx, govStep.snap);
@@ -164,7 +165,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   log.separator('='); log.info('STEP 4 — Morgan (Editor) preparing HITL review...'); log.separator('=');
 
   const editStep = await orch.memoize('editorial', async () => {
-    const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, driver, runLog);
+    const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, driver, runLog, signal);
     return { edit: result, snap: snapshot(ctx) };
   });
   restore(ctx, editStep.snap);
@@ -223,6 +224,7 @@ async function endFailedRun(
   if (err instanceof BudgetExceededError) {
     // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
     pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, ctx);
+    pub.reviewStopped('Budget guard stopped the run: no decision was taken');
     runLog.finish('STOPPED');
     await orch.clear();
     log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
@@ -232,6 +234,7 @@ async function endFailedRun(
   // hanging on RUNNING forever, then surface the error to the CLI.
   const msg = err instanceof Error ? err.message : String(err);
   pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, ctx);
+  pub.reviewStopped('Workflow failed: no decision was taken');
   runLog.finish('FAILED');
   throw err;
 }
@@ -251,8 +254,10 @@ async function main(): Promise<number> {
   const runLog = new RunLogger(QUERY, GATEWAY_URL, getDriverType(), NUM_SEARCHERS, ctx.id);
 
   // Phase R — crash-safe single-active orchestrator: Redis checkpoint→resume.
-  // WORKFLOW_ID namespaces the checkpoint; default to the context id (override to
-  // resume a specific run). A restart resumes from the last completed phase.
+  // WORKFLOW_ID namespaces the checkpoint. The default is `research-<context id>`,
+  // a fresh id per process, so a plain restart starts a NEW run; to resume, set
+  // WORKFLOW_ID to the Workflow id printed in the header of the run to continue —
+  // it then resumes from the last completed phase.
   const workflowId     = process.env['WORKFLOW_ID'] ?? `research-${ctx.id}`;
   const store          = new RedisCheckpointStore(REDIS_URL);
   // Emergency STOP ALL (ADR-025): only with CONTROL_PLANE_ENABLED=true.
@@ -276,7 +281,7 @@ async function main(): Promise<number> {
 
   try {
     log.header('KAIBAN DISTRIBUTED — GLOBAL RESEARCH SWARM ORCHESTRATOR');
-    log.info(`Query: "${QUERY}"  |  Searchers: ${NUM_SEARCHERS}  |  Context: ${ctx.id}\n`);
+    log.info(`Query: "${QUERY}"  |  Searchers: ${NUM_SEARCHERS}  |  Context: ${ctx.id}  |  Workflow: ${workflowId}\n`);
 
     const health = await fetch(`${GATEWAY_URL}/health`).then((r) => r.json()) as { data: { status: string } };
     log.info(`Gateway: ${health.data.status.toUpperCase()} at ${GATEWAY_URL}`);

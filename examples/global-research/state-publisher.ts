@@ -6,8 +6,7 @@
  * publications. Extracted from the main orchestrator to reduce its line count.
  */
 import { OrchestratorStatePublisher } from '../../src/shared';
-import { randomUUID } from 'crypto';
-import type { ResearchContext } from './types';
+import type { ResearchContext, SearchResult } from './types';
 
 // ── Helper: build the full agent list for a given searcher count ──────────────
 
@@ -28,16 +27,25 @@ export function buildSwarmAgents(
 
 // ── Helper: extract structured SearchResult from raw agent output ─────────────
 
+/** Longest searcher answer handed to the writer, in characters (bounds the writer's prompt). */
+export const MAX_SEARCH_RESULT_CHARS = 20_000;
+
+/**
+ * Keep the searcher's answer whole (bounded by MAX_SEARCH_RESULT_CHARS): the
+ * source references the searchers are asked for come late in the text, so a short
+ * head would drop them. `sourceUrl` is the first URL the answer itself names, if
+ * any; nothing is invented.
+ */
 export function extractSearchResults(
   agentOutput: string,
   agentId: string,
   subTopic: string,
-): { sourceUrl: string; title: string; snippet: string; relevanceScore: number; agentId: string; timestamp: string } {
+): SearchResult {
+  const sourceUrl = /https?:\/\/[^\s)\]>"']+/.exec(agentOutput)?.[0];
   return {
-    sourceUrl: `research://${agentId}/${randomUUID()}`,
+    ...(sourceUrl ? { sourceUrl } : {}),
     title: subTopic.slice(0, 80),
-    snippet: agentOutput.slice(0, 500),
-    relevanceScore: 0.85 + Math.random() * 0.15,
+    snippet: agentOutput.slice(0, MAX_SEARCH_RESULT_CHARS),
     agentId,
     timestamp: new Date().toISOString(),
   };
@@ -46,9 +54,13 @@ export function extractSearchResults(
 // ── State publisher ───────────────────────────────────────────────────────────
 
 export class ResearchStatePublisher extends OrchestratorStatePublisher {
-  workflowStarted(numSearchers: number): void {
-    this.redis.del('kaiban:searcher:reg').catch(() => {});
-    this.publish({ teamWorkflowStatus: 'RUNNING', agents: buildSwarmAgents(numSearchers), metadata: { startTime: Date.now() } });
+  workflowStarted(numSearchers: number, query: string): void {
+    this.publish({
+      teamWorkflowStatus: 'RUNNING',
+      agents: buildSwarmAgents(numSearchers),
+      inputs: { topic: query },
+      metadata: { startTime: Date.now() },
+    });
   }
 
   searchingPhase(taskIds: string[]): void {
@@ -63,15 +75,13 @@ export class ResearchStatePublisher extends OrchestratorStatePublisher {
 
   searchPhaseComplete(
     results: Array<{ taskId: string; result?: string; error?: string }>,
-    indexByTaskId: Map<string, number>,
   ): void {
-    // `results` arrive in COMPLETION order (router.waitAll), not dispatch order —
-    // resolve each result's real dispatch index via its taskId so an out-of-order
-    // searcher is still attributed to its correct `searcher-N` card on the board.
+    // Status only: the replica that ran each task already published itself as
+    // the assignee (competing consumers take tasks in any order, so the
+    // orchestrator cannot know which card ran which task).
     this.publish({
       tasks: results.map((r) => ({
         taskId: r.taskId, status: r.error ? 'BLOCKED' : 'DONE',
-        assignedToAgentId: `searcher-${indexByTaskId.get(r.taskId) ?? 0}`,
         ...(r.error ? { result: `Failed: ${r.error.slice(0, 100)}` } : {}),
       })),
     });
@@ -88,14 +98,15 @@ export class ResearchStatePublisher extends OrchestratorStatePublisher {
   /** The review task waiting for a human decision, if any (for reviewStopped). */
   private pendingReviewTaskId: string | null = null;
 
-  awaitingHITL(taskId: string, recommendation: string, complianceScore: string): void {
+  /** The editor's verdict and Accuracy score, shown on the card the human decides on. */
+  awaitingHITL(taskId: string, recommendation: string, accuracyScore: string): void {
     this.pendingReviewTaskId = taskId;
     this.publish({
       teamWorkflowStatus: 'RUNNING',
       tasks: [{
         taskId, title: 'Editorial Review — Human Decision Required', status: 'AWAITING_VALIDATION',
         assignedToAgentId: 'editor',
-        result: `Governance: ${recommendation} | Score: ${complianceScore} — Awaiting human decision`,
+        result: `Editorial: ${recommendation} | Accuracy: ${accuracyScore} — Awaiting human decision`,
       }],
     });
   }
@@ -122,15 +133,16 @@ export class ResearchStatePublisher extends OrchestratorStatePublisher {
   }
 
   /**
-   * Emergency STOP ALL (ADR-025): the review the orchestrator was waiting on
-   * ends STOPPED, so the board shows no pending decision after the run exits.
+   * The review the orchestrator was waiting on ends STOPPED, so the board shows
+   * no pending decision after the run exits — on an emergency STOP ALL (ADR-025,
+   * the default reason) and on every other terminal path (budget stop, failure).
    */
-  reviewStopped(): void {
+  reviewStopped(reason = 'Emergency stop: no decision was taken'): void {
     if (!this.pendingReviewTaskId) return;
     this.publish({
       tasks: [{
         taskId: this.pendingReviewTaskId, title: 'Review stopped', status: 'STOPPED',
-        assignedToAgentId: 'editor', result: 'Emergency stop: no decision was taken',
+        assignedToAgentId: 'editor', result: reason,
       }],
     });
     this.pendingReviewTaskId = null;

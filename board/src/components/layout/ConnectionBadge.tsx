@@ -12,6 +12,7 @@ const CONFIG: Record<ConnectionStatus, { label: string; dot: string; text: strin
 
 export default function ConnectionBadge() {
   const status = useBoardStore((s) => s.connectionStatus);
+  const detail = useBoardStore((s) => s.connectionDetail);
   const cfg = CONFIG[status];
 
   return (
@@ -23,6 +24,11 @@ export default function ConnectionBadge() {
         <span className={clsx('relative inline-flex rounded-full h-2 w-2', cfg.dot)} />
       </span>
       {cfg.label}
+      {detail && (
+        <span className="hidden md:inline max-w-[240px] truncate font-normal normal-case tracking-normal text-slate-400" title={detail}>
+          {detail}
+        </span>
+      )}
     </div>
   );
 }

@@ -27,7 +27,8 @@ describe("E2E: Horizontal Scaling & Concurrency (BullMQ)", () => {
     const oracleDriver = new BullMQDriver(connConfig);
     drivers.push(oracleDriver);
 
-    const completedTasks = new Set<string>();
+    // Completions per taskId: a duplicate shows up as a count above 1.
+    const completions = new Map<string, number>();
     const processingAgents = new Set<string>();
 
     // 2. Setup 3 multiple cloned agents (identical agent ids and queue names)
@@ -46,7 +47,10 @@ describe("E2E: Horizontal Scaling & Concurrency (BullMQ)", () => {
         typeof payload.taskId === "string" &&
         payload.taskId.startsWith(`burst-task-${RUN_ID}-`)
       ) {
-        completedTasks.add(payload.taskId);
+        completions.set(
+          payload.taskId,
+          (completions.get(payload.taskId) ?? 0) + 1,
+        );
       }
     });
 
@@ -90,20 +94,23 @@ describe("E2E: Horizontal Scaling & Concurrency (BullMQ)", () => {
 
     await Promise.all(publishPromises);
 
-    // 4. Wait for all messages to be processed.
-    // Wait max 10 seconds.
+    // 4. Wait for all messages to be processed (max 10 s), then a grace period so
+    // a late duplicate would be counted too.
     let elapsed = 0;
-    while (completedTasks.size < NUM_TASKS && elapsed < 10000) {
+    while (completions.size < NUM_TASKS && elapsed < 10000) {
       await new Promise((r) => setTimeout(r, 200));
       elapsed += 200;
     }
+    await new Promise((r) => setTimeout(r, 1000));
 
     // 5. Assertions
-    // All tasks must have completed
-    expect(completedTasks.size).toBe(NUM_TASKS);
+    // Every task completed EXACTLY once (a Map of counts, not a Set).
+    expect(completions.size).toBe(NUM_TASKS);
+    for (const [taskId, count] of completions) {
+      expect({ taskId, count }).toEqual({ taskId, count: 1 });
+    }
 
-    // If spreading works correctly across overlapping processing delays, multiple agents should have picked up tasks.
-    // At least 2 clones should have been utilized to prove horizontal scaling concurrency.
+    // At least 2 clones must have been utilized to prove horizontal scaling.
     expect(processingAgents.size).toBeGreaterThan(1);
-  }, 15000);
+  }, 20000);
 });

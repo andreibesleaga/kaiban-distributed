@@ -10,7 +10,7 @@ import {
 } from "../../../examples/global-research/phases";
 import type { ResearchContext } from "../../../examples/global-research/types";
 import type { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
-import { AGENT_CHANNEL_PREFIX } from "../../../src/shared";
+import { AGENT_CHANNEL_PREFIX, EmergencyStopError } from "../../../src/shared";
 
 // ── mock waitForHITLDecision ──────────────────────────────────────────────────
 const { mockWaitForHITL } = vi.hoisted(() => ({ mockWaitForHITL: vi.fn() }));
@@ -231,38 +231,22 @@ describe("runSearchPhase()", () => {
 
     const dispatched = dispatchesTo(publish, "searcher"); // dispatch order
     expect(dispatched).toHaveLength(3);
-    // The result carrying dispatched[i]'s taskId must be logged as searcher-i —
+    // The result carrying dispatched[i]'s taskId must be logged as search-(i+1) (its sub-topic) —
     // regardless of the reversed completion order (would fail on the old code).
     for (let i = 0; i < dispatched.length; i++) {
       expect(mockRunLog.logTask).toHaveBeenCalledWith(
         "search",
         dispatched[i]!.taskId,
-        `searcher-${i}`,
+        `search-${i + 1}`,
         expect.anything(),
       );
     }
     expect(ctx.rawSearchData).toHaveLength(3);
 
-    // C1-residual: the board publication must receive a dispatch-order
-    // indexByTaskId map so out-of-order results still get the right searcher card
-    // (board mis-attribution was caused by using the result-array position).
+    // WF-V-05: the board publication carries status only; the replica that ran
+    // each task published itself as the assignee, so no node is guessed here.
     expect(mockPub.searchPhaseComplete).toHaveBeenCalledTimes(1);
-    const [resultsArg, indexByTaskId] = mockPub.searchPhaseComplete.mock
-      .calls[0] as [
-      Array<{ taskId: string }>,
-      Map<string, number>,
-    ];
-    expect(indexByTaskId).toBeInstanceOf(Map);
-    for (let i = 0; i < dispatched.length; i++) {
-      expect(indexByTaskId.get(dispatched[i]!.taskId)).toBe(i);
-    }
-    // Every completion-order result resolves back to its dispatch-order index.
-    for (const r of resultsArg) {
-      const dispatchIdx = dispatched.findIndex(
-        (d) => d.taskId === r.taskId,
-      );
-      expect(indexByTaskId.get(r.taskId)).toBe(dispatchIdx);
-    }
+    expect(mockPub.searchPhaseComplete.mock.calls[0]).toHaveLength(1);
   });
 
   it("uses '' fallback for taskIds[i] and subTopics[i] when results exceed numSearchers (lines 91,93,95 branches)", async () => {
@@ -741,6 +725,18 @@ describe("runRevisionPhase()", () => {
     expect(mockRunLog.finish).toHaveBeenCalledWith("REVISED");
   });
 
+  it("a failed revision wait closes the revision card as BLOCKED, then rethrows; a stop does not (WF-11)", async () => {
+    const { deps, mockRouter, mockPub } = makeRevDeps({ autoPub: true });
+    mockRouter.wait.mockRejectedValue(new Error("Timeout waiting for revision"));
+    await expect(runRevisionPhase(deps as never)).rejects.toThrow("Timeout");
+    expect(mockPub.taskFailed).toHaveBeenCalledWith(expect.any(String), "writer", "Revision", expect.stringContaining("Timeout"));
+
+    mockPub.taskFailed.mockClear();
+    mockRouter.wait.mockRejectedValue(new EmergencyStopError());
+    await expect(runRevisionPhase(deps as never)).rejects.toBeInstanceOf(EmergencyStopError);
+    expect(mockPub.taskFailed).not.toHaveBeenCalled();
+  });
+
   it("with autoPub=false and PUBLISH decision calls workflowFinished", async () => {
     const { deps, mockRouter, mockPub, mockRunLog } = makeRevDeps({
       autoPub: false,
@@ -805,6 +801,10 @@ describe("runRevisionPhase()", () => {
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     await runRevisionPhase(deps as never);
+    // The view prints the divider, an EMPTY body (fallback) and the divider
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      `\n${"-".repeat(70)}\n\n${"-".repeat(70)}\n\n`,
+    );
     stdoutSpy.mockRestore();
   });
 
@@ -941,6 +941,9 @@ describe("handleDecision()", () => {
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     await handleDecision(deps as never);
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      `\n${"-".repeat(70)}\n\n${"-".repeat(70)}\n\n`,
+    );
     stdoutSpy.mockRestore();
   });
 });
@@ -973,5 +976,93 @@ describe("global-research — emergency STOP ALL signal (ADR-025)", () => {
     expect(mockWaitForHITL).toHaveBeenNthCalledWith(1, expect.objectContaining({ signal }));
     expect(mockWaitForHITL).toHaveBeenNthCalledWith(2, expect.objectContaining({ signal }));
     expect(mockRouter.wait).toHaveBeenCalledWith(expect.any(String), 1000, "revision", signal);
+  });
+});
+
+// ── WF-03: a stop must not turn the killed tasks into BLOCKED ────────────────
+
+describe("global-research — a stop does not publish taskFailed (WF-03)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const gov = { recommendation: "APPROVED", score: "9/10", text: "gov" };
+  type Mocks = ReturnType<typeof makeMocks>;
+  const phases: Array<[string, (m: Mocks, signal?: AbortSignal) => Promise<unknown>]> = [
+    ["write", (m, signal): Promise<unknown> => runWritePhase(makeCtx({ rawSearchData: [] }), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["governance", (m, signal): Promise<unknown> => runGovernancePhase(makeCtx(), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["editorial", (m, signal): Promise<unknown> => runEditorialPhase(makeCtx(), "q", gov, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+  ];
+
+  for (const [name, run] of phases) {
+    it(`${name}: passes the signal to the wait`, async () => {
+      const m = makeMocks();
+      const signal = new AbortController().signal;
+      m.mockRouter.wait.mockResolvedValue(parsedResult("ok"));
+      await run(m, signal);
+      expect(m.mockRouter.wait.mock.calls[0]![3]).toBe(signal);
+    });
+
+    it(`${name}: an EmergencyStopError (late worker dead-letter) is rethrown without taskFailed`, async () => {
+      const m = makeMocks();
+      const stop = new EmergencyStopError();
+      m.mockRouter.wait.mockRejectedValue(stop);
+      await expect(run(m)).rejects.toBe(stop);
+      expect(m.mockPub.taskFailed).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: any failure while the stop signal is aborted skips taskFailed`, async () => {
+      const m = makeMocks();
+      const ctl = new AbortController();
+      ctl.abort();
+      m.mockRouter.wait.mockRejectedValue(new Error("Aborted wait"));
+      await expect(run(m, ctl.signal)).rejects.toThrow("Aborted wait");
+      expect(m.mockPub.taskFailed).not.toHaveBeenCalled();
+    });
+  }
+
+  it("a non-stop failure still publishes taskFailed", async () => {
+    const m = makeMocks();
+    m.mockRouter.wait.mockRejectedValue(new Error("boom"));
+    await expect(runGovernancePhase(makeCtx(), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never)).rejects.toThrow("boom");
+    expect(m.mockPub.taskFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it("search: the signal reaches waitAll", async () => {
+    const m = makeMocks();
+    const signal = new AbortController().signal;
+    m.mockRouter.waitAll.mockResolvedValue([{ taskId: "x", result: parsedResult("ok") }]);
+    await runSearchPhase(makeCtx(), "q", 1, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal);
+    expect(m.mockRouter.waitAll.mock.calls[0]![3]).toBe(signal);
+  });
+
+  it("search: a stop rejects the phase and no searcher task is marked BLOCKED", async () => {
+    const m = makeMocks();
+    const stop = new EmergencyStopError();
+    m.mockRouter.waitAll.mockRejectedValue(stop);
+    await expect(runSearchPhase(makeCtx(), "q", 2, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never)).rejects.toBe(stop);
+    expect(m.mockPub.searchPhaseComplete).not.toHaveBeenCalled();
+  });
+});
+
+// ── UI-02: running totals between phases ──────────────────────────────────────
+
+describe("global-research — running totals reach the board after each phase (UI-02)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("every phase publishes the cumulative tokens and cost", async () => {
+    const m = makeMocks();
+    const ctx = makeCtx({ consolidatedDraft: "draft" });
+    const gov = { recommendation: "APPROVED", score: "9/10", text: "g" };
+    m.mockRouter.waitAll.mockResolvedValue([{ taskId: "s", result: parsedResult("found") }]);
+    m.mockRouter.wait.mockResolvedValue(parsedResult("Recommendation: PUBLISH\nCompliance Score: 9/10"));
+    const a = [m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never] as const;
+
+    await runSearchPhase(ctx, "q", 1, 1000, a[0], a[1], a[2], a[3]);
+    await runWritePhase(ctx, "q", 1000, a[0], a[1], a[2], a[3]);
+    await runGovernancePhase(ctx, "q", 1000, a[0], a[1], a[2], a[3]);
+    await runEditorialPhase(ctx, "q", gov, 1000, a[0], a[1], a[2], a[3]);
+    expect(m.mockPub.publishMetadata).toHaveBeenCalledTimes(4);
+    // 4 tasks x (50 + 100) tokens, cumulative and never decreasing
+    const totals = m.mockPub.publishMetadata.mock.calls.map((c) => (c[0] as { totalTokens: number }).totalTokens);
+    expect(totals).toEqual([150, 300, 450, 600]);
   });
 });

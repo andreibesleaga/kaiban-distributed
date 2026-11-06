@@ -41,6 +41,7 @@ export default defineConfig({
       CHANNEL_SIGNING_SECRET: 'e2e-channel-secret-32bytes!!!!!',
 
       // Runtime flags
+      MESSAGING_DRIVER: 'bullmq',
       NODE_ENV: 'production',
       TRUST_PROXY: 'false',
       SEMANTIC_FIREWALL_ENABLED: 'true',

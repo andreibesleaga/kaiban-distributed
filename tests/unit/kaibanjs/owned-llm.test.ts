@@ -78,6 +78,42 @@ describe("buildOwnedLlm", () => {
     );
   });
 
+  it("passes the whole llmConfig through, not just model/key/base URL (WF-06)", () => {
+    ChatOpenAIMock.mockClear();
+    buildOwnedLlm(
+      {
+        provider: "openai", model: "gpt-4o", apiKey: "k", temperature: 0, topP: 0.5,
+        frequencyPenalty: 0.1, presencePenalty: 0.2, n: 1, stream: false, maxRetries: 3,
+      },
+      new AbortController().signal,
+    );
+    const fields = ChatOpenAIMock.mock.calls[0]![0] as Record<string, unknown>;
+    expect(fields).toMatchObject({
+      model: "gpt-4o", apiKey: "k", temperature: 0, topP: 0.5,
+      frequencyPenalty: 0.1, presencePenalty: 0.2, n: 1, stream: false, maxRetries: 3,
+    });
+    expect(fields).not.toHaveProperty("provider");
+    expect(fields).not.toHaveProperty("apiBaseUrl");
+  });
+
+  it("defaults maxRetries to 1 like KaibanJS (LangChain's own default is 6)", () => {
+    ChatOpenAIMock.mockClear();
+    buildOwnedLlm({ provider: "openai", apiKey: "k" }, new AbortController().signal);
+    expect(ChatOpenAIMock.mock.calls[0]![0]).toMatchObject({ maxRetries: 1 });
+  });
+
+  it("keeps an explicit maxRetries of 0 (no retry at all)", () => {
+    ChatOpenAIMock.mockClear();
+    buildOwnedLlm({ provider: "openai", apiKey: "k", maxRetries: 0 }, new AbortController().signal);
+    expect(ChatOpenAIMock.mock.calls[0]![0]).toMatchObject({ maxRetries: 0 });
+  });
+
+  it("drops an empty apiKey so the environment applies", () => {
+    ChatOpenAIMock.mockClear();
+    buildOwnedLlm({ provider: "openai", apiKey: "" }, new AbortController().signal);
+    expect(ChatOpenAIMock.mock.calls[0]![0]).not.toHaveProperty("apiKey");
+  });
+
   it("injects the external signal into invoke() config", async () => {
     invokeSpy.mockClear();
     invokeSpy.mockResolvedValue("ok");

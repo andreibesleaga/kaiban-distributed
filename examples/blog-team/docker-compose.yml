@@ -14,7 +14,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -39,6 +39,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       # Board/HTTP stop commands need a board token (unset = board auth off, stop refused).
       BOARD_JWT_SECRET: ${BOARD_JWT_SECRET:-}
       MESSAGING_DRIVER: bullmq
@@ -71,6 +72,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       AGENT_ID: researcher
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -110,6 +112,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       AGENT_ID: writer
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -148,6 +151,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       AGENT_ID: editor
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -192,6 +196,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
+      CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       MESSAGING_DRIVER: bullmq
       TOPIC: ${TOPIC:-AI Agents in 2025}
       RESEARCH_WAIT_MS: ${RESEARCH_WAIT_MS:-120000}

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-{{- if .Values.redis.enabled -}}
+{{- if .Values.redis.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

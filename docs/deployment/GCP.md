@@ -94,7 +94,7 @@ kubectl get svc -n kaiban
 
 ## Option B — Cloud Run (serverless containers)
 
-Cloud Run is the simplest option for stateless services. Worker agents subscribe to a Redis queue; Cloud Run scales them horizontally.
+Cloud Run suits the gateway, which is a stateless HTTP service. The worker agents are queue consumers with no HTTP port and need Option A or C (see the note below).
 
 ```bash
 # Deploy the gateway (publicly accessible)
@@ -104,26 +104,14 @@ gcloud run deploy kaiban-gateway \
   --region=$REGION \
   --port=3000 \
   --allow-unauthenticated \
-  --set-env-vars="PORT=3000,AGENT_IDS=researcher,writer,editor,REDIS_URL=redis://..." \
+  --set-env-vars="^@^AGENT_IDS=researcher,writer,editor@REDIS_URL=redis://..." \
   --set-secrets="OPENAI_API_KEY=openai-api-key:latest" \
   --project=$PROJECT
-
-# Deploy each worker agent (no external traffic)
-for AGENT in researcher writer editor; do
-  gcloud run deploy kaiban-${AGENT} \
-    --image=${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/kaiban-distributed:latest \
-    --platform=managed \
-    --region=$REGION \
-    --no-allow-unauthenticated \
-    --set-env-vars="REDIS_URL=redis://..." \
-    --set-secrets="OPENAI_API_KEY=openai-api-key:latest" \
-    --command="node" \
-    --args="dist/examples/blog-team/${AGENT}-node.js" \
-    --project=$PROJECT
-done
 ```
 
-> **Note:** Cloud Run workers must continuously poll Redis (BullMQ) rather than receiving push traffic. Because Cloud Run throttles CPU when there is no inbound request, deploy workers with `--no-cpu-throttling` and `--min-instances=1` so they keep consuming from the queue; otherwise they idle and stop polling.
+Cloud Run sets `PORT` itself from `--port` and rejects it in `--set-env-vars`. The value of `AGENT_IDS` contains commas, so the list uses the `^@^` custom delimiter (see `gcloud topic escaping`).
+
+> **Workers do not run on Cloud Run services.** A Cloud Run service must listen on an HTTP port; the worker nodes (`dist/src/main/index.js` with `ROLE=worker`, and the `dist/examples/blog-team/*-node.js` entry points) open none, and a service with CPU throttling would stop consuming the queue anyway. Run the workers on GKE (Option A) or on Compute Engine (Option C), where a process without a port is fine. Use the gateway as the only Cloud Run service, pointed at the same Redis.
 
 ---
 
@@ -136,7 +124,7 @@ gcloud compute instances create-with-container kaiban-vm \
   --container-image=${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/kaiban-distributed:latest \
   --machine-type=e2-medium \
   --zone=${REGION}-a \
-  --container-env="PORT=3000,AGENT_IDS=researcher,writer,editor,REDIS_URL=redis://..." \
+  --container-env="^@^PORT=3000@AGENT_IDS=researcher,writer,editor@REDIS_URL=redis://..." \
   --tags=http-server \
   --project=$PROJECT
 

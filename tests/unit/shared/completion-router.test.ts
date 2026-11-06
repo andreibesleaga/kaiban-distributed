@@ -421,6 +421,20 @@ describe("CompletionRouter", () => {
     ).rejects.toThrow(/Aborted wait for x/);
   });
 
+  it("waitAll() with a signal rejects with the stop error and removes every waiter (WF-03)", async () => {
+    const { driver } = makeCapturingDriver();
+    const router = new CompletionRouter(driver, driver);
+    const controller = new AbortController();
+    const all = router.waitAll(["a", "b"], 10_000, "search", controller.signal);
+    const stop = new EmergencyStopError();
+    controller.abort(stop);
+    await expect(all).rejects.toBe(stop);
+    // Waiters are gone: the same ids can be waited on again without a duplicate error.
+    const again = router.wait("a", 10, "x");
+    vi.advanceTimersByTime(11);
+    await expect(again).rejects.toThrow(/Timeout/);
+  });
+
   it("ignores an abort fired after the task already completed", async () => {
     const handlersByQueue = new Map<string, SubscribeHandler>();
     const driver: IMessagingDriver = {
@@ -532,5 +546,72 @@ describe("CompletionRouter — emergency STOP ALL (ADR-025, ES-4)", () => {
     const stop = new EmergencyStopError();
     controller.abort(stop);
     await expect(router.wait("t-b", 5_000, "step", controller.signal)).rejects.toBe(stop);
+  });
+});
+
+describe("CompletionRouter — a failed subscribe", () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown): void => void unhandled.push(e);
+  beforeEach(() => {
+    unhandled.length = 0;
+    process.on("unhandledRejection", onUnhandled);
+  });
+  afterEach(() => {
+    process.off("unhandledRejection", onUnhandled);
+  });
+
+  const failingDriver = (
+    failures: number,
+    sync = false,
+  ): { driver: IMessagingDriver; calls: () => number } => {
+    let calls = 0;
+    const driver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls <= failures) {
+          if (sync) throw new Error("amqp not implemented");
+          return Promise.reject(new Error("broker down"));
+        }
+        return Promise.resolve();
+      }),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    return { driver, calls: () => calls };
+  };
+
+  it("rejects the waiter with the cause, raises no unhandled rejection, and retries on the next wait()", async () => {
+    const { driver, calls } = failingDriver(1);
+    const router = new CompletionRouter(driver);
+    const first = router.wait("t1", 60_000, "x");
+    await expect(first).rejects.toThrow(/Could not subscribe to .*broker down/);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(unhandled).toEqual([]);
+
+    const second = router.wait("t2", 60_000, "x");
+    second.catch(() => undefined);
+    expect(calls()).toBe(3); // 1 failed completed + failed-queue once, then completed again
+  });
+
+  it("handles a synchronous throw from subscribe the same way", async () => {
+    const { driver } = failingDriver(2, true);
+    const router = new CompletionRouter(driver);
+    await expect(router.wait("t1", 60_000, "x")).rejects.toThrow(
+      /Could not subscribe .*amqp not implemented/,
+    );
+    expect(unhandled).toEqual([]);
+  });
+
+  it("reports a non-Error rejection by its text", async () => {
+    const driver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn().mockRejectedValue("plain text failure"),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    await expect(new CompletionRouter(driver).wait("t", 60_000, "x")).rejects.toThrow(
+      /plain text failure/,
+    );
   });
 });

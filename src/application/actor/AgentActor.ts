@@ -68,21 +68,35 @@ function truncateToBytes(str: string, maxBytes: number): string {
   return buf.toString("utf8", 0, end);
 }
 
+/** Serialized (JSON) size of a value in bytes. */
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
 /**
- * Cap outbound message data to MAX_PUBLISH_DATA_LEN BYTES. When the serialized
- * payload is over budget, the `result` string is byte-truncated (multi-byte
- * safe) and `_truncated` is flagged.
+ * Cap outbound message data to MAX_PUBLISH_DATA_LEN BYTES of serialized JSON.
+ * When it is over budget, the `result` string is truncated (multi-byte safe) to
+ * what is left after the other fields, measured as JSON: a quote, a newline or a
+ * control character takes 2 to 6 bytes once escaped. `_truncated` is flagged.
  */
 function capDataSize(data: Record<string, unknown>): Record<string, unknown> {
-  if (Buffer.byteLength(JSON.stringify(data), "utf8") <= MAX_PUBLISH_DATA_LEN) {
-    return data;
+  if (jsonBytes(data) <= MAX_PUBLISH_DATA_LEN) return data;
+  const capped = { ...data, result: "", _truncated: true };
+  const budget = MAX_PUBLISH_DATA_LEN - jsonBytes(capped);
+  let result = String(data["result"]);
+  let rawLimit = Math.max(budget, 0);
+  // Each raw byte encodes to at least one JSON byte, so cutting the excess off the
+  // raw limit always makes progress and ends within a few rounds.
+  for (;;) {
+    result = truncateToBytes(result, rawLimit);
+    const excess = jsonBytes(result) - 2 - budget;
+    if (excess <= 0 || rawLimit === 0) return { ...capped, result };
+    rawLimit = Math.max(Buffer.byteLength(result, "utf8") - excess, 0);
   }
-  return {
-    ...data,
-    result: truncateToBytes(String(data["result"] ?? ""), MAX_PUBLISH_DATA_LEN),
-    _truncated: true,
-  };
 }
+
+/** Longest `error` or `reason` text in a dead-letter record (bytes before JSON escaping). */
+const MAX_DLQ_TEXT_BYTES = 4_096;
 
 /** Default per-task execution timeout: 5 minutes */
 const DEFAULT_TASK_TIMEOUT_MS = 300_000;
@@ -397,6 +411,9 @@ export class AgentActor {
 
   /** True when the task was sent at or before the latest emergency stop. */
   private sentBeforeStop(payload: MessagePayload): boolean {
+    // A timestamp that is not a finite number cannot prove the task was sent after
+    // the stop, so it is treated as sent before it (fail closed).
+    if (!Number.isFinite(payload.timestamp)) return this.stoppedAt > Number.NEGATIVE_INFINITY;
     return payload.timestamp <= this.stoppedAt;
   }
 
@@ -435,13 +452,14 @@ export class AgentActor {
     reason?: string,
   ): Promise<void> {
     recordMessageProcessed("failed");
-    // Byte-cap each free-text field so a giant error/reason cannot blow the 64 KB
-    // outbound invariant (multi-byte safe). capDataSize is the outer guard.
+    // Byte-cap each free-text field to a few KB so a giant error/reason cannot
+    // use up the 64 KB outbound budget (multi-byte safe) and push out the inputs.
+    // Two such fields stay far below the cap even when fully JSON-escaped.
     const failure: Record<string, unknown> = {
       status: "failed",
-      error: truncateToBytes(error, MAX_PUBLISH_DATA_LEN),
+      error: truncateToBytes(error, MAX_DLQ_TEXT_BYTES),
       ...(reason
-        ? { reason: truncateToBytes(reason, MAX_PUBLISH_DATA_LEN) }
+        ? { reason: truncateToBytes(reason, MAX_DLQ_TEXT_BYTES) }
         : {}),
     };
     // The record carries the task's original inputs so replayDlq can re-run the
@@ -450,14 +468,14 @@ export class AgentActor {
     // record is marked, so replay skips it rather than running an empty task.
     const withInputs: Record<string, unknown> = { ...payload.data, ...failure };
     const data =
-      Buffer.byteLength(JSON.stringify(withInputs), "utf8") <= MAX_PUBLISH_DATA_LEN
+      jsonBytes(withInputs) <= MAX_PUBLISH_DATA_LEN
         ? withInputs
         : { ...failure, _inputs_omitted: true };
     await this.driver.publish(DLQ_CHANNEL, {
       taskId: payload.taskId,
       agentId: this.id,
       timestamp: Date.now(),
-      data: capDataSize(data),
+      data,
     });
   }
 
@@ -474,14 +492,6 @@ export class AgentActor {
     // Definite-assignment: the Promise executor runs synchronously, so the
     // handle is always set before the finally below.
     let timeoutHandle!: ReturnType<typeof setTimeout>;
-    const handlerPromise = handler(payload, controller.signal);
-    // C10: if the timeout wins the race, the handler promise can still reject
-    // afterwards (the aborted LLM call throws late) — that rejection now has no
-    // awaiter and would surface as an unhandledRejection. Attach a no-op catch
-    // so the losing side is always handled. Promise.resolve() normalizes a
-    // possibly non-thenable handler return; the race below still awaits the
-    // original handlerPromise, so a winning rejection is NOT swallowed.
-    Promise.resolve(handlerPromise).catch(() => {});
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
         // Abort first so the handler's underlying work (LLM .invoke) cancels,
@@ -494,16 +504,28 @@ export class AgentActor {
         reject(timedOut);
       }, timeoutMs);
     });
-    // An emergency stop settles the task at once, even when the handler ignores
-    // its signal (ES-12); the handler's late result has no awaiter and is dropped.
-    const emergencyPromise = new Promise<never>((_, reject) => {
+    // A runtime abort (emergency stop, node stop) settles the task at once, even
+    // when the handler ignores its signal (ES-12); the handler's late result has
+    // no awaiter and is dropped.
+    const abortPromise = new Promise<never>((_, reject) => {
+      // Every abort of this controller (timeout, emergency stop, node stop) carries a
+      // NonRetryableError, so the task ends on the first attempt that sees it.
       controller.signal.addEventListener("abort", () => {
-        const reason: unknown = controller.signal.reason;
-        if (reason instanceof EmergencyStopError) reject(reason);
+        reject(controller.signal.reason as NonRetryableError);
       });
     });
     try {
-      return await Promise.race([handlerPromise, timeoutPromise, emergencyPromise]);
+      // Called inside the try so a handler that throws synchronously still
+      // clears the timer and its in-flight entry (the finally below).
+      const handlerPromise = handler(payload, controller.signal);
+      // C10: if another side wins the race, the handler promise can still reject
+      // afterwards (the aborted LLM call throws late) — that rejection now has no
+      // awaiter and would surface as an unhandledRejection. Attach a no-op catch
+      // so the losing side is always handled. Promise.resolve() normalizes a
+      // possibly non-thenable handler return; the race below still awaits the
+      // original handlerPromise, so a winning rejection is NOT swallowed.
+      Promise.resolve(handlerPromise).catch(() => {});
+      return await Promise.race([handlerPromise, timeoutPromise, abortPromise]);
     } finally {
       // Clear the timer whichever side won, so a completed task never leaves an
       // armed timeout (default 300 000 ms) accumulating / holding the event loop.

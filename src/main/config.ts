@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readFileSync } from "fs";
 import type { EconomicsConfig } from "../economics/types";
 import type { GovernanceConfig } from "../governance/types";
 import { resolveSpendCaps } from "../shared/budget";
+import { positiveIntFromEnv, timeoutMsFromEnv } from "../shared/timeout-env";
 import { createStructuredLogger } from "../shared/structured-logger";
+import {
+  kafkaSslFromEnv,
+  redisTlsFromEnv,
+  type TlsConfig,
+} from "../infrastructure/security/tls-config";
+
+export type { TlsConfig };
 
 const log = createStructuredLogger({ component: "config" });
 
 export type MessagingDriver = "bullmq" | "kafka" | "amqp";
-
-export interface TlsConfig {
-  ca: Buffer;
-  cert: Buffer;
-  key: Buffer;
-  rejectUnauthorized: boolean;
-}
 
 /**
  * MCP server surface (master plan §B5.1 Phase M). OFF by default — `enabled`
@@ -123,20 +123,6 @@ function parseMessagingDriver(value: string): MessagingDriver {
   );
 }
 
-function loadTlsConfig(
-  caPath?: string,
-  certPath?: string,
-  keyPath?: string,
-): TlsConfig | undefined {
-  if (!caPath || !certPath || !keyPath) return undefined;
-  return {
-    ca: readFileSync(caPath),
-    cert: readFileSync(certPath),
-    key: readFileSync(keyPath),
-    rejectUnauthorized: getBoolEnv("TLS_REJECT_UNAUTHORIZED", true),
-  };
-}
-
 /** Secrets that sign or verify tokens and channel messages. */
 const SIGNING_SECRETS = [
   "BOARD_JWT_SECRET",
@@ -205,21 +191,13 @@ export function loadConfig(): AppConfig {
       url: redisUrl,
       host: parsed.hostname,
       port: parseInt(parsed.port || "6379", 10),
-      tls: loadTlsConfig(
-        process.env["REDIS_TLS_CA"],
-        process.env["REDIS_TLS_CERT"],
-        process.env["REDIS_TLS_KEY"],
-      ),
+      tls: redisTlsFromEnv(),
     },
     kafka: {
       brokers: getEnv("KAFKA_BROKERS", "localhost:9092").split(","),
       clientId: getEnv("KAFKA_CLIENT_ID", "kaiban-worker"),
       groupId: getEnv("KAFKA_GROUP_ID", "kaiban-group"),
-      ssl: loadTlsConfig(
-        process.env["KAFKA_SSL_CA"],
-        process.env["KAFKA_SSL_CERT"],
-        process.env["KAFKA_SSL_KEY"],
-      ),
+      ssl: kafkaSslFromEnv(),
     },
     agentIds: agentIdsRaw
       .split(",")
@@ -229,7 +207,7 @@ export function loadConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    agentTimeoutMs: parseIntEnv("AGENT_TIMEOUT_MS", 300000),
+    agentTimeoutMs: timeoutMsFromEnv("AGENT_TIMEOUT_MS") ?? 300000,
     retryOnTimeout: getBoolEnv("RETRY_ON_TIMEOUT", false),
     maxTokenBudget: caps.maxTokenBudget,
     maxTaskTokenBudget: caps.maxTaskTokenBudget,
@@ -260,8 +238,8 @@ export function loadConfig(): AppConfig {
       semanticFirewallLlmUrl: process.env["SEMANTIC_FIREWALL_LLM_URL"],
       jitTokensEnabled: getBoolEnv("JIT_TOKENS_ENABLED", false),
       circuitBreakerEnabled: getBoolEnv("CIRCUIT_BREAKER_ENABLED", false),
-      circuitBreakerThreshold: parseIntEnv("CIRCUIT_BREAKER_THRESHOLD", 10),
-      circuitBreakerWindowMs: parseIntEnv("CIRCUIT_BREAKER_WINDOW_MS", 60000),
+      circuitBreakerThreshold: positiveIntFromEnv("CIRCUIT_BREAKER_THRESHOLD", 10),
+      circuitBreakerWindowMs: positiveIntFromEnv("CIRCUIT_BREAKER_WINDOW_MS", 60000),
       boardJwtSecret: process.env["BOARD_JWT_SECRET"],
       a2aJwtSecret: process.env["A2A_JWT_SECRET"],
       channelSigningSecret: process.env["CHANNEL_SIGNING_SECRET"],

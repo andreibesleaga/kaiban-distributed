@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 image:
-  repository: kaiban-distributed
+  repository: ghcr.io/andreibesleaga/kaiban-distributed
   pullPolicy: IfNotPresent
-  # Leave tag empty to use the Chart.AppVersion defined in Chart.yaml.
-  # Override at install time: --set image.tag=v1.2.3
+  # Leave tag empty to use the Chart.AppVersion defined in Chart.yaml (the release image tag).
+  # A locally built image: --set image.repository=kaiban-distributed --set image.tag=latest
   tag: ""
 
 redis:
@@ -32,10 +32,18 @@ agents:
 config:
   MESSAGING_DRIVER: "bullmq"
   LLM_MODEL: "gpt-4o-mini"
-  # Emergency STOP ALL (2.1.0, ADR-025): "true" on every pod turns it on (also set BOARD_JWT_SECRET).
+  # Emergency STOP ALL (2.1.0, ADR-025): "true" on every pod turns it on (also set secrets.BOARD_JWT_SECRET).
   CONTROL_PLANE_ENABLED: "false"
+  # Redis URL for the pods. Empty = the in-cluster Redis this chart creates.
+  # With redis.enabled=false set it, e.g. --set config.REDIS_URL=rediss://:password@host:6380
+  REDIS_URL: ""
 
 secrets:
-  # Base64 encode these values or replace them in production using --set or external secret managers
+  # Plain-text values: the chart base64-encodes them into the Secret. Pass them with --set
+  # or use an external secret manager; do not commit real keys.
   OPENAI_API_KEY: ""
   OPENROUTER_API_KEY: ""
+  # Emergency STOP ALL (ADR-025): board/HTTP stop commands need a board token. Rendered only when non-empty.
+  BOARD_JWT_SECRET: ""
+  # Optional: signs stored control commands. Rendered only when non-empty.
+  CHANNEL_SIGNING_SECRET: ""

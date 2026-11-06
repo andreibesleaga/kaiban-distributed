@@ -72,6 +72,8 @@ The viewer resolves the gateway address from the first of these sources (in prio
 
 3. **Fallback** — `http://localhost:3000` (development default).
 
+If a board token is set (`window.BOARD_TOKEN`), the viewer ignores `?gateway=` and uses option 1 or the fallback, so a link cannot send the token to another server. A token given as `#token=` in the same address is sent to the gateway named in that address.
+
 After deploying the gateway elsewhere, set the URL directly in `board.html` using option 1 above (the `window.GATEWAY_URL` global), or pass it at runtime via the `?gateway=` query parameter (option 2).
 
 ### Step 4 — Custom Domain (optional)

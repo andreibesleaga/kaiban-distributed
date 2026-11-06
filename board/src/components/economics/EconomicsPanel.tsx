@@ -5,7 +5,7 @@ import { useBoardStore } from '../../store/boardStore';
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-slate-800 last:border-0">
-      <span className="text-xs text-slate-500">{label}</span>
+      <span className="text-xs text-slate-400">{label}</span>
       <span className="text-sm font-mono text-slate-200">{value}</span>
     </div>
   );
@@ -40,7 +40,7 @@ export default function EconomicsPanel() {
 
   return (
     <div className="rounded-xl border border-slate-800 bg-[#1e293b] p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
         Run Metrics
       </h2>
 

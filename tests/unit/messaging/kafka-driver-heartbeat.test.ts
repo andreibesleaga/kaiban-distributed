@@ -44,7 +44,7 @@ type EachMessage = (m: {
   heartbeat: () => Promise<void>;
 }) => Promise<void>;
 
-const message = { value: Buffer.from(JSON.stringify({ taskId: "t1" })) };
+const message = { value: Buffer.from(JSON.stringify({ taskId: "t1", agentId: "a", data: {}, timestamp: 1 })) };
 
 async function subscribeWith(
   handler: () => Promise<void>,

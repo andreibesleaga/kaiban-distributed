@@ -8,6 +8,7 @@ import {
   sanitizeTraceHeaders,
 } from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
+import { isMessagePayload } from "./payload-guard";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "KafkaDriver" });
@@ -148,14 +149,29 @@ export class KafkaDriver implements IMessagingDriver {
     // together), so the consumer is always disconnected at this point.
     await this.consumer.connect();
     this.consumerConnected = true;
-    await this.consumer.subscribe({ topic, fromBeginning: false });
+    // A group with no committed offset on a partition (new group, a partition it
+    // has not seen, or offsets expired after `offsets.retention.minutes`) reads
+    // it from the start. A task mailbox is durable work, so the backlog must not
+    // be skipped; and the completed/failed channels are subscribed lazily, after
+    // the task was sent, so "latest" would lose a result published before the
+    // group joined (the CompletionRouter ignores results it is not waiting for,
+    // so a one-time replay of old events costs only log lines).
+    await this.consumer.subscribe({ topic, fromBeginning: true });
     this.subscribedTopic = topic;
     await this.consumer.run({
       eachMessage: async ({ message, heartbeat }) => {
         if (!message.value) return;
         let parsed: MessagePayload;
         try {
-          parsed = JSON.parse(message.value.toString()) as MessagePayload;
+          const decoded: unknown = JSON.parse(message.value.toString());
+          if (!isMessagePayload(decoded)) {
+            log.warn(
+              { topic },
+              "Skipping a Kafka message that is not a task payload",
+            );
+            return;
+          }
+          parsed = decoded;
         } catch (err) {
           // Poison / non-JSON message: skip it so the offset advances instead of
           // crash-looping the consumer on the same unparseable record (HOL block).

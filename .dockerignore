@@ -1,0 +1,28 @@
+# Build context for the Dockerfile: it copies only package*.json, tsconfig*.json, src/ and
+# examples/. Everything else stays out of the context, so local keys, node_modules and
+# run transcripts are never sent to the Docker daemon or a remote builder.
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+dist
+dist-staging
+coverage
+*.tgz
+# Generated TLS material (scripts/generate-dev-certs.sh) is mounted at run time, never built in.
+certs
+*.key
+*.pem
+*.crt
+**/runs
+temp
+reports
+docs
+board
+tests
+bench
+site
+etc

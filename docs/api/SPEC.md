@@ -204,7 +204,7 @@ function createKaibanTaskHandler(
 class KaibanTeamBridge {
   constructor(config: KaibanTeamConfig, middleware?: IStateMiddleware)
   getTeam(): Team
-  start(inputs?: Record<string, unknown>): Promise<{ status: string; result: unknown; stats: unknown }>
+  start(inputs?: Record<string, unknown>, signal?: AbortSignal): Promise<{ status: string; result: unknown; stats: unknown }>
   subscribeToChanges(listener, properties?): () => void
 }
 ```
@@ -227,6 +227,16 @@ class KaibanTeamBridge {
 The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId/status`, 404) use the
 envelope `{ data, meta, errors }`; error responses: `{ data: null, meta: {}, errors: [{ message }] }`.
 `/a2a/rpc` answers in JSON-RPC 2.0 and the agent card is the bare AgentCard (both from `@a2a-js/sdk`).
+
+Limits (2.1.2): `/a2a/rpc`, `/mcp`, `/a2a/agents/:agentId/status` and unknown paths share one rate
+limit of 100 requests per minute per client address; the probes (`/health`, `/ready`, `/startup`)
+have 120 per minute per route per address; the agent card has no limit; `POST /control/stop-all`
+has its own (5 per 10 s per token subject, refused attempts 30 per 10 s per address). Bodies are
+parsed per route after the rate limit: 1 MB on `/a2a/rpc` and `/mcp`, 16 kB on
+`/control/stop-all`; a malformed or oversized body gets a JSON 400 or 413. `/a2a/rpc` and `/mcp`
+may stay open for at least 15 minutes (the longest task wait plus 60 s); `/control/stop-all` has
+a 30 s socket timeout; the other routes answer at once and keep Node's defaults. `dispatch_task`
+and A2A `message/send` refuse an `agentId` that is not in `AGENT_IDS`.
 
 ---
 
@@ -290,7 +300,7 @@ the latest command is also saved under the Redis key `kaiban-control:stopped-at`
 
 > **Source of deltas:** `AgentStatePublisher.wrapHandler()` emits `EXECUTING → THINKING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. The deprecated `DistributedStateMiddleware` forwards KaibanJS internal state for the in-process `KaibanTeamBridge` path.
 
-PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped before publishing (see `DistributedStateMiddleware.sanitizeDelta`).
+PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped from the **top level** of a delta before publishing (see `DistributedStateMiddleware.sanitizeDelta`). Keys nested inside `agents[]` or `tasks[]` entries are not inspected (agent `name` is a display field the board needs).
 
 ---
 

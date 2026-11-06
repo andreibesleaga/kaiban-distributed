@@ -135,7 +135,10 @@ export interface AgentRegistration {
   agentId: string;
   /** Purpose — human-readable reason the agent exists. */
   purpose: string;
-  /** Duration — ISO expiry timestamp; omitted = no expiry. */
+  /**
+   * Duration — ISO 8601 expiry instant (any offset); omitted = no expiry. A
+   * value that does not parse counts as expired.
+   */
   expiresAt?: string;
   /** Limit — max invocations; 0/omitted = unlimited. */
   invocationLimit?: number;

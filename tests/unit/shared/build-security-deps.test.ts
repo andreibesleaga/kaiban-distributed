@@ -117,6 +117,20 @@ describe("buildSecurityDeps", () => {
     expect(SlidingWindowBreaker).toHaveBeenCalledWith(5, 30000);
   });
 
+  it.each(["ten", "0", "-3"])(
+    "falls back to the defaults for CIRCUIT_BREAKER_THRESHOLD=%s and a bad window",
+    async (bad) => {
+      process.env["CIRCUIT_BREAKER_ENABLED"] = "true";
+      process.env["CIRCUIT_BREAKER_THRESHOLD"] = bad;
+      process.env["CIRCUIT_BREAKER_WINDOW_MS"] = bad;
+      const { SlidingWindowBreaker } =
+        await import("../../../src/infrastructure/security/sliding-window-breaker");
+      vi.clearAllMocks();
+      buildSecurityDeps();
+      expect(SlidingWindowBreaker).toHaveBeenCalledWith(10, 60000);
+    },
+  );
+
   it("creates EnvTokenProvider when JIT_TOKENS_ENABLED=true", async () => {
     process.env["JIT_TOKENS_ENABLED"] = "true";
     const { EnvTokenProvider } =

@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AgentStatePublisher } from "../../../src/adapters/state/agent-state-publisher";
+import { sanitizeDelta } from "../../../src/adapters/state/distributedMiddleware";
 import type { MessagePayload } from "../../../src/infrastructure/messaging/interfaces";
 
 const mockPublish = vi.fn().mockResolvedValue(1);
@@ -34,29 +35,7 @@ function getDonePublish(taskId: string): Record<string, unknown> | null {
 }
 
 describe("PII sanitization in distributedMiddleware", () => {
-  it("strips PII-keyed fields from state delta before publishing", () => {
-    // Test the sanitization logic directly (mirrors distributedMiddleware.ts)
-    const PII_DENYLIST = new Set([
-      "email",
-      "name",
-      "phone",
-      "ip",
-      "password",
-      "token",
-      "secret",
-      "ssn",
-      "dob",
-    ]);
-    function sanitizeDelta(
-      partial: Record<string, unknown>,
-    ): Record<string, unknown> {
-      const result: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(partial)) {
-        if (!PII_DENYLIST.has(key)) result[key] = value;
-      }
-      return result;
-    }
-
+  it("strips PII-keyed fields from the top level of a state delta", () => {
     const input = {
       teamWorkflowStatus: "RUNNING",
       email: "user@example.com",
@@ -73,6 +52,17 @@ describe("PII sanitization in distributedMiddleware", () => {
     expect(sanitized).not.toHaveProperty("phone");
     expect(sanitized).not.toHaveProperty("password");
     expect(sanitized).not.toHaveProperty("token");
+  });
+
+  it("documents the limit: keys nested in agents[] / tasks[] are not inspected", () => {
+    const sanitized = sanitizeDelta({
+      agents: [{ agentId: "a", name: "Ava", email: "ava@example.com" }],
+      email: "top@example.com",
+    });
+    expect(sanitized).not.toHaveProperty("email");
+    expect(sanitized["agents"]).toEqual([
+      { agentId: "a", name: "Ava", email: "ava@example.com" },
+    ]);
   });
 });
 
@@ -157,11 +147,8 @@ describe("Large LLM output truncation via AgentStatePublisher", () => {
     >;
     // Answer should be extracted from the .answer field
     expect(tasks[0]["result"]).toBe("The answer to everything.");
-    // Token metadata should be published
-    const meta = (done as Record<string, unknown>)["metadata"] as Record<
-      string,
-      unknown
-    >;
-    expect(meta?.["totalTokens"]).toBe(150);
+    // Usage rides on the task card; run-level `metadata` is the orchestrator's (UI-02)
+    expect(tasks[0]["tokens"]).toBe(150);
+    expect(done).not.toHaveProperty("metadata");
   });
 });

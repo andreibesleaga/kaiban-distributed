@@ -15,6 +15,23 @@ visualisation via Socket.io (React 19 + Vite + Zustand).
 | `npm run test:visual`        | Playwright visual tests (needs the dev server on :5173 and a gateway; see `playwright.config.ts`) |
 | `npm run test:visual:update` | Regenerate the committed screenshot baseline                                                      |
 
+## Production hosting
+
+`npm run build` writes a static site to `dist/`. Browsers honour `X-Frame-Options` and
+`X-Content-Type-Options` only as HTTP **response headers** (not as `<meta>` tags), so set these
+on whatever serves `dist/` (the Vite dev server already sends them):
+
+```
+Content-Security-Policy: frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+```
+
+Without `frame-ancestors` a hostile page can frame the board and trick a click on STOP ALL.
+
+`?gateway=<url>` selects another gateway at run time. If `VITE_BOARD_TOKEN` is built in, the
+board honours it only for the origin of `VITE_GATEWAY_URL`, so a link cannot send the token elsewhere.
+
 ## Testing
 
 Tests use **vitest** + **@testing-library/react**. The default test environment is
@@ -31,6 +48,13 @@ finds **no violations**, via [`vitest-axe`](https://github.com/chaance/vitest-ax
 These specs opt into the `jsdom` environment with a per-file
 `// @vitest-environment jsdom` pragma, because axe-core needs a more complete DOM than
 `happy-dom` provides. `vitest-axe` and `jsdom` are dev-only dependencies.
+
+These jsdom checks **do not cover colour contrast**: jsdom loads no CSS, so axe reports
+`color-contrast` as "incomplete" rather than as a violation. Contrast is checked in a real
+browser by two Playwright specs that run axe's `color-contrast` rule on the rendered page, with
+a stub gateway on a random port (no dev server or gateway needed):
+`npm run test:visual -- board-contrast` (React board) and
+`npm run test:visual -- viewers-control` (the static viewers).
 
 Run them with the rest of the suite:
 

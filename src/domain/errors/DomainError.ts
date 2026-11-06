@@ -44,12 +44,13 @@ export class MessagingError extends DomainError {
  * Base class for failures the actor must NOT retry (roadmap §7.2 items 1–2).
  *
  * `AgentActor.executeWithRetries` re-throws any `NonRetryableError` on the first
- * attempt and dead-letters the task with `reasonCode` as the DLQ `reason`, so a
+ * attempt and dead-letters the task with `reasonCode` as the DLQ `error` (the
+ * message goes to `reason`), so a
  * budget breach (or, later, a control abort) costs at most one attempt instead
  * of three paid calls. Subclasses set `reasonCode` to a stable snake_case token.
  */
 export abstract class NonRetryableError extends DomainError {
-  /** Stable, machine-readable reason written to the DLQ record. */
+  /** Stable, machine-readable code written to the DLQ record's `error` field. */
   abstract readonly reasonCode: string;
 }
 
@@ -59,7 +60,8 @@ export const EMERGENCY_STOP_REASON = "emergency_stop";
 /**
  * A task or workflow ended by an emergency STOP ALL (roadmap §6.10, ADR-025).
  * Never retried; the DLQ record keeps the inputs and its `emergency_stop` code
- * is replayable, so stopped work can be run again after RELEASE.
+ * is replayable, so an operator can run stopped work again with `replayDlq`
+ * (a stop has no RELEASE: tasks sent after the stop moment run normally).
  */
 export class EmergencyStopError extends NonRetryableError {
   readonly code = "EMERGENCY_STOP";

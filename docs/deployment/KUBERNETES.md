@@ -58,8 +58,10 @@ Edit `examples/blog-team/infra/kubernetes/configmap.yaml` and replace the placeh
 ```yaml
 stringData:
   OPENAI_API_KEY: "sk-your-real-key"
-  OPENROUTER_API_KEY: "sk-or-v1-your-key"   # optional
+  OPENROUTER_API_KEY: ""                    # leave empty unless you use OpenRouter
 ```
+
+> When `OPENROUTER_API_KEY` is set it takes precedence over `OPENAI_API_KEY`, so a placeholder value breaks every LLM call. The manifests ship it empty.
 
 > **Never commit real secrets.** Use an external secrets operator (External Secrets Operator, Sealed Secrets, Vault Agent Injector) in production.
 

@@ -108,7 +108,7 @@ The two systems are complementary:
 | `createKaibanTaskHandler()` | Wraps a KaibanJS Agent into an AgentActor-compatible function |
 | `KaibanTeamBridge` | Wraps a full KaibanJS Team and syncs its Zustand state to the board |
 | `AgentStatePublisher` | Publishes IDLE/EXECUTING/DONE state to Redis Pub/Sub per worker; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
-| `DistributedStateMiddleware` | Intercepts Zustand `setState()` and publishes diffs |
+| `DistributedStateMiddleware` | Subscribes to the team's Zustand store and publishes each change as a signed board delta |
 | `GatewayApp` | HTTP gateway: health, agent-card, A2A RPC |
 | `SocketGateway` | Socket.io server + Redis Pub/Sub subscriber |
 | `MCPFederationClient` | Wraps any stdio MCP server for tool use |
@@ -174,10 +174,8 @@ Each worker node = one KaibanJS Agent + one AgentActor + one messaging driver
 ```
 
 ```typescript
-import { AgentActor } from 'kaiban-distributed/src/application/actor/AgentActor';
-import { createKaibanTaskHandler } from 'kaiban-distributed/src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { BullMQDriver } from 'kaiban-distributed/src/infrastructure/messaging/bullmq-driver';
-import type { KaibanAgentConfig } from 'kaiban-distributed/src/infrastructure/kaibanjs/kaiban-agent-bridge';
+import { AgentActor, BullMQDriver, createKaibanTaskHandler } from 'kaiban-distributed';
+import type { KaibanAgentConfig } from 'kaiban-distributed';
 
 const agentConfig: KaibanAgentConfig = {
   name: 'Ava',
@@ -275,8 +273,7 @@ One process runs the full KaibanJS Team; state diffs stream to the board
 
 ```typescript
 import { Agent, Task } from 'kaibanjs';
-import { KaibanTeamBridge } from 'kaiban-distributed/src/infrastructure/kaibanjs/kaiban-team-bridge';
-import { BullMQDriver } from 'kaiban-distributed/src/infrastructure/messaging/bullmq-driver';
+import { KaibanTeamBridge, BullMQDriver } from 'kaiban-distributed';
 
 const researcher = new Agent({
   name: 'Ava', role: 'Researcher',
@@ -315,7 +312,7 @@ const bridge = new KaibanTeamBridge({
   tasks: [researchTask, writeTask],
 }, middleware);
 
-// Every Zustand setState() → Redis Pub/Sub → Socket.io → board
+// Every store change → board delta → Redis Pub/Sub → Socket.io → board
 const result = await bridge.start({ topic: 'AI Agents in 2025' });
 console.log(result.status, result.result);
 ```
@@ -341,34 +338,32 @@ export class KaibanTeamBridge {
     this.middleware = middleware ?? null;
 
     if (this.middleware) {
-      const store = this.team.getStore() as unknown as { setState: (p: Record<string, unknown>) => void };
-      this.middleware.attach(store);  // intercepts ALL setState() calls
+      // KaibanJS store actions call the `set` Zustand gave them at creation, so
+      // patching `setState` would never see them; `subscribe` sees every change.
+      const store = this.team.getStore() as unknown as Parameters<IStateMiddleware['attach']>[0];
+      this.middleware.attach(store);  // subscribes to ALL store changes
     }
   }
 }
 ```
 
-**`DistributedStateMiddleware` — how it intercepts Zustand:**
+**`DistributedStateMiddleware` — how it streams the Zustand store:**
 
 ```typescript
 // From src/adapters/state/distributedMiddleware.ts
-public attach(store: ZustandStore): ZustandStore {
-  const originalSet = store.setState.bind(store);
-
-  store.setState = async (partial, replace) => {
-    originalSet(partial, replace);  // apply locally first
-
-    const sanitized = sanitizeDelta(partial);  // strip PII fields
-    await this.driver.publish(this.channelName, {
-      taskId: 'global-state', agentId: 'system',
-      timestamp: Date.now(),
-      data: { stateUpdate: sanitized },
-    });
-  };
+public attach(store: ObservableStore): ObservableStore {
+  this.unsubscribers.push(
+    store.subscribe((state, prev) => {
+      const delta = toBoardDelta(state, prev);   // { teamWorkflowStatus?, agents?, tasks? }
+      if (Object.keys(delta).length === 0) return;
+      this.redis.publish(this.channelName, wrapSigned(sanitizeDelta(delta)));  // strip PII, sign
+    }),
+  );
+  return store;
 }
 ```
 
-PII fields automatically stripped before publishing: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`.
+PII-named top-level keys are stripped before publishing (nested keys are not inspected): `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`.
 
 ---
 
@@ -617,6 +612,7 @@ import { io } from 'socket.io-client';
 import { Redis } from 'ioredis';
 import { createDriver, getDriverType } from '../../src/shared';
 import { COMPLETED_QUEUE } from './team-config';
+import { BlogStatePublisher } from './state-publisher'; // subclass of OrchestratorStatePublisher with the lifecycle methods
 
 const GATEWAY_URL      = process.env['GATEWAY_URL']      ?? 'http://localhost:3000';
 const REDIS_URL        = process.env['REDIS_URL']        ?? 'redis://localhost:6379';
@@ -662,7 +658,7 @@ class CompletionRouter {
       }
     });
 
-    // Failed tasks (after 3 retries → DLQ)
+    // Failed tasks (after 3 attempts → DLQ)
     void (failedDriver ?? completedDriver).subscribe('kaiban-events-failed', async (payload) => {
       const reject = this.pendingReject.get(payload.taskId);
       if (reject) {
@@ -703,7 +699,7 @@ async function main(): Promise<void> {
   const completionRouter = new CompletionRouter(completedDriver, failedDriver);
 
   // Direct Redis Pub/Sub for workflow lifecycle states
-  const statePublisher = new OrchestratorStatePublisher(REDIS_URL);
+  const statePublisher = new BlogStatePublisher(REDIS_URL);  // the library base class has only publish/taskQueued/taskDone/taskFailed/publishMetadata/disconnect
 
   // STEP 1 — Research
   const researchTask = await dispatch('researcher', {
@@ -1329,7 +1325,7 @@ function countHITLInteractions(teamStore: any) {
 
 ### 7.3 OpenTelemetry Distributed Tracing
 
-Each worker node automatically initializes OTEL tracing via `initTelemetry()`:
+Telemetry is initialised by the packaged entry point `dist/src/main/index.js` (`ROLE=gateway` or `worker`) only. Custom nodes such as `startAgentNode` or the `dist/examples/blog-team/*-node.js` files never call it, so call `initTelemetry()` yourself in those:
 
 ```typescript
 // src/infrastructure/telemetry/telemetry.ts
@@ -1374,12 +1370,16 @@ const ctx = extractTraceContext(
 // ctx is a Context that can be used as parent for new spans
 ```
 
-**Configure OTEL exporter** (e.g., Jaeger, Grafana Tempo, Honeycomb):
+**Configure OTEL exporter** (e.g., Jaeger, Grafana Tempo, Honeycomb). The value is the OTLP/HTTP
+base URL: traces are sent to `<base>/v1/traces` and the metrics (`kaiban.message.processed`,
+`kaiban.message.latency`) to `<base>/v1/metrics`. A value that still ends in `/v1/traces` is
+reduced to its base, so older configurations keep working.
 
 ```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
 SERVICE_NAME=kaiban-researcher \
-node dist/examples/blog-team/researcher-node.js
+ROLE=worker AGENT_IDS=researcher \
+node dist/src/main/index.js
 ```
 
 ### 7.4 Real-Time Board as Observability Surface
@@ -1609,7 +1609,9 @@ try {
 
 ## 9. WorkflowDrivenAgent in Distributed Context
 
-`WorkflowDrivenAgent` executes deterministic code workflows instead of LLM-based reasoning. It integrates with kaiban-distributed the same way as `ReactChampionAgent`.
+`WorkflowDrivenAgent` executes deterministic code workflows instead of LLM-based reasoning.
+
+> **Not wired into the distributed bridge today.** `createKaibanTaskHandler(agentConfig)` builds a plain LLM `Agent` from the role/goal config it is given and never receives the `workflowAgent` built in the snippets below. As written, a node started from §9.1 or §9.2 runs an LLM agent (and spends tokens), not the workflow. Treat this section as a KaibanJS reference only; running a workflow step inside a distributed node needs a custom task handler.
 
 ### 9.1 Basic WorkflowDrivenAgent Node
 
@@ -1668,7 +1670,7 @@ const workflowAgent = new Agent({
   workflow: dataWorkflow,
 } as any);
 
-// ── Use createKaibanTaskHandler for standard Team-based execution ─────────────
+// ── NOTE: the handler below does NOT use `workflowAgent`; it runs an LLM agent ─
 // Note: prefer createKaibanTaskHandler over direct workOnTask — Team.start() provides
 // real token counts and cost tracking via WorkflowResult.stats.llmUsageStats.
 const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
@@ -1971,7 +1973,7 @@ const tasks = [
 
 const middleware = new DistributedStateMiddleware('redis://localhost:6379');
 
-// Every Zustand setState() → kaiban-state-events → SocketGateway → board
+// Every store change → board delta → kaiban-state-events → SocketGateway → board
 const bridge = new KaibanTeamBridge({ name: 'Blog Team', agents, tasks }, middleware);
 
 // Subscribe to state changes locally too

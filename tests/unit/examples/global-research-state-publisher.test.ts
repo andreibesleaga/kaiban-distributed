@@ -3,6 +3,7 @@ import {
   ResearchStatePublisher,
   buildSwarmAgents,
   extractSearchResults,
+  MAX_SEARCH_RESULT_CHARS,
 } from "../../../examples/global-research/state-publisher";
 import type { ResearchContext } from "../../../examples/global-research/types";
 
@@ -45,27 +46,32 @@ describe("buildSwarmAgents()", () => {
 });
 
 describe("extractSearchResults()", () => {
-  it("returns a structured object with required fields", () => {
-    const result = extractSearchResults(
-      "Some output text",
-      "searcher-0",
-      "AI trends",
-    );
-    expect(result.agentId).toBe("searcher-0");
+  it("returns a structured object; nothing is invented (WF-V-02)", () => {
+    const result = extractSearchResults("Some output text", "search-1", "AI trends");
+    expect(result.agentId).toBe("search-1");
     expect(result.title).toBe("AI trends");
     expect(result.snippet).toBe("Some output text");
-    expect(result.sourceUrl).toMatch(/^research:\/\/searcher-0\//);
-    expect(result.relevanceScore).toBeGreaterThanOrEqual(0.85);
-    expect(result.relevanceScore).toBeLessThanOrEqual(1.0);
+    expect(result).not.toHaveProperty("sourceUrl");
+    expect(result).not.toHaveProperty("relevanceScore");
     expect(result.timestamp).toBeTruthy();
   });
 
-  it("truncates title to 80 chars and snippet to 500 chars", () => {
+  it("takes sourceUrl from the first URL the answer names", () => {
+    const result = extractSearchResults(
+      "Finding. Sources: (https://example.com/a), https://example.org/b",
+      "search-1",
+      "t",
+    );
+    expect(result.sourceUrl).toBe("https://example.com/a");
+  });
+
+  it("truncates the title to 80 chars; the answer is kept whole up to the 20 000-char bound, sources at the end included", () => {
     const longTitle = "x".repeat(200);
-    const longOutput = "y".repeat(800);
-    const result = extractSearchResults(longOutput, "searcher-1", longTitle);
+    const answer = "y".repeat(3000) + " Sources: https://example.com/late";
+    const result = extractSearchResults(answer, "search-1", longTitle);
     expect(result.title.length).toBe(80);
-    expect(result.snippet.length).toBe(500);
+    expect(result.snippet).toBe(answer);
+    expect(extractSearchResults("z".repeat(25_000), "a", "t").snippet.length).toBe(MAX_SEARCH_RESULT_CHARS);
   });
 });
 
@@ -97,25 +103,18 @@ describe("ResearchStatePublisher", () => {
     pub = new ResearchStatePublisher("redis://localhost:6379");
   });
 
-  it("workflowStarted() silently swallows redis.del rejection (catch handler)", async () => {
-    mockDel.mockRejectedValueOnce(new Error("del failed"));
-    // Should not throw
-    pub.workflowStarted(1);
-    // Let the .catch() microtask run
-    await Promise.resolve();
-    await Promise.resolve();
-    // publish still called (del failure is fire-and-forget)
-    expect(mockPublish).toHaveBeenCalled();
-  });
-
-  it("workflowStarted() calls redis.del and publishes RUNNING", () => {
-    pub.workflowStarted(2);
-    expect(mockDel).toHaveBeenCalledWith("kaiban:searcher:reg");
+  it("workflowStarted() publishes RUNNING and does NOT reset the searcher id counter (WF-10)", () => {
+    pub.workflowStarted(2, "The Future of AI Agents");
+    // The searchers registered before the run; deleting the counter would hand a
+    // restarted searcher the id of a live one.
+    expect(mockDel).not.toHaveBeenCalled();
     const msg = JSON.parse(mockPublish.mock.calls[0]![1] as string) as Record<
       string,
       unknown
     >;
     expect(msg["teamWorkflowStatus"]).toBe("RUNNING");
+    // The board and the viewer show the query from `inputs.topic`.
+    expect(msg["inputs"]).toEqual({ topic: "The Future of AI Agents" });
     const agents = msg["agents"] as Array<{ agentId: string }>;
     expect(agents.some((a) => a.agentId === "searcher-0")).toBe(true);
   });
@@ -132,71 +131,21 @@ describe("ResearchStatePublisher", () => {
     expect(tasks[0]!.taskId).toBe("t1");
   });
 
-  it("searchPhaseComplete() maps error to BLOCKED and success to DONE", () => {
-    const indexByTaskId = new Map([
-      ["t1", 0],
-      ["t2", 1],
+  it("searchPhaseComplete() maps error to BLOCKED and success to DONE, without touching the assignee", () => {
+    pub.searchPhaseComplete([
+      { taskId: "t1", result: "ok" },
+      { taskId: "t2", error: "timeout" },
     ]);
-    pub.searchPhaseComplete(
-      [
-        { taskId: "t1", result: "ok" },
-        { taskId: "t2", error: "timeout" },
-      ],
-      indexByTaskId,
-    );
     const msg = JSON.parse(mockPublish.mock.calls[0]![1] as string) as Record<
       string,
       unknown
     >;
-    const tasks = msg["tasks"] as Array<{ taskId: string; status: string }>;
+    const tasks = msg["tasks"] as Array<{ taskId: string; status: string; result?: string }>;
     expect(tasks.find((t) => t.taskId === "t1")!.status).toBe("DONE");
     expect(tasks.find((t) => t.taskId === "t2")!.status).toBe("BLOCKED");
-  });
-
-  it("searchPhaseComplete() attributes each result to its dispatch index even when results arrive out of order (C1)", () => {
-    // Dispatch order is t0,t1,t2 → searcher-0,searcher-1,searcher-2; but
-    // router.waitAll returns them in COMPLETION order (here, reversed).
-    const indexByTaskId = new Map([
-      ["t0", 0],
-      ["t1", 1],
-      ["t2", 2],
-    ]);
-    pub.searchPhaseComplete(
-      [
-        { taskId: "t2", result: "c" },
-        { taskId: "t1", result: "b" },
-        { taskId: "t0", result: "a" },
-      ],
-      indexByTaskId,
-    );
-    const msg = JSON.parse(mockPublish.mock.calls[0]![1] as string) as Record<
-      string,
-      unknown
-    >;
-    const tasks = msg["tasks"] as Array<{
-      taskId: string;
-      assignedToAgentId: string;
-    }>;
-    // Each result keeps its dispatch-order searcher card despite the reversed order.
-    expect(
-      tasks.find((t) => t.taskId === "t0")!.assignedToAgentId,
-    ).toBe("searcher-0");
-    expect(
-      tasks.find((t) => t.taskId === "t1")!.assignedToAgentId,
-    ).toBe("searcher-1");
-    expect(
-      tasks.find((t) => t.taskId === "t2")!.assignedToAgentId,
-    ).toBe("searcher-2");
-  });
-
-  it("searchPhaseComplete() falls back to searcher-0 for an unknown taskId", () => {
-    pub.searchPhaseComplete([{ taskId: "ghost", result: "ok" }], new Map());
-    const msg = JSON.parse(mockPublish.mock.calls[0]![1] as string) as Record<
-      string,
-      unknown
-    >;
-    const tasks = msg["tasks"] as Array<{ assignedToAgentId: string }>;
-    expect(tasks[0]!.assignedToAgentId).toBe("searcher-0");
+    expect(tasks.find((t) => t.taskId === "t2")!.result).toBe("Failed: timeout");
+    // The replica that ran the task published itself as the assignee (WF-V-05).
+    for (const t of tasks) expect(t).not.toHaveProperty("assignedToAgentId");
   });
 
   it("aggregatingPhase() publishes DOING task for writer", () => {
@@ -242,6 +191,9 @@ describe("ResearchStatePublisher", () => {
     }>;
     expect(tasks[0]!.status).toBe("AWAITING_VALIDATION");
     expect(tasks[0]!.result).toContain("CONDITIONAL");
+    // WF-12: the card carries the editor's verdict, not a "Governance" label.
+    expect(tasks[0]!.result).toBe("Editorial: CONDITIONAL | Accuracy: 7/10 — Awaiting human decision");
+    expect(tasks[0]!.result).not.toContain("Governance");
     expect(tasks[0]!.result).toContain("7/10");
     expect(tasks[0]!.assignedToAgentId).toBe("editor");
   });
@@ -286,6 +238,18 @@ describe("ResearchStatePublisher", () => {
 
 describe("global-research ResearchStatePublisher — emergency STOP ALL (ADR-025)", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("reviewStopped(reason) closes the pending card with that reason (WF-11), default keeps the emergency text", () => {
+    const pub = new ResearchStatePublisher("redis://localhost:6379");
+    pub.awaitingHITL("edit-1", "REVISE", "6/10");
+    pub.reviewStopped("Budget guard stopped the run: no decision was taken");
+    const msg = JSON.parse(mockPublish.mock.calls.at(-1)![1] as string) as { tasks: Array<{ result: string }> };
+    expect(msg.tasks[0]!.result).toBe("Budget guard stopped the run: no decision was taken");
+    pub.awaitingHITL("edit-2", "REVISE", "6/10");
+    pub.reviewStopped();
+    const msg2 = JSON.parse(mockPublish.mock.calls.at(-1)![1] as string) as { tasks: Array<{ result: string }> };
+    expect(msg2.tasks[0]!.result).toBe("Emergency stop: no decision was taken");
+  });
 
   it("reviewStopped() marks the pending review task STOPPED, once; nothing when none is pending", () => {
     const pub = new ResearchStatePublisher("redis://localhost:6379");
