@@ -6,6 +6,93 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-11-06
+
+A correctness and security release from a full audit of the runtime, gateway, board, viewers, examples, packaging and documentation (157 findings, 7 areas). No new feature and no new dependency. Every fix is covered by a test that failed before it. Four changes need a word from operators, listed under **Migration** in [MIGRATION.md](MIGRATION.md#211--212-audit-fixes).
+
+### Fixed
+
+**Redis, Kafka and configuration**
+
+- A password, user, database number or `rediss://` scheme in `REDIS_URL` now reaches the BullMQ task queues (workers, gateway dispatch and completion drivers), not only the state and control clients. Before, a password-protected or TLS Redis ran no tasks while the board looked healthy.
+- `REDIS_TLS_*` (client certificate, CA) now reach every Redis client: state publisher, control channel, HITL, A2A task store, status tracker, checkpoint store, `npm run stop-all`, the gateway sockets and the global-research searcher; `KAFKA_SSL_*` reach the worker and completion Kafka drivers. One helper, `src/shared/redis-connection.ts`, builds all of them. The gateway socket clients also honour `TLS_REJECT_UNAUTHORIZED`.
+- Kafka task mailboxes (`kaiban-agents-<id>`) are read from the beginning when the consumer group has no committed offset, so tasks published before a new agent joined are no longer skipped. The compose files set `KAFKA_NUM_PARTITIONS=4` so scaled replicas of one agent share a queue.
+- `AGENT_TIMEOUT_MS` is parsed the same way on the gateway and the worker: a whole number from 1 to 2 147 483 647; anything else (`0`, `5m`, `1e6`) logs a warning and uses the 5-minute default. The gateway's wait with `RETRY_ON_TIMEOUT` is capped at the Node timer limit.
+- `CIRCUIT_BREAKER_THRESHOLD` and `CIRCUIT_BREAKER_WINDOW_MS` must be whole numbers of at least 1 (otherwise the default applies with a warning); the breaker constructor rejects bad values.
+- `MESSAGING_DRIVER=amqp` fails at gateway boot (the driver is an unimplemented seam) instead of dispatching to Redis and failing every request.
+- A policy file with a mistyped `matchAny`, `operation` or `agentId` is rejected when it is loaded, not when the first task reaches the rule.
+
+**Emergency STOP ALL and the control channel**
+
+- A signed STOP ALL is no longer dropped when the issuing host's clock differs by more than 30 s: the control channel checks the signature only (a replayed older stop stays a no-op).
+- With `NODE_ENV=production`, the control channel refuses to start without `CHANNEL_SIGNING_SECRET` (unless `ALLOW_INSECURE_PRODUCTION=true`); elsewhere it logs a warning that any Redis client could stop the node. `npm run stop-all` warns when the secret is unset.
+- The blog-team and global-research orchestrators no longer re-publish killed tasks as BLOCKED (and the agent as ERROR) after the worker published STOPPED: the phases pass the stop signal to their waits, and `CompletionRouter.waitAll` takes an optional `signal`.
+- Gateway: anonymous or failed `POST /control/stop-all` / `control:stop-all` requests no longer use up the operators' 5-per-10-s budget. Authentication runs first; the limit is per token subject; refused attempts have their own per-address bucket (30 per 10 s); STOP ALL is outside the shared 100/min bucket. Socket clients behind `TRUST_PROXY` are keyed by `X-Forwarded-For`.
+- Gateway: a socket message whose last argument is not a function no longer crashes the process; STOP ALL acks failures instead of leaving an unhandled rejection.
+- A task without a numeric `timestamp` is refused after a STOP ALL; a handler that throws synchronously no longer leaks an in-flight entry (STOP ALL reported tasks it had not aborted).
+
+**Worker runtime**
+
+- A handler result that arrives after a task timeout or a node stop is no longer published as `DONE`, and no longer resets the agent to `IDLE` while a newer attempt runs.
+- `stop()` (SIGTERM/SIGINT) settles a task whose handler ignores its abort signal; the task is dead-lettered as `actor_stopped`.
+- Both drivers skip a consumed message that is not a task payload (for example the JSON `null`) instead of a Kafka partition getting stuck in a retry loop.
+- The 64 KB outbound cap is measured on the serialized JSON, a long error no longer drops task inputs from a dead-letter record, and error and reason texts in a record are capped at 4 KB each.
+- A failed first subscribe in `CompletionRouter` rejects the waiting callers with the cause, is retried on the next `wait()`, and no longer raises an unhandled rejection that crashed the process.
+- The worker heartbeat no longer keeps a failed agent at ERROR on its old task; a worker's DONE delta no longer carries run-level `metadata`, which overwrote the board's run totals with one task's usage.
+- `WorkflowOrchestrator.memoize` accepts a producer that returns `undefined` (checkpointed as `null`); a resume no longer throws.
+- Signed HITL decisions waiting in the durable list verify for the list's 300 s lifetime (they were dropped after 30 s when the orchestrator started waiting late); a decision rejected for a bad signature or age is logged.
+
+**Gateway, A2A and MCP**
+
+- The fixed 30 s socket timeout no longer kills blocking A2A `message/send`, `message/stream` and MCP calls: `/a2a/rpc` and the MCP route use a long limit (at least 15 minutes, and the longest task wait plus 60 s); `POST /control/stop-all` keeps 30 s.
+- A2A and MCP `dispatch_task` refuse an `agentId` not in `AGENT_IDS` (`-32602`), so callers can no longer create unbounded queues and Redis connections.
+- Body parsing runs after the rate limit and per route (1 MB on A2A/MCP, 16 kB on STOP ALL); unknown paths are rate-limited; malformed or oversized bodies get a short JSON 400/413 instead of an HTML stack trace.
+- MCP sessions: idle sessions (30 min) are closed when a new one opens; above 200 live sessions `initialize` returns 503.
+- The Socket.io origin allowlist also applies to WebSocket connections; with no allowlist (development) any origin is accepted. `SlidingWindowRateLimiter` frees keys it will not see again and holds at most 100 000.
+- Gateway shutdown no longer waits for connected boards: board sockets are ended first, in-flight HTTP requests get 10 s, then the rest are cut (one open board used to make every shutdown time out and skip the telemetry flush).
+- With more than one gateway, boards receive each state update and STOP ALL acknowledgement once. `state:request` is limited to 5 per 10 s per connection. A board token valid for more than 24.8 days no longer disconnects the board after 1 ms.
+- The saved state replayed to boards no longer carries the previous run's metadata (tokens, cost, end time) and inputs into a new run. `AgentRegistry` compares expiry as instants and treats an unparsable `expiresAt` as expired.
+
+**KaibanJS bridge, models and telemetry**
+
+- `DistributedStateMiddleware` / `KaibanTeamBridge` now really stream a KaibanJS team to the board: the middleware subscribes to the team's store (the old `setState` patch never saw KaibanJS's own actions) and publishes board deltas, PII-stripped and signed; `listen()` reads them with the signature checked.
+- OpenTelemetry traces and metrics go to `<base>/v1/traces` and `<base>/v1/metrics` (both went to the one configured URL, so one signal was lost). `OTEL_EXPORTER_OTLP_ENDPOINT` is the OTLP base URL; a value ending in `/v1/traces` keeps working.
+- The owned LLM (actor-run tasks) passes the whole `llmConfig` to the model (temperature, topP, penalties, …), defaults `maxRetries` to 1 like KaibanJS, and a custom `ITokenProvider` reaches the model on the actor path.
+- Model pricing no longer prices `gpt-4` as `gpt-4o` or `gpt-4o-mini-search-preview` as `gpt-4o`: only a longer id that extends a known key matches (longest key wins); an unknown model takes the default with a one-time warning. A run with no `llmConfig` is priced as `gpt-4o-mini`.
+
+**Board and viewers**
+
+- A link can no longer send a board token to another server: the board honours `?gateway=` only for the configured gateway's origin when `VITE_BOARD_TOKEN` is set; the viewers ignore `?gateway=` when the token comes from `window.BOARD_TOKEN`.
+- Board: a refused, unconfirmed or impossible STOP ALL shows an alert next to the button (announced to screen readers); a rejected or expired token shows ERROR with the gateway's message; a session ended by the gateway says so; a new run no longer shows the previous run's tokens, cost and end time; the STOP ALL dialog and the task modal no longer reopen after a reconnect.
+- Board and viewers: the gateway snapshot is applied once per connect; heartbeats are no longer logged as events; the viewers' economics panel and "finished" highlight reset on a new run; the global-research viewer gets the CSP, referrer policy and SRI of the other viewers; text contrast meets WCAG AA; screen readers get each card's status and the task each HITL button decides.
+
+**Examples**
+
+- global-research: the writer receives each searcher's whole answer (bounded at 20 000 characters) instead of the first 500; invented `research://` URLs and random relevance scores are gone; results are labelled by sub-topic; a searcher restarted in place keeps its id; the searcher honours `AGENT_TIMEOUT_MS` / `RETRY_ON_TIMEOUT` and drains like other nodes; `AUTO_PUBLISH` is opt-in only; running totals are published after each phase.
+- global-research and blog-team: the review card is closed on the budget-stop and failure paths too; a failed revision wait marks the revision task BLOCKED.
+- `scripts/run-example.sh` starts the orchestrator in the foreground so the human-decision prompt works.
+
+**Packaging, compose, Helm and workflows**
+
+- Helm: both example charts installed an invalid Redis Deployment (the SPDX comment swallowed `apiVersion`); they now default to the published image (`ghcr.io/andreibesleaga/kaiban-distributed`, tag = `appVersion`) and gain `secrets.BOARD_JWT_SECRET`, `secrets.CHANNEL_SIGNING_SECRET` and `config.REDIS_URL`. Secrets are no longer described as double-encoded; the raw manifests ship `OPENROUTER_API_KEY` empty.
+- Docker Compose (root): `REDIS_PASSWORD` works end to end (URL and healthcheck); the worker receives the model keys and `LLM_MODEL`; Redis and Kafka are published on `127.0.0.1` only in every stack.
+- Release workflows fail unless they run on the tag `v<package.json version>`; a `v*-*` tag creates a prerelease. The packed tarball starts from an empty `dist/` and no longer carries 85 declaration maps; `smoke-consumer.sh` checks the tarball `LICENSE`. A `.dockerignore` keeps `.env`, `node_modules` and `.git` out of the image build.
+- Tests that could not fail now assert real behaviour (chaos retry e2e, PII log, telemetry warning, view output, retry back-off); the two scaling e2e tests count completions per task, and the Kafka one asserts load sharing across partitions.
+
+### Changed
+
+- `unwrapVerified(raw, { maxSkewMs })` takes an optional skew limit (new exported type `UnwrapOptions`); the default stays 30 s.
+- `validateTaskInput(params, allowedAgentIds?)` takes an optional allow-list; `createMcpHttpHandler(deps, limits?)` takes session limits; `GatewayApp` takes `longRequestTimeoutMs`; `SocketGateway` takes `trustProxy`.
+- `IStateMiddleware.attach` / `DistributedStateMiddleware.attach` take a subscribable store (`team.getStore()`), not a `setState` store.
+- `CompletionRouter.waitAll(taskIds, timeoutMs, label, signal?)`: with a signal, an abort rejects; without one, behaviour is unchanged.
+- New exports `otlpSignalUrls(endpoint)` and `UnwrapOptions`; `TlsConfig` and `loadTlsConfig` live in `src/infrastructure/security/tls-config.ts` (still exported from the root).
+- Socket.io dev default CORS origin is the string `"*"` (the former `["*"]` matched no origin). Task card accessible name: "View details for task: <title>, status <status>".
+- All GitHub Actions are pinned to commit SHAs; Dependabot ignores major versions and groups `@opentelemetry/*`; CI gains a `deploy-manifests` job (`docker compose config`, `helm lint`, `helm template` for every stack and chart).
+
+### Documentation
+
+- Corrections across README, SECURITY.md, the security reference, ASVS and COMPLIANCE checklists, HELM/KUBERNETES/GCP/AWS/RAILWAY/VERCEL guides, the KaibanJS guide, FEATURES, ACTOR_MODEL, ADR-007, ADR-017, ADR-025, MCP.md and `.env.example`: Redis password and TLS flow, OTLP base URL, control-channel signing and the production refusal, `sanitizeDelta` scope, `SEMANTIC_FIREWALL_LLM_URL` reserved, MCP dispatch limits, Kafka partitions and offset retention, `VITE_BOARD_TOKEN` as local-development only, board production headers, the gateway-resolution rule with a token, "after 3 attempts".
+
 ## [2.1.1] — 2026-11-04
 
 The two static HTML viewers (`examples/blog-team/viewer`, `examples/global-research/viewer`) now have the emergency STOP ALL that 2.1.0 gave only the React board. Additive; no new dependency; with the control plane off, the viewers behave as before.

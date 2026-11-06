@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import 'dotenv/config';
 import { hostname } from 'os';
-import { Redis } from 'ioredis';
 import { AgentActor, type TaskHandler } from '../../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import type { MessagePayload } from '../../src/infrastructure/messaging/interfaces';
@@ -15,6 +14,7 @@ import { searcherConfig, SEARCHER_QUEUE } from './team-config';
 import { assignSearcherId } from './searcher-id';
 import { buildSecurityDeps } from '../../src/shared';
 import { actorTimeoutOptionsFromEnv, registerWorkerDrain } from '../../src/shared/agent-node';
+import { createRedisClient } from '../../src/shared/redis-connection';
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 const CHAOS_MODE = process.env['CHAOS_MODE'] === 'true';
@@ -26,7 +26,7 @@ const CHAOS_MODE = process.env['CHAOS_MODE'] === 'true';
  */
 async function claimSearcherId(): Promise<string> {
   if (process.env['SEARCHER_ID']) return process.env['SEARCHER_ID'];
-  const tmp = new Redis(REDIS_URL);
+  const tmp = createRedisClient(REDIS_URL);
   try {
     return await assignSearcherId(tmp, hostname());
   } finally {

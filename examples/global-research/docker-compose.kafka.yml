@@ -60,6 +60,9 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      # Auto-created task topics get 4 partitions, so up to 4 replicas of one
+      # agent share a queue (one partition serves one consumer at a time).
+      KAFKA_NUM_PARTITIONS: '4'
     healthcheck:
       test:
         [

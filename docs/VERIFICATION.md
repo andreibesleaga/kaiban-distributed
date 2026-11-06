@@ -37,10 +37,10 @@ Commits: `e205845`→ … →`691e419` (see `git log`).
 ## Invariant / NFR guard map (§B1.2 / §B1.3) — each has a backing test
 | Invariant / NFR | Guard (representative) |
 | --- | --- |
-| I4 — workers never set `teamWorkflowStatus` | `tests/unit/examples/*-state-publisher.test.ts` |
+| I4 — workers never set `teamWorkflowStatus` | `tests/unit/state/agent-state-publisher-invariants.test.ts`, `tests/unit/examples/*-state-publisher.test.ts` |
 | I5 — state/HITL channels on Redis Pub/Sub regardless of driver | `tests/unit/state/distributedMiddleware.test.ts`, `tests/unit/gateway/SocketGateway-coverage.test.ts` |
 | `taskId` idempotency / at-least-once dedup | `tests/unit/federation/a2a-executor.test.ts`, `tests/unit/shared/completion-router.test.ts` |
-| Data caps (64 KB msg / 20 KB state result) | `tests/unit/actor/AgentActor-hardening.test.ts`, `tests/unit/federation/a2a-input-validation.test.ts` |
+| Data caps (64 KB msg / 20 KB state result) | `tests/unit/actor/AgentActor-outbound-cap.test.ts`, `tests/unit/state/output-sanitization.test.ts`, `tests/unit/federation/a2a-input-validation.test.ts` |
 | Single-active orchestrator / no-bottleneck (worker-scoped) | `tests/unit/shared/orchestrator*.test.ts` |
 | Security/governance/economics **default-OFF** | `tests/unit/governance/action-gate.test.ts`, `tests/unit/economics/cost-reservation.test.ts`, `tests/unit/main/config.test.ts` |
 | Hot-path enforcement (block → DLQ, no run) | `tests/unit/actor/AgentActor-edge.test.ts`, `tests/unit/shared/admission-gate.test.ts` |

@@ -4,4 +4,4 @@ name: kaiban-blog-team
 description: A Helm chart for deploying the KaibanJS Blog Team example
 type: application
 version: 0.1.0
-appVersion: "2.1.1"
+appVersion: "2.1.2"
