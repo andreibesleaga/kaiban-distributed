@@ -1038,3 +1038,27 @@ describe("global-research — a stop does not publish taskFailed (WF-03)", () =>
     expect(m.mockPub.searchPhaseComplete).not.toHaveBeenCalled();
   });
 });
+
+// ── UI-02: running totals between phases ──────────────────────────────────────
+
+describe("global-research — running totals reach the board after each phase (UI-02)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("every phase publishes the cumulative tokens and cost", async () => {
+    const m = makeMocks();
+    const ctx = makeCtx({ consolidatedDraft: "draft" });
+    const gov = { recommendation: "APPROVED", score: "9/10", text: "g" };
+    m.mockRouter.waitAll.mockResolvedValue([{ taskId: "s", result: parsedResult("found") }]);
+    m.mockRouter.wait.mockResolvedValue(parsedResult("Recommendation: PUBLISH\nCompliance Score: 9/10"));
+    const a = [m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never] as const;
+
+    await runSearchPhase(ctx, "q", 1, 1000, a[0], a[1], a[2], a[3]);
+    await runWritePhase(ctx, "q", 1000, a[0], a[1], a[2], a[3]);
+    await runGovernancePhase(ctx, "q", 1000, a[0], a[1], a[2], a[3]);
+    await runEditorialPhase(ctx, "q", gov, 1000, a[0], a[1], a[2], a[3]);
+    expect(m.mockPub.publishMetadata).toHaveBeenCalledTimes(4);
+    // 4 tasks x (50 + 100) tokens, cumulative and never decreasing
+    const totals = m.mockPub.publishMetadata.mock.calls.map((c) => (c[0] as { totalTokens: number }).totalTokens);
+    expect(totals).toEqual([150, 300, 450, 600]);
+  });
+});

@@ -51,6 +51,11 @@ function failUnlessStopped(err: Error, signal: AbortSignal | undefined, report: 
   throw err;
 }
 
+/** Publish the run's running totals so the board's panel is current between phases. */
+function publishTotals(pub: ResearchStatePublisher, ctx: ResearchContext): void {
+  pub.publishMetadata({ totalTokens: ctx.metadata.totalTokens, estimatedCost: ctx.metadata.estimatedCost });
+}
+
 // ── Sub-topic builder ─────────────────────────────────────────────────────────
 
 export function buildSubTopics(query: string, n: number): string[] {
@@ -116,6 +121,7 @@ export async function runSearchPhase(
 
   if (ctx.rawSearchData.length === 0) throw new Error('All searcher tasks failed — no data to synthesise');
 
+  publishTotals(pub, ctx);
   pub.searchPhaseComplete(results, indexByTaskId);
 }
 
@@ -154,6 +160,7 @@ export async function runWritePhase(
   ctx.metadata.activeNodes.push('writer');
   pub.taskDone(taskId, 'writer');
   runLog.logTask('write', taskId, 'writer', { ...parsed, answer: parsed.answer });
+  publishTotals(pub, ctx);
 }
 
 // ── Step 3 — Governance review ────────────────────────────────────────────────
@@ -187,6 +194,7 @@ export async function runGovernancePhase(
   ctx.metadata.activeNodes.push('reviewer');
   pub.taskDone(taskId, 'reviewer');
   runLog.logTask('governance', taskId, 'reviewer', { ...parsed, answer: text });
+  publishTotals(pub, ctx);
 
   const recommendation = parseRecommendation(text);
   const score          = parseScore(text, 'Compliance');
@@ -228,6 +236,7 @@ export async function runEditorialPhase(
   ctx.metadata.activeNodes.push('editor');
   pub.awaitingHITL(taskId, parseRecommendation(text), parseScore(text, 'Accuracy'));
   runLog.logTask('editorial', taskId, 'editor', { ...parsed, answer: text });
+  publishTotals(pub, ctx);
 
   return { taskId, recommendation: parseRecommendation(text), score: parseScore(text, 'Accuracy'), text };
 }
@@ -273,6 +282,7 @@ export async function runRevisionPhase(deps: RevisionDeps): Promise<void> {
   ctx.consolidatedDraft = parsed.answer || raw;
   ctx.metadata.activeNodes.push('writer-revision');
   runLog.logTask('revision', taskId, 'writer', { ...parsed, answer: parsed.answer });
+  publishTotals(pub, ctx);
 
   pub.awaitingHITL(taskId, 'PUBLISH', 'N/A');
 

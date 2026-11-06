@@ -419,7 +419,9 @@ export class AgentStatePublisher {
                 : {}),
             },
           ],
-          ...(tokenMeta ? { metadata: tokenMeta } : {}),
+          // No run-level `metadata` here: this task's usage rides on the task card
+          // (`tokens` / `cost`); the orchestrator owns the run totals, and a
+          // per-task `metadata` would overwrite them on the board.
         });
 
         return result;
