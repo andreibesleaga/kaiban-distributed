@@ -28,6 +28,7 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import Redis from "ioredis";
 
 import { BullMQDriver } from "../../src/infrastructure/messaging/bullmq-driver";
+import { createDriver } from "../../src/shared/driver-factory";
 import { AgentActor } from "../../src/application/actor/AgentActor";
 import { HeuristicFirewall } from "../../src/infrastructure/security/heuristic-firewall";
 import { SlidingWindowBreaker } from "../../src/infrastructure/security/sliding-window-breaker";
@@ -782,6 +783,40 @@ describe("5. Redis Password Auth", () => {
 
     await pub.disconnect();
     await sub.disconnect();
+  });
+
+  it("createDriver() (the production path) authenticates with the password in REDIS_URL", async () => {
+    // The tests above build their own connection; this one goes through the
+    // factory every worker and the gateway use, so a driver that drops the
+    // password from REDIS_URL fails here with NOAUTH.
+    const prevDriver = process.env["MESSAGING_DRIVER"];
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    const pub = createDriver();
+    const sub = createDriver();
+    try {
+      const queueName = `sec-pw-factory-${randomUUID().slice(0, 8)}`;
+      const agentId = randomUUID().slice(0, 8);
+      let completed = false;
+      const actor = new AgentActor(agentId, sub, queueName, async () => "ok");
+      await actor.start();
+      await new Promise((r) => setTimeout(r, 200));
+      await pub.subscribe(COMPLETED, async (p) => {
+        if (p.agentId === agentId) completed = true;
+      });
+      await pub.publish(queueName, {
+        taskId: `pw-factory-${agentId}`,
+        agentId,
+        data: { instruction: "Redis auth test through createDriver" },
+        timestamp: Date.now(),
+      });
+      await waitFor(() => completed, 5000);
+      expect(completed).toBe(true);
+    } finally {
+      if (prevDriver === undefined) delete process.env["MESSAGING_DRIVER"];
+      else process.env["MESSAGING_DRIVER"] = prevDriver;
+      await pub.disconnect();
+      await sub.disconnect();
+    }
   });
 });
 
