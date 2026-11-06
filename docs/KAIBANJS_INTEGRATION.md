@@ -108,7 +108,7 @@ The two systems are complementary:
 | `createKaibanTaskHandler()` | Wraps a KaibanJS Agent into an AgentActor-compatible function |
 | `KaibanTeamBridge` | Wraps a full KaibanJS Team and syncs its Zustand state to the board |
 | `AgentStatePublisher` | Publishes IDLE/EXECUTING/DONE state to Redis Pub/Sub per worker; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
-| `DistributedStateMiddleware` | Intercepts Zustand `setState()` and publishes diffs |
+| `DistributedStateMiddleware` | Subscribes to the team's Zustand store and publishes each change as a signed board delta |
 | `GatewayApp` | HTTP gateway: health, agent-card, A2A RPC |
 | `SocketGateway` | Socket.io server + Redis Pub/Sub subscriber |
 | `MCPFederationClient` | Wraps any stdio MCP server for tool use |
@@ -315,7 +315,7 @@ const bridge = new KaibanTeamBridge({
   tasks: [researchTask, writeTask],
 }, middleware);
 
-// Every Zustand setState() → Redis Pub/Sub → Socket.io → board
+// Every store change → board delta → Redis Pub/Sub → Socket.io → board
 const result = await bridge.start({ topic: 'AI Agents in 2025' });
 console.log(result.status, result.result);
 ```
@@ -341,30 +341,28 @@ export class KaibanTeamBridge {
     this.middleware = middleware ?? null;
 
     if (this.middleware) {
-      const store = this.team.getStore() as unknown as { setState: (p: Record<string, unknown>) => void };
-      this.middleware.attach(store);  // intercepts ALL setState() calls
+      // KaibanJS store actions call the `set` Zustand gave them at creation, so
+      // patching `setState` would never see them; `subscribe` sees every change.
+      const store = this.team.getStore() as unknown as Parameters<IStateMiddleware['attach']>[0];
+      this.middleware.attach(store);  // subscribes to ALL store changes
     }
   }
 }
 ```
 
-**`DistributedStateMiddleware` — how it intercepts Zustand:**
+**`DistributedStateMiddleware` — how it streams the Zustand store:**
 
 ```typescript
 // From src/adapters/state/distributedMiddleware.ts
-public attach(store: ZustandStore): ZustandStore {
-  const originalSet = store.setState.bind(store);
-
-  store.setState = async (partial, replace) => {
-    originalSet(partial, replace);  // apply locally first
-
-    const sanitized = sanitizeDelta(partial);  // strip PII fields
-    await this.driver.publish(this.channelName, {
-      taskId: 'global-state', agentId: 'system',
-      timestamp: Date.now(),
-      data: { stateUpdate: sanitized },
-    });
-  };
+public attach(store: ObservableStore): ObservableStore {
+  this.unsubscribers.push(
+    store.subscribe((state, prev) => {
+      const delta = toBoardDelta(state, prev);   // { teamWorkflowStatus?, agents?, tasks? }
+      if (Object.keys(delta).length === 0) return;
+      this.redis.publish(this.channelName, wrapSigned(sanitizeDelta(delta)));  // strip PII, sign
+    }),
+  );
+  return store;
 }
 ```
 
@@ -1971,7 +1969,7 @@ const tasks = [
 
 const middleware = new DistributedStateMiddleware('redis://localhost:6379');
 
-// Every Zustand setState() → kaiban-state-events → SocketGateway → board
+// Every store change → board delta → kaiban-state-events → SocketGateway → board
 const bridge = new KaibanTeamBridge({ name: 'Blog Team', agents, tasks }, middleware);
 
 // Subscribe to state changes locally too

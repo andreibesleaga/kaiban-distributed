@@ -473,7 +473,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 **Channels, state & checkpoint/resume**
 7. Five canonical channels with the durable/ephemeral split (durable broker vs. Redis Pub/Sub).
 8. `AgentStatePublisher` (IDLE/THINKING/EXECUTING/ERROR + task deltas, 15 s heartbeat) and `OrchestratorStatePublisher` (workflow lifecycle).
-9. `DistributedStateMiddleware` intercepts Zustand `setState()` and publishes PII-stripped deltas.
+9. `DistributedStateMiddleware` subscribes to the KaibanJS team's Zustand store and publishes each change as a signed, PII-stripped board delta.
 10. Redis checkpoint→resume in the single-active orchestrator; idempotent re-advance by `taskId`.
 11. DLQ (`kaiban-events-failed`) with a typed taxonomy and safe replay (skips non-retryable poison).
 
