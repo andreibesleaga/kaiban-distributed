@@ -6,7 +6,7 @@
 
 import type { IAgentParams } from 'kaibanjs';
 import readline from 'readline';
-import { Redis } from 'ioredis';
+import type { Redis } from 'ioredis';
 import { z } from 'zod';
 
 // @public
@@ -115,7 +115,7 @@ export class CompletionRouter {
     // Warning: (ae-forgotten-export) The symbol "IMessagingDriver" needs to be exported by the entry point index.d.ts
     constructor(completedDriver: IMessagingDriver, failedDriver?: IMessagingDriver);
     wait(taskId: string, timeoutMs: number, label: string, signal?: AbortSignal): Promise<string>;
-    waitAll(taskIds: string[], timeoutMs: number, label: string): Promise<Array<{
+    waitAll(taskIds: string[], timeoutMs: number, label: string, signal?: AbortSignal): Promise<Array<{
         taskId: string;
         result?: string;
         error?: string;
@@ -540,8 +540,8 @@ export type WorkflowStopReason = "budget_exceeded";
 
 // Warnings were encountered during analysis:
 //
-// dist/src/shared/build-security-deps.d.ts:26:5 - (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
-// dist/src/shared/build-security-deps.d.ts:27:5 - (ae-forgotten-export) The symbol "ITokenProvider" needs to be exported by the entry point index.d.ts
+// src/shared/build-security-deps.ts:14:4 - (ae-forgotten-export) The symbol "AgentActorDeps" needs to be exported by the entry point index.d.ts
+// src/shared/build-security-deps.ts:15:5 - (ae-forgotten-export) The symbol "ITokenProvider" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

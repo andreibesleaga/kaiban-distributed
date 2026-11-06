@@ -147,12 +147,12 @@ describe("channel-signing", () => {
       const raw = wrapSigned({ x: "durable" });
       vi.advanceTimersByTime(120_000);
       expect(unwrapVerified(raw)).toBeNull();
-      expect(unwrapVerified(raw, 300_000)).toEqual({ x: "durable" });
+      expect(unwrapVerified(raw, { maxSkewMs: 300_000 })).toEqual({ x: "durable" });
       vi.advanceTimersByTime(200_000);
-      expect(unwrapVerified(raw, 300_000)).toBeNull();
+      expect(unwrapVerified(raw, { maxSkewMs: 300_000 })).toBeNull();
       const tampered = JSON.parse(raw) as Record<string, unknown>;
       tampered["payload"] = { x: "forged" };
-      expect(unwrapVerified(JSON.stringify(tampered), 300_000)).toBeNull();
+      expect(unwrapVerified(JSON.stringify(tampered), { maxSkewMs: 300_000 })).toBeNull();
     });
 
     it("accepts a message that is exactly within the 30 s window", () => {

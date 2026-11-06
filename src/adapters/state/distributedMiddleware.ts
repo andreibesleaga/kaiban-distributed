@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Redis } from "ioredis";
 import { createRedisClient } from "../../shared/redis-connection";
-import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import {
   unwrapVerified,
   wrapSigned,
