@@ -12,8 +12,8 @@
  *     abort the remaining cleanup (a failed flush must not skip closing drivers).
  *   - **deadline-bounded** — the whole sequence races a single `deadlineMs`
  *     timer; once it fires, in-flight and remaining steps are abandoned and
- *     `timedOut: true` is returned. Each step also observes the *remaining*
- *     budget, so one hung step consumes the deadline rather than its own copy.
+ *     `timedOut: true` is returned. The deadline is shared: one hung step
+ *     consumes the whole budget, and a step receives no budget of its own.
  *
  * It is pure orchestration over caller-supplied steps — no driver import (layer
  * boundary), no state/HITL channel writes (I4/I5 unaffected).

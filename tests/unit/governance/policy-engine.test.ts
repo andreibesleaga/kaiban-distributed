@@ -238,6 +238,22 @@ describe("loadPolicySet", () => {
     expect(() => loadPolicySet(yaml)).toThrow(/effect/i);
   });
 
+  it.each([
+    ["matchAny: rm -rf", /matchAny/],
+    ["matchAny: [123]", /matchAny/],
+    ["operation: 5", /operation/],
+    ["agentId: [a]", /agentId/],
+  ])("throws at load time for a mistyped field (%s)", (line, message) => {
+    const yaml = `default: allow\nrules:\n  - id: r1\n    effect: block\n    ${line}\n`;
+    expect(() => loadPolicySet(yaml)).toThrow(message);
+  });
+
+  it("accepts string operation, agentId and a list of strings", () => {
+    const yaml =
+      "default: allow\nrules:\n  - id: r1\n    effect: block\n    operation: run\n    agentId: a\n    matchAny: [x, y]\n";
+    expect(loadPolicySet(yaml).rules).toHaveLength(1);
+  });
+
   it("accepts the shipped example policies.yml", () => {
     const text = readFileSync(
       join(__dirname, "../../../src/governance/policies.yml"),
