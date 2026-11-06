@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { KafkaDriver } from "../../src/infrastructure/messaging/kafka-driver";
 import { AgentActor } from "../../src/application/actor/AgentActor";
+import { Kafka } from "kafkajs";
 import { randomUUID } from "crypto";
 
 const KAFKA_BROKERS = (process.env["KAFKA_BROKERS"] ?? "localhost:9092").split(
@@ -25,12 +26,19 @@ describe("E2E: Horizontal Scaling & Concurrency (Kafka)", () => {
     });
     drivers.push(oracleDriver);
 
-    const completedTasks = new Set<string>();
+    // Completions per taskId: a duplicate shows up as a count above 1.
+    // Filter to this run's task ids so other runs on the shared channel don't count.
+    const RUN_ID = randomUUID().slice(0, 8);
+    const completions = new Map<string, number>();
     const processingAgents = new Set<string>();
 
-    // Listen for completions
     await oracleDriver.subscribe("kaiban-events-completed", async (payload) => {
-      completedTasks.add(payload.taskId);
+      if (payload.taskId.startsWith(`burst-task-${RUN_ID}-`)) {
+        completions.set(
+          payload.taskId,
+          (completions.get(payload.taskId) ?? 0) + 1,
+        );
+      }
     });
 
     // 2. Setup multiple cloned agents (identical agent ids and TOPIC names)
@@ -42,11 +50,24 @@ describe("E2E: Horizontal Scaling & Concurrency (Kafka)", () => {
 
     const NUM_INSTANCES = 3;
     const NUM_TASKS = 30; // 30 tasks ensures high likelihood of partition splitting if the topic has multiple partitions.
-    // Note: by default Docker Kafka creates 1 partition per topic, so competing consumers in Kafka
-    // won't parallelize unless the topic has >= 3 partitions. For a 1 partition topic, 1 consumer
-    // will do all the work while others idle. This still proves safely that tasks are not duplicated!
+    // Kafka creates one partition per auto-created topic, and one partition has
+    // one active consumer. Replicas share load only when partitions >= replicas,
+    // so the test creates the task topic with NUM_INSTANCES partitions first.
 
     const QUEUE_NAME = `e2e-scaled-topic-${randomUUID()}`;
+    const admin = new Kafka({
+      clientId: `admin-${randomUUID()}`,
+      brokers: KAFKA_BROKERS,
+    }).admin();
+    await admin.connect();
+    try {
+      await admin.createTopics({
+        waitForLeaders: true,
+        topics: [{ topic: QUEUE_NAME, numPartitions: NUM_INSTANCES }],
+      });
+    } finally {
+      await admin.disconnect();
+    }
     const AGENT_ID = "e2e-scaled-agent";
 
     const instances: AgentActor[] = [];
@@ -82,7 +103,7 @@ describe("E2E: Horizontal Scaling & Concurrency (Kafka)", () => {
     for (let i = 0; i < NUM_TASKS; i++) {
       publishPromises.push(
         oracleDriver.publish(QUEUE_NAME, {
-          taskId: `burst-task-${i}`,
+          taskId: `burst-task-${RUN_ID}-${i}`,
           agentId: AGENT_ID,
           data: { instruction: `do work ${i}` },
           timestamp: Date.now(),
@@ -92,24 +113,23 @@ describe("E2E: Horizontal Scaling & Concurrency (Kafka)", () => {
 
     await Promise.all(publishPromises);
 
-    // 4. Wait for all messages to be processed.
-    // Wait max 30 seconds.
+    // 4. Wait for all messages to be processed (max 30 s), then a grace period so
+    // a late duplicate would be counted too.
     let elapsed = 0;
-    while (completedTasks.size < NUM_TASKS && elapsed < 30000) {
+    while (completions.size < NUM_TASKS && elapsed < 30000) {
       await new Promise((r) => setTimeout(r, 200));
       elapsed += 200;
     }
-
-    console.log(
-      `[Kafka Horizontal Scaling Trace] Completed: ${completedTasks.size}/${NUM_TASKS}`,
-    );
+    await new Promise((r) => setTimeout(r, 2000));
 
     // 5. Assertions
-    // All tasks must have completed EXACTLY once
-    expect(completedTasks.size).toBe(NUM_TASKS);
+    // Every task completed EXACTLY once (a Map of counts, not a Set).
+    expect(completions.size).toBe(NUM_TASKS);
+    for (const [taskId, count] of completions) {
+      expect({ taskId, count }).toEqual({ taskId, count: 1 });
+    }
 
-    // As noted above, since dynamic topics might default to 1 partition, we don't strictly assert `processingAgents.size > 1` here
-    // unless we know the topic has multiple partitions. But we CAN assert NO duplicate handling occurred (each task completed once).
-    expect(processingAgents.size).toBeGreaterThan(0);
+    // With NUM_INSTANCES partitions the replicas share the load.
+    expect(processingAgents.size).toBeGreaterThan(1);
   }, 60000);
 });
