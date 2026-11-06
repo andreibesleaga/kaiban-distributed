@@ -42,7 +42,7 @@ function setup(handler: (p: MessagePayload) => Promise<unknown>): {
   };
   const actor = new AgentActor("a", driver, "q", handler);
   return {
-    run: async () => {
+    run: async (): Promise<void> => {
       await actor.start();
       await h({
         taskId: "t",

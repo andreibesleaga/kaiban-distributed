@@ -588,4 +588,16 @@ describe("CompletionRouter — a failed subscribe", () => {
     );
     expect(unhandled).toEqual([]);
   });
+
+  it("reports a non-Error rejection by its text", async () => {
+    const driver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn().mockRejectedValue("plain text failure"),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    await expect(new CompletionRouter(driver).wait("t", 60_000, "x")).rejects.toThrow(
+      /plain text failure/,
+    );
+  });
 });

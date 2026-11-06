@@ -65,6 +65,14 @@ export interface StopAllDeps {
   err?: (line: string) => void;
 }
 
+/** Signing nodes ignore an unsigned stop, so say so before sending one. */
+function warnIfUnsigned(env: Env, err: (line: string) => void): void {
+  if (env["CHANNEL_SIGNING_SECRET"]) return;
+  err(
+    "warning: CHANNEL_SIGNING_SECRET is not set; nodes that sign their channels will ignore this stop.",
+  );
+}
+
 /** Run the CLI; resolves with the exit code (0 issued, 1 failed). */
 export async function runStopAll(
   argv: string[],
@@ -83,11 +91,7 @@ export async function runStopAll(
     out(STOP_ALL_USAGE);
     return 0;
   }
-  if (!deps.env["CHANNEL_SIGNING_SECRET"]) {
-    err(
-      "warning: CHANNEL_SIGNING_SECRET is not set; nodes that sign their channels will ignore this stop.",
-    );
-  }
+  warnIfUnsigned(deps.env, err);
   const redis = deps.connect(deps.env["REDIS_URL"] ?? "redis://localhost:6379");
   try {
     const cmd = createStopAllCommand(

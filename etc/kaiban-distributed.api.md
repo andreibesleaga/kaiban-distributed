@@ -128,6 +128,9 @@ export const AGENT_CARD_PATH = ".well-known/agent-card.json";
 // @public
 export const AGENT_CHANNEL_PREFIX = "kaiban-agents-";
 
+// @public
+export const AGENT_MAILBOX_PREFIX = "kaiban-agents-";
+
 // @public (undocumented)
 export class AgentActor {
     constructor(id: string, driver: IMessagingDriver, queueName: string, taskHandler?: TaskHandler, deps?: AgentActorDeps);
@@ -1554,7 +1557,7 @@ export interface TelemetryConfig {
     serviceName: string;
 }
 
-// @public (undocumented)
+// @public
 export interface TlsConfig {
     // (undocumented)
     ca: Buffer;
@@ -1584,8 +1587,13 @@ export const UNLIMITED: number;
 // @public
 export const UNLIMITED_SENTINEL = "unlimited";
 
+// @public (undocumented)
+export interface UnwrapOptions {
+    maxSkewMs?: number;
+}
+
 // @public
-export function unwrapVerified(raw: string): Record<string, unknown> | null;
+export function unwrapVerified(raw: string, opts?: UnwrapOptions): Record<string, unknown> | null;
 
 // @public
 export interface ValidatedTaskInput {

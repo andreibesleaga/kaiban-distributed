@@ -83,7 +83,7 @@ function capDataSize(data: Record<string, unknown>): Record<string, unknown> {
   if (jsonBytes(data) <= MAX_PUBLISH_DATA_LEN) return data;
   const capped = { ...data, result: "", _truncated: true };
   const budget = MAX_PUBLISH_DATA_LEN - jsonBytes(capped);
-  let result = String(data["result"] ?? "");
+  let result = String(data["result"]);
   let rawLimit = Math.max(budget, 0);
   // Each raw byte encodes to at least one JSON byte, so cutting the excess off the
   // raw limit always makes progress and ends within a few rounds.
@@ -508,9 +508,10 @@ export class AgentActor {
     // when the handler ignores its signal (ES-12); the handler's late result has
     // no awaiter and is dropped.
     const abortPromise = new Promise<never>((_, reject) => {
+      // Every abort of this controller (timeout, emergency stop, node stop) carries a
+      // NonRetryableError, so the task ends on the first attempt that sees it.
       controller.signal.addEventListener("abort", () => {
-        const reason: unknown = controller.signal.reason;
-        if (reason instanceof NonRetryableError) reject(reason);
+        reject(controller.signal.reason as NonRetryableError);
       });
     });
     try {

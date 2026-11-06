@@ -46,12 +46,7 @@ interface TaskState {
   taskId: string;
   title: string;
   status:
-    | "TODO"
-    | "DOING"
-    | "DONE"
-    | "BLOCKED"
-    | "AWAITING_VALIDATION"
-    | "STOPPED";
+    "TODO" | "DOING" | "DONE" | "BLOCKED" | "AWAITING_VALIDATION" | "STOPPED";
   assignedToAgentId: string;
   result?: string;
   tokens?: number;
@@ -168,7 +163,10 @@ export class AgentStatePublisher {
       );
     }
     const taskUsed = this.taskTokensUsed.get(taskId) ?? 0;
-    if (this.maxTaskTokenBudget !== null && taskUsed >= this.maxTaskTokenBudget) {
+    if (
+      this.maxTaskTokenBudget !== null &&
+      taskUsed >= this.maxTaskTokenBudget
+    ) {
       throw new BudgetExceededError(
         `Task token budget exceeded before task ${taskId}: ` +
           `${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}`,
@@ -196,7 +194,10 @@ export class AgentStatePublisher {
       const oldest = this.taskTokensUsed.keys().next().value as string;
       this.taskTokensUsed.delete(oldest);
     }
-    if (this.maxTaskTokenBudget !== null && taskUsed >= this.maxTaskTokenBudget) {
+    if (
+      this.maxTaskTokenBudget !== null &&
+      taskUsed >= this.maxTaskTokenBudget
+    ) {
       return new BudgetExceededError(
         `Task token budget exceeded: ${taskUsed} >= ${formatCap(this.maxTaskTokenBudget)}${suffix}`,
         "task_token_budget_exceeded",
@@ -225,9 +226,7 @@ export class AgentStatePublisher {
     // (the middleware path already sanitizes via DistributedStateMiddleware).
     this.redis
       .publish(STATE_CHANNEL, wrapSigned(sanitizeDelta(delta)))
-      .catch((err: unknown) =>
-        log.error({ err }, "Failed to publish state"),
-      );
+      .catch((err: unknown) => log.error({ err }, "Failed to publish state"));
   }
 
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -362,20 +361,7 @@ export class AgentStatePublisher {
         });
 
         const result = await handler(payload, signal);
-        const stopped = emergencyAbort(signal);
-        if (stopped) {
-          // A handler that ignored an emergency stop returned late (ES-12):
-          // its tokens were spent and count, but it never shows as DONE.
-          this.countLateTokens(payload.taskId, result);
-          throw stopped;
-        }
-
-        if (signal?.aborted) {
-          // The attempt was already ended (task timeout, node stop): the result is
-          // late, so it never shows as DONE and never resets the agent state.
-          this.countLateTokens(payload.taskId, result);
-          throw signal.reason;
-        }
+        this.rejectLateResult(payload.taskId, result, signal);
 
         // → DONE
         this.currentStatus = "IDLE";
@@ -386,7 +372,10 @@ export class AgentStatePublisher {
         // Token budget check (task cap, then agent cap); the breach is
         // non-retryable so the paid attempt is the only one.
         if (tokenMeta) {
-          const breach = this.accountTokens(payload.taskId, tokenMeta.totalTokens);
+          const breach = this.accountTokens(
+            payload.taskId,
+            tokenMeta.totalTokens,
+          );
           if (breach) {
             pub({
               agents: [
@@ -508,11 +497,27 @@ export class AgentStatePublisher {
     err: unknown,
     signal?: AbortSignal,
   ): EmergencyStopError | null {
-    const stop = err instanceof EmergencyStopError ? err : emergencyAbort(signal);
+    const stop =
+      err instanceof EmergencyStopError ? err : emergencyAbort(signal);
     if (!stop) return null;
     if (stop !== err) this.accountFailedAttempt(payload.taskId, err);
     this.publishStopped(payload);
     return stop;
+  }
+
+  /**
+   * A handler that returns after its attempt was ended (emergency stop, task
+   * timeout, node stop) is late: its tokens were spent and count, but the result
+   * never shows as DONE and never resets the agent state (ES-12).
+   */
+  private rejectLateResult(
+    taskId: string,
+    result: unknown,
+    signal?: AbortSignal,
+  ): void {
+    if (!signal?.aborted) return;
+    this.countLateTokens(taskId, result);
+    throw emergencyAbort(signal) ?? signal.reason;
   }
 
   /** Count a late result's tokens; a cap it reaches applies to the next task. */
@@ -535,7 +540,8 @@ export class AgentStatePublisher {
     const usage: Partial<AttemptUsage> | undefined = err.usage;
     const breach = this.accountTokens(
       taskId,
-      cleanSpendAmount(usage?.inputTokens) + cleanSpendAmount(usage?.outputTokens),
+      cleanSpendAmount(usage?.inputTokens) +
+        cleanSpendAmount(usage?.outputTokens),
       `failed attempt: ${err.message}`,
     );
     if (!breach) return err;
