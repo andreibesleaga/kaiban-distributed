@@ -1,8 +1,8 @@
 name: CI
 
 # Fast quality + security gates on every push/PR. Heavy e2e (Redis/Kafka) and
-# chaos/mutation/bench run in nightly.yml. Actions use version tags; Dependabot
-# (github-actions) + a follow-up SHA-pin pass harden these further.
+# chaos/mutation/bench run in nightly.yml. Actions are pinned to commit SHAs (the
+# version is in the trailing comment); Dependabot (github-actions) keeps them current.
 
 on:
   push:
@@ -22,8 +22,8 @@ jobs:
     name: Quality (lint · typecheck · 100% coverage · arch)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: "npm"
@@ -44,7 +44,7 @@ jobs:
       - name: Unit tests + coverage (enforced 100% of src/**)
         run: npm run test:coverage
       - name: Upload coverage report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: coverage
@@ -57,8 +57,8 @@ jobs:
       run:
         working-directory: board
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: "npm"
@@ -81,10 +81,10 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: "npm"
@@ -104,18 +104,18 @@ jobs:
         # --ignore-npm-errors: `npm ls` exits non-zero on a harmless dev-only peer
         # mismatch (madge→precinct wants TypeScript 5.x while the project pins 6.x);
         # the installed tree is valid, so the SBOM is still complete and accurate.
-        run: npx --yes @cyclonedx/cyclonedx-npm@latest --ignore-npm-errors --output-format JSON --spec-version 1.6 --output-file sbom.json
+        run: npx --yes @cyclonedx/cyclonedx-npm@6.0.1 --ignore-npm-errors --output-format JSON --spec-version 1.6 --output-file sbom.json
       - name: Upload SBOM
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-cyclonedx
           path: sbom.json
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: OSV-Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@v2.7.0
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         continue-on-error: true
         with:
           scan-args: |-
@@ -130,7 +130,7 @@ jobs:
         # unguarded upload then adds a bogus second failure ("Path does not
         # exist: osv.sarif") that masks the real one.
         if: always() && hashFiles('osv.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: osv.sarif
           category: osv-scanner
@@ -142,11 +142,24 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: github/codeql-action/init@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: javascript-typescript
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+
+  deploy-manifests:
+    name: Deploy manifests (compose config · helm lint · helm template)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.19.0
+      - name: Render and lint compose files and Helm charts
+        run: bash scripts/check-deploy-manifests.sh
 
   docker:
     name: Docker build + image scan (Trivy)
@@ -156,9 +169,9 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: false
@@ -167,7 +180,7 @@ jobs:
       # Blocking gate: fail the build on a FIXABLE CRITICAL/HIGH OS or library CVE
       # in the runtime image (unfixed base-image CVEs are reported but don't block).
       - name: Scan image (Trivy — gate on fixable CRITICAL/HIGH)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: kaiban-distributed:ci-${{ github.sha }}
           format: table
@@ -180,7 +193,7 @@ jobs:
       # Always publish the full SARIF to the Security tab, even when the gate fails.
       - name: Scan image (Trivy — SARIF report)
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: kaiban-distributed:ci-${{ github.sha }}
           format: sarif
@@ -193,7 +206,7 @@ jobs:
           TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
       - name: Upload Trivy SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy.sarif
           category: trivy-image

@@ -7,7 +7,14 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    # Same-major bumps only (owner rule); majors are handled by hand with a reason.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
+      # The OpenTelemetry packages pin each other's peer ranges: move them together.
+      opentelemetry:
+        patterns: ["@opentelemetry/*"]
       production-dependencies:
         dependency-type: production
       development-dependencies:
@@ -22,6 +29,10 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    # Same-major bumps only (owner rule); majors are handled by hand with a reason.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       board-dependencies:
         patterns: ["*"]
