@@ -145,4 +145,24 @@ describe("runStopAll", () => {
     expect(error).toHaveBeenCalled();
     error.mockRestore();
   });
+
+  it("warns on stderr when CHANNEL_SIGNING_SECRET is not set, but still issues the stop", async () => {
+    const err = vi.fn();
+    const redis = fakeRedis();
+    await expect(
+      runStopAll([], { env: {}, connect: () => redis, out: vi.fn(), err }),
+    ).resolves.toBe(0);
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("CHANNEL_SIGNING_SECRET is not set"));
+  });
+
+  it("does not warn when CHANNEL_SIGNING_SECRET is set", async () => {
+    const err = vi.fn();
+    await runStopAll([], {
+      env: { CHANNEL_SIGNING_SECRET: "s".repeat(32) },
+      connect: () => fakeRedis(),
+      out: vi.fn(),
+      err,
+    });
+    expect(err).not.toHaveBeenCalled();
+  });
 });

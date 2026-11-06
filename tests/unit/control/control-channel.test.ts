@@ -226,6 +226,24 @@ describe("ControlSubscriber", () => {
     await sub.close();
   });
 
+  it("delivers a correctly signed STOP ALL from a host whose clock is 31 s off", async () => {
+    process.env["CHANNEL_SIGNING_SECRET"] = "s".repeat(32);
+    const onStop = vi.fn();
+    const sub = new ControlSubscriber({ redisUrl: "redis://x", onStop });
+    await sub.start();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-01T12:00:31Z"));
+      const raw = wrapSigned(cmd()); // issuer clock is 31 s ahead
+      vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+      instances[0]!.emit("message", CONTROL_CHANNEL, raw);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(onStop).toHaveBeenCalledWith(cmd(), "channel");
+    await sub.close();
+  });
+
   it("ignores and logs a message whose signature does not verify (ES-6)", async () => {
     process.env["CHANNEL_SIGNING_SECRET"] = "s".repeat(32);
     const onStop = vi.fn();

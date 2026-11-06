@@ -173,3 +173,27 @@ describe("channel-signing", () => {
     });
   });
 });
+
+describe("unwrapVerified maxSkewMs", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env["CHANNEL_SIGNING_SECRET"];
+  });
+
+  it("checks only the signature when maxSkewMs is Infinity", () => {
+    process.env["CHANNEL_SIGNING_SECRET"] = "k".repeat(32);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+    const raw = wrapSigned({ x: "old" });
+    vi.advanceTimersByTime(3_600_000);
+    expect(unwrapVerified(raw)).toBeNull();
+    expect(unwrapVerified(raw, { maxSkewMs: Infinity })).toEqual({ x: "old" });
+  });
+
+  it("still rejects a forged envelope with maxSkewMs Infinity", () => {
+    process.env["CHANNEL_SIGNING_SECRET"] = "k".repeat(32);
+    const env = JSON.parse(wrapSigned({ x: 1 })) as Record<string, unknown>;
+    env["payload"] = { x: 2 };
+    expect(unwrapVerified(JSON.stringify(env), { maxSkewMs: Infinity })).toBeNull();
+  });
+});

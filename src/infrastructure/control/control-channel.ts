@@ -228,7 +228,8 @@ export class ControlSubscriber {
   private onMessage(raw: string): void {
     let payload: Record<string, unknown> | null;
     try {
-      payload = unwrapVerified(raw);
+      // A stop must not be lost to clock skew; a replayed older stop is a no-op (ES-8).
+      payload = unwrapVerified(raw, { maxSkewMs: Infinity });
     } catch {
       payload = null; // never let a malformed message escape into ioredis
     }

@@ -83,6 +83,11 @@ export async function runStopAll(
     out(STOP_ALL_USAGE);
     return 0;
   }
+  if (!deps.env["CHANNEL_SIGNING_SECRET"]) {
+    err(
+      "warning: CHANNEL_SIGNING_SECRET is not set; nodes that sign their channels will ignore this stop.",
+    );
+  }
   const redis = deps.connect(deps.env["REDIS_URL"] ?? "redis://localhost:6379");
   try {
     const cmd = createStopAllCommand(
