@@ -37,7 +37,7 @@ One test file: `npx vitest run --config vitest.config.mts tests/unit/<path>.test
 
 ## Rules
 
-- Install with `npm ci`. Change lockfiles only with npm 11.17.0, then run `npm run lockfile:check`.
+- Install with `npm ci`. Change lockfiles only with `npm run lockfile:fix` (it writes them with npm 10.9.8, which npm 10 and 11 both accept; a lockfile written by npm 11 fails `npm ci` on npm 10), then run `npm run lockfile:check`.
 - Keep coverage of `src/**` at 100 % (lines, branches, functions, statements). Add the test with the change.
 - Never publish from a local machine. Releases go through the tag-triggered workflows
   ([docs/RELEASE.md](docs/RELEASE.md)).

@@ -17,7 +17,7 @@ This document explains how the actor model is applied throughout the codebase, f
 | **Message-passing only** | Actors never call each other's methods; every interaction goes through `IMessagingDriver.publish()` |
 | **Isolation** | Each actor runs in its own OS process (`researcher-node.ts`, etc.) — a crash in one actor does not affect others |
 | **Behaviour** | `TaskHandler` function defines what the actor does when it receives a message |
-| **Supervision** | Docker Compose `restart: unless-stopped` / Kubernetes Deployment acts as the supervisor |
+| **Supervision** | Docker Compose `restart: on-failure` / Kubernetes Deployment acts as the supervisor |
 
 ---
 
@@ -150,7 +150,7 @@ npx ts-node examples/blog-team/writer-node.ts
 npx ts-node examples/blog-team/editor-node.ts
 ```
 
-In Docker, each runs in its own container with `restart: unless-stopped` supervision.
+In Docker, each runs in its own container with `restart: on-failure` supervision.
 
 ---
 
@@ -268,7 +268,7 @@ Security is applied at the actor boundary — before `taskHandler` is invoked:
 | `SlidingWindowBreaker` | `src/infrastructure/security/` | `CIRCUIT_BREAKER_ENABLED=true` |
 | `EnvTokenProvider` | `src/infrastructure/security/` | `JIT_TOKENS_ENABLED=true` |
 
-`sanitizeDelta()` in `DistributedStateMiddleware` scrubs PII (email, name, phone, IP, password, token, secret, SSN, DOB) from state deltas before they reach the board.
+`sanitizeDelta()` in `DistributedStateMiddleware` removes PII-named keys (email, name, phone, IP, password, token, secret, SSN, DOB) from the top level of a state delta before it reaches the board; keys nested inside `agents[]` / `tasks[]` entries are not inspected.
 
 ---
 

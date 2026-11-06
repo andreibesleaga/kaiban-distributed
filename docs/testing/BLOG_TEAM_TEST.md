@@ -415,7 +415,7 @@ Once the bridge is running:
 Run the full automated test suite to verify all flows:
 
 ```bash
-# Unit tests (1396 tests on 30 Oct 2026, 100% coverage)
+# Unit tests (100% coverage required; the current count is in the README testing table)
 npm run test:coverage
 
 # BullMQ E2E (requires Docker)
@@ -428,12 +428,11 @@ npm run test:e2e:kafka
 Expected output:
 
 ```
-Test Files  77 passed (77)
-Tests       769 passed (769)
+Test Files  <n> passed (<n>)
+Tests       <n> passed (<n>)
 All files   | 100% | 100% | 100% | 100% |
 
-# E2E BullMQ: 65/65 passing
-# E2E Kafka:  3/3 passing
+# E2E BullMQ and Kafka: all passing (counts in the README testing table)
 ```
 
 ---

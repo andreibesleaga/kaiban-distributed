@@ -290,7 +290,7 @@ the latest command is also saved under the Redis key `kaiban-control:stopped-at`
 
 > **Source of deltas:** `AgentStatePublisher.wrapHandler()` emits `EXECUTING → THINKING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. The deprecated `DistributedStateMiddleware` forwards KaibanJS internal state for the in-process `KaibanTeamBridge` path.
 
-PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped before publishing (see `DistributedStateMiddleware.sanitizeDelta`).
+PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped from the **top level** of a delta before publishing (see `DistributedStateMiddleware.sanitizeDelta`). Keys nested inside `agents[]` or `tasks[]` entries are not inspected (agent `name` is a display field the board needs).
 
 ---
 

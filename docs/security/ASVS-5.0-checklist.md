@@ -8,13 +8,13 @@
 | ASVS domain | Applicable requirement | Control | Status |
 |-------------|------------------------|---------|--------|
 | **Validation & sanitization** | Validate all untrusted input | `a2a-input-validation.ts`: `agentId` ≤64 `/^[\w-]+$/`, `instruction` ≤10 000 chars; rejects `*`; W3C `traceparent` regex-validated before use (`TraceContext.sanitizeTraceHeaders`, shared by both drivers) | ✅ |
-| **Validation & sanitization** | Output/state minimization | `sanitizeDelta()` strips PII keys (both state paths); `result` cap 20 KB; outbound cap 64 KB | ✅ |
+| **Validation & sanitization** | Output/state minimization | `sanitizeDelta()` strips PII-named top-level keys (both state paths; nested keys are not inspected); `result` cap 20 KB; outbound cap 64 KB | ✅ |
 | **Authentication** | Authenticate privileged endpoints | JWT (HS256) on A2A RPC (`a2a-auth.ts`) and board Socket.io (`board-auth.ts`); **env-gated** (off by default → opt-in) | 🟡 |
 | **Session management** | Bound token lifetime | Board token 3600 s; A2A token 86400 s; signed + verified server-side | ✅ |
 | **Authorization / access control** | Restrict by role/identity | Agent-card capabilities; gateway routes; rate limits per IP (100/60 s RPC, 120/60 s per probe route) | 🟡 |
 | **Cryptography** | Strong, standard primitives | HMAC-SHA256 channel signing with `timingSafeEqual` + 30 s replay window (`channel-signing.ts`); SHA-256 id hashing; mTLS for Redis/Kafka | ✅ |
 | **Error handling & logging** | No sensitive data in logs; audit trail | SHA-256 hashed agent ids in logs; run-logger decision trail; OpenTelemetry spans; W3C traceparent across hops | ✅ |
-| **Data protection** | Minimize & protect sensitive data | PII denylist sanitization; size caps; secrets via env only (never logged) | ✅ |
+| **Data protection** | Minimize & protect sensitive data | PII denylist on top-level delta keys; size caps; secrets via env only (never logged) | ✅ |
 | **Communications security** | Encrypt in transit | mTLS (`REDIS_TLS_*`, `KAFKA_SSL_*`); HTTPS to LLM APIs; `TLS_REJECT_UNAUTHORIZED` default true | 🟡 |
 | **Malicious input / agentic** | Prompt-injection defense | `HeuristicFirewall` (10 patterns, opt-in; the optional LLM URL is reserved, not used); firewall verdict routes to DLQ | ✅ |
 | **Resilience / availability** | Prevent cascading failure / DoS | `SlidingWindowBreaker` (threshold 10 / 60 s window); per-task timeout (5 min); `MAX_TOKEN_BUDGET` | 🟡 |

@@ -38,8 +38,8 @@ default, and must not become an unauthenticated side-door around the gateway's s
 - **Wired into the gateway** (`GatewayApp` POST/GET/DELETE at `MCP_SERVER_PATH`) **behind the same
   security chain as A2A** — helmet → per-IP rate-limit → env-gated JWT (`A2A_JWT_SECRET`) → request
   timeout. **Env-gated OFF by default** (`MCP_SERVER_ENABLED`). Dispatch reuses the A2A
-  `validateTaskInput` caps + `taskId` dedup, so the MCP path and the A2A path enforce the same input
-  contract and idempotency invariant.
+  `validateTaskInput` caps, so the MCP path and the A2A path enforce the same input
+  contract. (There is no `taskId` dedup on the MCP path: each call mints a new id.)
 - **New direct dependency: `zod ^4.4.3`** — required by the MCP SDK's tool/prompt input schemas (it was
   already present transitively via the SDK). Additive; no consumer-facing change.
 
@@ -47,8 +47,8 @@ default, and must not become an unauthenticated side-door around the gateway's s
 - **A2A in front, MCP internally** (§B1.2): A2A remains the agent-to-agent wire; the MCP server is an
   internal surface and the MCP client is the worker-side consumer. The MCP server never bypasses the
   gateway auth/rate-limit chain.
-- **`taskId` idempotency / input caps:** MCP `dispatch_task` publishes through the same
-  `validateTaskInput` (A2A_INPUT_CAPS) and per-`taskId` dedup as A2A.
+- **Input caps:** MCP `dispatch_task` publishes through the same
+  `validateTaskInput` (A2A_INPUT_CAPS) as A2A. It does not dedup: each call mints a new `taskId`.
 - **Security opt-in / default-off / fail-closed:** the whole surface is off unless `MCP_SERVER_ENABLED`,
   and the consent gate fails closed.
 

@@ -282,9 +282,9 @@ flowchart TD
 
 ```mermaid
 stateDiagram-v2
-    [*] --> TODO : task.create
+    [*] --> TODO : message/send (A2A)
     note right of TODO
-        API response: status='QUEUED'
+        API response: A2A task state 'submitted'
     end note
     TODO --> DOING : Worker Claims Task
 
@@ -313,7 +313,7 @@ stateDiagram-v2
 | `AgentActor` | `src/application/actor/` | Actor: subscribes to queue, processes tasks with retry (3×) + DLQ, optional firewall + circuit breaker; outbound message data capped at 64 KB |
 | `KaibanAgentBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS agent in a per-task `Team`; calls `team.start()`; returns token-tracked `KaibanHandlerResult`; optional JIT token provider |
 | `KaibanTeamBridge` | `src/infrastructure/kaibanjs/` | Wraps KaibanJS `Team` with distributed state sync |
-| `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
+| `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/THINKING/EXECUTING/ERROR agent status to Redis Pub/Sub; 15s heartbeat; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
 | `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); optional TLS; no colon queue names |
 | `KafkaDriver` | `src/infrastructure/messaging/` | Kafka-backed messaging; optional SSL/mTLS; unique consumer group per worker role |
 | `DistributedStateMiddleware` | `src/adapters/state/` | Subscribes to the Zustand store and publishes each change as a signed board delta |
@@ -497,7 +497,7 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```
 Worker nodes (each):
   AgentStatePublisher.publishIdle()     → Redis PUBLISH kaiban-state-events { agents: [IDLE] }
-  AgentStatePublisher.wrapHandler()     → EXECUTING → DONE/ERROR → Redis PUBLISH
+  AgentStatePublisher.wrapHandler()     → EXECUTING → THINKING → IDLE/ERROR → Redis PUBLISH
   15-second heartbeat                   → re-publishes current agent status
   (heartbeat NEVER sets teamWorkflowStatus — only the orchestrator does)
 
@@ -788,7 +788,7 @@ KAFKA_GROUP_ID=kaiban-group
 | orchestrator (completed events) | `kaiban-group-orchestrator-completed` |
 | orchestrator (failed/DLQ events) | `kaiban-group-orchestrator-failed` |
 
-**Long tasks and heartbeats** — while a task handler runs, the Kafka worker sends a consumer-group heartbeat every 3 s (`eachMessage` heartbeat, cleared when the handler ends; heartbeat errors are logged, never thrown). A task running longer than the ~30 s session timeout therefore no longer gets its worker evicted and re-run elsewhere. The timeouts themselves are unchanged (KafkaJS defaults: session 30 s, rebalance 60 s). Known limit: if a real group rebalance happens while a task runs, the offset commit can still fail and the task may be delivered again to another worker; task-level de-duplication is planned for 2.1. BullMQ has its own lock renewal and is not affected.
+**Long tasks and heartbeats** — while a task handler runs, the Kafka worker sends a consumer-group heartbeat every 3 s (`eachMessage` heartbeat, cleared when the handler ends; heartbeat errors are logged, never thrown). A task running longer than the ~30 s session timeout therefore no longer gets its worker evicted and re-run elsewhere. The timeouts themselves are unchanged (KafkaJS defaults: session 30 s, rebalance 60 s). Known limit: if a real group rebalance happens while a task runs, the offset commit can still fail and the task may be delivered again to another worker; task-level de-duplication is planned (roadmap §7.2, item 5). BullMQ has its own lock renewal and is not affected.
 
 > Task queues use Kafka topics. State broadcast (`kaiban-state-events`) always uses Redis Pub/Sub — `SocketGateway` reads directly from Redis regardless of `MESSAGING_DRIVER`.
 
@@ -829,7 +829,7 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 
 | Event | Direction | Payload |
 |-------|-----------|---------|
-| `state:update` | server → client | `StateDelta` (PII-sanitized) |
+| `state:update` | server → client | `StateDelta` (top-level PII keys stripped) |
 | `hitl:decision` | client → server | `{ taskId: string, decision: 'PUBLISH' \| 'REVISE' \| 'REJECT' }` |
 | `control:stop-all` | client → server | `{ reason?: string }`, acked with `{ ok, commandId, issuedAt, saved }` or `{ ok: false, error }` (2.1.0, only with `CONTROL_PLANE_ENABLED=true`; needs the handshake board token) |
 
@@ -879,7 +879,7 @@ The full list is [`.env.example`](.env.example); it also covers the variables no
 
 #### Emergency STOP ALL (2.1.0)
 
-With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every running model call, every task and every workflow at once:
+With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every running model call on the OpenAI-compatible provider (the one the built-in worker handler uses; other providers stop at their next agent-loop step), every task and every workflow at once:
 
 - **From the board:** the **STOP ALL** button in the header (shown only when the gateway has the control plane on), then confirm. The board needs `VITE_BOARD_TOKEN` (local development only: a token built into a production bundle is public, and it can issue STOP ALL), and the gateway `BOARD_JWT_SECRET`.
 - **From the static HTML viewers (2.1.1):** the same **STOP ALL** button, confirmation and banner in `examples/blog-team/viewer/board.html` and `examples/global-research/viewer/board.html`. When the gateway sets `BOARD_JWT_SECRET`, open the viewer with the token in the address fragment, for example `board.html#token=<board token>` (or `board.html?gateway=http://localhost:3000#token=<board token>`), or set `window.BOARD_TOKEN`. The fragment is removed from the address bar after it is read, and the token is never logged or stored.
@@ -912,7 +912,7 @@ There was no operator stop command before 2.1.0 (see Emergency STOP ALL above). 
 | `KAFKA_SSL_CA` / `KAFKA_SSL_CERT` / `KAFKA_SSL_KEY` | — | Paths to Kafka mTLS certificates |
 | `TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` for self-signed certs in staging |
 | `SEMANTIC_FIREWALL_ENABLED` | `false` | Enable heuristic prompt injection firewall |
-| `SEMANTIC_FIREWALL_LLM_URL` | — | Reserved: read but not used yet (no LLM analysis runs) |
+| `SEMANTIC_FIREWALL_LLM_URL` | — | Reserved, not used yet: the firewall is always the built-in regex `HeuristicFirewall` |
 | `JIT_TOKENS_ENABLED` | `false` | Enable JIT token provider for LLM API keys |
 | `CIRCUIT_BREAKER_ENABLED` | `false` | Enable sliding-window circuit breaker |
 | `CIRCUIT_BREAKER_THRESHOLD` | `10` | Failures before breaker trips |
@@ -956,7 +956,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 | Capability | Implementation | Supports |
 |------------|----------------|----------|
 | PII minimisation in logs | Agent IDs SHA-256 hashed (8-char prefix) via `sanitizeId()` | GDPR |
-| PII stripping in state deltas | `sanitizeDelta()` strips `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` (applied on both the middleware and worker-publisher paths) | GDPR |
+| PII stripping in state deltas | `sanitizeDelta()` strips the top-level delta keys `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`; nested keys are not inspected (applied on both the middleware and worker-publisher paths) | GDPR |
 | Data minimisation | `result` capped at 20,000 UTF-8 bytes (≈20 KB) in state events; outbound data capped at 64 KB in `AgentActor` | GDPR |
 | Least-privilege container | Dockerfile non-root `USER kaiban` | SOC 2 (CC6) |
 | Secret hygiene | Secrets via env vars only; `.env` gitignored; `.env.example` placeholders | SOC 2 |

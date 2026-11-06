@@ -367,7 +367,7 @@ JIT_TOKENS_ENABLED=true           # activates JIT signaling; implement ITokenPro
 # Redis mTLS
 REDIS_TLS_CA=./certs/ca.crt
 REDIS_TLS_CERT=./certs/client.crt
-REDIS_TLS_KEY=./certs/client.key
+REDIS_TLS_KEY=./certs/client.key   # the REDIS_TLS_* files apply to every Redis client (BullMQ, state, HITL, control, readiness)
 
 # Kafka SSL/mTLS
 KAFKA_SSL_CA=./certs/ca.crt
@@ -386,13 +386,13 @@ TLS_REJECT_UNAUTHORIZED=true
 
 ### 6.1 PII Sanitization
 
-**Purpose:** Strips personally identifiable information from state events before they are broadcast to the board.
+**Purpose:** Strips PII-named top-level keys from state events before they are broadcast to the board.
 
 **Files:** `sanitizeDelta()` — `src/adapters/state/distributedMiddleware.ts` (also applied on the worker `AgentStatePublisher` path); `sanitizeId()` — a small SHA-256 helper defined where IDs are logged (e.g. `src/application/actor/AgentActor.ts`, `src/adapters/gateway/SocketGateway.ts`).
 
 | Function | Behaviour |
 |----------|-----------|
-| `sanitizeDelta(delta)` | Strips fields: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob` |
+| `sanitizeDelta(delta)` | Strips these **top-level** keys of a delta: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`. Keys nested inside `agents[]` / `tasks[]` entries are not inspected; recursive redaction is not implemented |
 | `sanitizeId(agentId)` | SHA-256 hashes agent IDs; logs 8-char prefix only |
 
 **OWASP / Compliance:** LLM02 (Sensitive Information Disclosure), GDPR data minimization
@@ -403,7 +403,7 @@ TLS_REJECT_UNAUTHORIZED=true
 
 | Boundary | Limit | Location |
 |----------|-------|----------|
-| Task result in state events | 20,000 characters (20 KB) | `AgentStatePublisher` — `MAX_RESULT_LEN` |
+| Task result in state events | 20,000 UTF-8 bytes (≈20 KB) | `AgentStatePublisher` — `MAX_RESULT_LEN` |
 | Task title in state events | 60 characters | `AgentStatePublisher` |
 | Outbound task result in messages | 64 KB | `AgentActor` |
 | HTTP request body | 1 MB | `GatewayApp` — `express.json({ limit: '1mb' })` |
@@ -430,6 +430,7 @@ redis:
 - Port is bound to `127.0.0.1` only — not externally reachable on a single-host deployment.
 - The compose file puts the password into the gateway's and worker's `REDIS_URL` (`redis://:${REDIS_PASSWORD}@redis:6379`) for you. For processes on the host use `localhost:6379` in that URL.
 - Use a URL-safe password (`openssl rand -hex 24`): base64 output can contain `/`, `+` and `=`, which break the URL.
+- The username, password, database and a `rediss://` scheme in `REDIS_URL` are applied to every Redis client: the BullMQ queues and workers as well as the state, HITL, control and readiness clients.
 
 **Healthcheck** handles the optional password automatically:
 ```yaml
@@ -536,7 +537,7 @@ All services in `docker-compose.yml` declare CPU and memory limits to prevent on
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `SEMANTIC_FIREWALL_ENABLED` | Optional | `false` | Enable regex-based prompt injection firewall on agents |
-| `SEMANTIC_FIREWALL_LLM_URL` | Optional | — | Reserved: read from the environment but not used; no model-based analysis runs |
+| `SEMANTIC_FIREWALL_LLM_URL` | Optional | — | Reserved, not used yet: the firewall is the built-in regex `HeuristicFirewall` |
 | `CIRCUIT_BREAKER_ENABLED` | Optional | `false` | Enable sliding-window circuit breaker on agents |
 | `CIRCUIT_BREAKER_THRESHOLD` | Optional | `10` | Failure count to trip breaker |
 | `CIRCUIT_BREAKER_WINDOW_MS` | Optional | `60000` | Sliding window duration in ms |

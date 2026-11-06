@@ -125,7 +125,7 @@ describe("initTelemetry — exporter selection", () => {
       serviceName: "svc",
       exporterEndpoint: "http://otel:4318/v1/traces",
     });
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(mockLog.warn).not.toHaveBeenCalled();
   });
 
   it("uses ConsoleSpanExporter when exporterEndpoint is undefined", () => {

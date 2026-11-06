@@ -61,6 +61,10 @@ export interface UnwrapOptions {
  *
  * When CHANNEL_SIGNING_SECRET is not set, parses as plain JSON (legacy pass-through).
  * Returns null on any JSON parse error regardless of mode.
+ *
+ * `maxAgeMs` is the freshness window (default 30 s). Durable list entries that
+ * legitimately wait longer than a pub/sub message (the HITL decision list lives
+ * 300 s) pass their own, longer window; the HMAC is still always checked.
  */
 export function unwrapVerified(
   raw: string,

@@ -801,6 +801,10 @@ describe("runRevisionPhase()", () => {
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     await runRevisionPhase(deps as never);
+    // The view prints the divider, an EMPTY body (fallback) and the divider
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      `\n${"-".repeat(70)}\n\n${"-".repeat(70)}\n\n`,
+    );
     stdoutSpy.mockRestore();
   });
 
@@ -937,6 +941,9 @@ describe("handleDecision()", () => {
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     await handleDecision(deps as never);
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      `\n${"-".repeat(70)}\n\n${"-".repeat(70)}\n\n`,
+    );
     stdoutSpy.mockRestore();
   });
 });

@@ -174,10 +174,8 @@ Each worker node = one KaibanJS Agent + one AgentActor + one messaging driver
 ```
 
 ```typescript
-import { AgentActor } from 'kaiban-distributed/src/application/actor/AgentActor';
-import { createKaibanTaskHandler } from 'kaiban-distributed/src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { BullMQDriver } from 'kaiban-distributed/src/infrastructure/messaging/bullmq-driver';
-import type { KaibanAgentConfig } from 'kaiban-distributed/src/infrastructure/kaibanjs/kaiban-agent-bridge';
+import { AgentActor, BullMQDriver, createKaibanTaskHandler } from 'kaiban-distributed';
+import type { KaibanAgentConfig } from 'kaiban-distributed';
 
 const agentConfig: KaibanAgentConfig = {
   name: 'Ava',
@@ -275,8 +273,7 @@ One process runs the full KaibanJS Team; state diffs stream to the board
 
 ```typescript
 import { Agent, Task } from 'kaibanjs';
-import { KaibanTeamBridge } from 'kaiban-distributed/src/infrastructure/kaibanjs/kaiban-team-bridge';
-import { BullMQDriver } from 'kaiban-distributed/src/infrastructure/messaging/bullmq-driver';
+import { KaibanTeamBridge, BullMQDriver } from 'kaiban-distributed';
 
 const researcher = new Agent({
   name: 'Ava', role: 'Researcher',
@@ -366,7 +363,7 @@ public attach(store: ObservableStore): ObservableStore {
 }
 ```
 
-PII fields automatically stripped before publishing: `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`.
+PII-named top-level keys are stripped before publishing (nested keys are not inspected): `email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`.
 
 ---
 
@@ -615,6 +612,7 @@ import { io } from 'socket.io-client';
 import { Redis } from 'ioredis';
 import { createDriver, getDriverType } from '../../src/shared';
 import { COMPLETED_QUEUE } from './team-config';
+import { BlogStatePublisher } from './state-publisher'; // subclass of OrchestratorStatePublisher with the lifecycle methods
 
 const GATEWAY_URL      = process.env['GATEWAY_URL']      ?? 'http://localhost:3000';
 const REDIS_URL        = process.env['REDIS_URL']        ?? 'redis://localhost:6379';
@@ -701,7 +699,7 @@ async function main(): Promise<void> {
   const completionRouter = new CompletionRouter(completedDriver, failedDriver);
 
   // Direct Redis Pub/Sub for workflow lifecycle states
-  const statePublisher = new OrchestratorStatePublisher(REDIS_URL);
+  const statePublisher = new BlogStatePublisher(REDIS_URL);  // the library base class has only publish/taskQueued/taskDone/taskFailed/publishMetadata/disconnect
 
   // STEP 1 — Research
   const researchTask = await dispatch('researcher', {
@@ -1327,7 +1325,7 @@ function countHITLInteractions(teamStore: any) {
 
 ### 7.3 OpenTelemetry Distributed Tracing
 
-Each worker node automatically initializes OTEL tracing via `initTelemetry()`:
+Telemetry is initialised by the packaged entry point `dist/src/main/index.js` (`ROLE=gateway` or `worker`) only. Custom nodes such as `startAgentNode` or the `dist/examples/blog-team/*-node.js` files never call it, so call `initTelemetry()` yourself in those:
 
 ```typescript
 // src/infrastructure/telemetry/telemetry.ts
@@ -1380,7 +1378,8 @@ reduced to its base, so older configurations keep working.
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
 SERVICE_NAME=kaiban-researcher \
-node dist/examples/blog-team/researcher-node.js
+ROLE=worker AGENT_IDS=researcher \
+node dist/src/main/index.js
 ```
 
 ### 7.4 Real-Time Board as Observability Surface
@@ -1610,7 +1609,9 @@ try {
 
 ## 9. WorkflowDrivenAgent in Distributed Context
 
-`WorkflowDrivenAgent` executes deterministic code workflows instead of LLM-based reasoning. It integrates with kaiban-distributed the same way as `ReactChampionAgent`.
+`WorkflowDrivenAgent` executes deterministic code workflows instead of LLM-based reasoning.
+
+> **Not wired into the distributed bridge today.** `createKaibanTaskHandler(agentConfig)` builds a plain LLM `Agent` from the role/goal config it is given and never receives the `workflowAgent` built in the snippets below. As written, a node started from §9.1 or §9.2 runs an LLM agent (and spends tokens), not the workflow. Treat this section as a KaibanJS reference only; running a workflow step inside a distributed node needs a custom task handler.
 
 ### 9.1 Basic WorkflowDrivenAgent Node
 
@@ -1669,7 +1670,7 @@ const workflowAgent = new Agent({
   workflow: dataWorkflow,
 } as any);
 
-// ── Use createKaibanTaskHandler for standard Team-based execution ─────────────
+// ── NOTE: the handler below does NOT use `workflowAgent`; it runs an LLM agent ─
 // Note: prefer createKaibanTaskHandler over direct workOnTask — Team.start() provides
 // real token counts and cost tracking via WorkflowResult.stats.llmUsageStats.
 const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });

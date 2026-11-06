@@ -241,7 +241,7 @@ describe("E2E: Global Research Swarm Pipeline (BullMQ)", () => {
   // ─────────────────────────────────────────────────────────────────
   // Scenario 2 — Chaos Simulation: 20% crash rate, retries recover
   // ─────────────────────────────────────────────────────────────────
-  it("Scenario 2 — Chaos Simulation: ~20% crash rate on searchers, all tasks complete via retry", async () => {
+  it("Scenario 2 — Chaos Simulation: fixed set of searchers crash on attempt 1, all tasks complete via retry", async () => {
     const wfId = `wf-chaos-${randomUUID()}`;
     const QUEUE = `research-searcher-${wfId}`;
     const NUM = 6;
@@ -253,12 +253,13 @@ describe("E2E: Global Research Swarm Pipeline (BullMQ)", () => {
 
     const attemptCounts = new Map<string, number>();
 
-    // Simulate 20% crash rate via throw (simulates process.exit effect at BullMQ level)
+    // Deterministic chaos: tasks 0, 2 and 4 crash on their first attempt (a throw
+    // simulates the process dying at BullMQ level); a retry must then succeed.
+    const crashingIds = new Set(taskIds.filter((_, i) => i % 2 === 0));
     await spawnAgents(drivers, NUM, "searcher", QUEUE, async (p) => {
       const attempts = (attemptCounts.get(p.taskId) ?? 0) + 1;
       attemptCounts.set(p.taskId, attempts);
-      // 20% crash on first attempt → BullMQ retry
-      if (attempts === 1 && Math.random() < 0.2) {
+      if (attempts === 1 && crashingIds.has(p.taskId)) {
         throw new Error("CHAOS: simulated crash");
       }
       return `Search result for ${p.taskId}`;
@@ -277,9 +278,13 @@ describe("E2E: Global Research Swarm Pipeline (BullMQ)", () => {
 
     const { success, failed } = await oracle.waitFor(taskIds, 20_000);
 
-    // With 20% crash rate and 3 retries, all tasks should eventually succeed
-    expect(success.size).toBeGreaterThanOrEqual(Math.floor(NUM * 0.8)); // at least 80% succeed
-    expect(success.size + failed.size).toBe(NUM); // all accounted for
+    // A retry always succeeds here, so every task must complete: a broken retry
+    // policy leaves the crashed ids in the failed set.
+    expect(failed.size).toBe(0);
+    expect(success.size).toBe(NUM);
+    for (const id of taskIds) {
+      expect(attemptCounts.get(id)).toBe(crashingIds.has(id) ? 2 : 1);
+    }
   }, 40_000);
 
   // ─────────────────────────────────────────────────────────────────

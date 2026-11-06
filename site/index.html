@@ -109,13 +109,13 @@ footer p{font-size:.85rem}
 <p>Needs Node.js 22 or later, Docker with Docker Compose, and an LLM API key (OpenAI, OpenRouter or another compatible API). Commands from the README:</p>
 <pre><code>git clone https://github.com/andreibesleaga/kaiban-distributed
 cd kaiban-distributed
-npm install
+npm ci
 cp .env.example .env
 # edit .env: set OPENAI_API_KEY or OPENROUTER_API_KEY,
 # and AGENT_IDS (for example researcher,writer,editor)
 docker compose up -d redis
 npm run build
-AGENT_IDS=gateway PORT=3000 node dist/src/main/index.js</code></pre>
+AGENT_IDS=researcher,writer,editor PORT=3000 node dist/src/main/index.js</code></pre>
 <p>Then check the gateway:</p>
 <pre><code>curl http://localhost:3000/health
 curl http://localhost:3000/.well-known/agent-card.json</code></pre>
