@@ -78,7 +78,10 @@ export function sealStopCommand(cmd: StopAllCommand): string {
   const canonical = JSON.stringify(StopAllCommandSchema.parse(cmd));
   const secret = process.env["CHANNEL_SIGNING_SECRET"];
   if (!secret) return canonical;
-  return JSON.stringify({ ...JSON.parse(canonical), sig: savedSignature(canonical, secret) });
+  return JSON.stringify({
+    ...JSON.parse(canonical),
+    sig: savedSignature(canonical, secret),
+  });
 }
 
 /**
@@ -98,7 +101,8 @@ export function openSavedStopCommand(raw: string): StopAllCommand | null {
   if (!cmd) return null;
   const secret = process.env["CHANNEL_SIGNING_SECRET"];
   if (!secret) return cmd;
-  return typeof sig === "string" && sameHex(sig, savedSignature(JSON.stringify(cmd), secret))
+  return typeof sig === "string" &&
+    sameHex(sig, savedSignature(JSON.stringify(cmd), secret))
     ? cmd
     : null;
 }
@@ -200,8 +204,13 @@ export class ControlSubscriber {
   constructor(private readonly opts: ControlSubscriberOptions) {}
 
   async start(): Promise<void> {
-    const subscriber = createRedisClient(this.opts.redisUrl, { lazyConnect: false });
-    const reader = createRedisClient(this.opts.redisUrl, { lazyConnect: false });
+    this.assertSignedChannel();
+    const subscriber = createRedisClient(this.opts.redisUrl, {
+      lazyConnect: false,
+    });
+    const reader = createRedisClient(this.opts.redisUrl, {
+      lazyConnect: false,
+    });
     this.subscriber = subscriber;
     this.reader = reader;
     for (const client of [subscriber, reader]) {
@@ -216,6 +225,26 @@ export class ControlSubscriber {
     subscriber.on("ready", () => void this.catchUp());
     await subscriber.subscribe(CONTROL_CHANNEL);
     await this.replaySaved();
+  }
+
+  /**
+   * ES-6: a control command is obeyed only when its signature verifies. Without
+   * `CHANNEL_SIGNING_SECRET` any client that can PUBLISH to Redis could stop the
+   * fleet, so in production the subscriber refuses to start (unless
+   * `ALLOW_INSECURE_PRODUCTION=true`); elsewhere it warns.
+   */
+  private assertSignedChannel(): void {
+    if (process.env["CHANNEL_SIGNING_SECRET"]) return;
+    const insecureOk = process.env["ALLOW_INSECURE_PRODUCTION"] === "true";
+    if (process.env["NODE_ENV"] === "production" && !insecureOk) {
+      throw new Error(
+        "CONTROL_PLANE_ENABLED needs CHANNEL_SIGNING_SECRET in production: an unsigned control channel obeys any Redis client (or set ALLOW_INSECURE_PRODUCTION=true)",
+      );
+    }
+    log.warn(
+      { channel: CONTROL_CHANNEL },
+      "Control channel is unsigned (CHANNEL_SIGNING_SECRET is not set): any client with Redis PUBLISH access can stop this node",
+    );
   }
 
   async close(): Promise<void> {
@@ -242,7 +271,10 @@ export class ControlSubscriber {
     }
     const cmd = parseStopAllCommand(payload);
     if (!cmd) {
-      log.warn({ channel: CONTROL_CHANNEL }, "Ignored an invalid control command");
+      log.warn(
+        { channel: CONTROL_CHANNEL },
+        "Ignored an invalid control command",
+      );
       return;
     }
     this.deliver(cmd, "channel");
@@ -264,7 +296,10 @@ export class ControlSubscriber {
         await this.replaySaved();
         return;
       } catch (err) {
-        log.warn({ err, attempt }, "Could not read the saved emergency stop — retrying");
+        log.warn(
+          { err, attempt },
+          "Could not read the saved emergency stop — retrying",
+        );
         await new Promise((r) => setTimeout(r, base * Math.min(attempt, 5)));
       }
     }
