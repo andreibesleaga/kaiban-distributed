@@ -300,8 +300,8 @@ wait_for_gateway
 verify_worker_llm_credentials
 
 cd "$ROOT"
-npx ts-node "$EXAMPLE_PATH/orchestrator.ts" &
-ORCH_PID=$!
-echo "$ORCH_PID" > "$PID_FILE"
-
-wait "$ORCH_PID"
+# Foreground on purpose: a background job gets /dev/null as stdin in a script,
+# which would silence the orchestrator's terminal prompt. The EXIT/INT/TERM trap
+# above tears the stack down; `stop` signals this shell through the PID file.
+echo "$$" > "$PID_FILE"
+npx ts-node "$EXAMPLE_PATH/orchestrator.ts"

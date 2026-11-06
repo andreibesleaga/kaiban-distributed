@@ -18,6 +18,7 @@ import {
   waitForHITLDecision,
   workflowBudgetFromEnv,
   assertWithinBudget,
+  EmergencyStopError,
 } from '../../src/shared';
 import type { IMessagingDriver } from '../../src/infrastructure/messaging/interfaces';
 import { BlogStatePublisher } from './state-publisher';
@@ -33,6 +34,16 @@ export interface ResearchResult { taskId: string; summary: string; tokens: numbe
 export interface WriteResult    { taskId: string; draft: string;   tokens: number; cost: number }
 export interface EditResult     { taskId: string; review: string;  tokens: number; cost: number; recommendation: string; score: string }
 
+/**
+ * A stopped run is reported once, as STOPPED, by the orchestrator. A phase's
+ * wait that is cut by the stop (or a worker's `emergency_stop` dead-letter that
+ * lands a moment later) must not re-publish the task as BLOCKED.
+ */
+function failUnlessStopped(err: Error, signal: AbortSignal | undefined, report: () => void): never {
+  if (!(err instanceof EmergencyStopError) && !signal?.aborted) report();
+  throw err;
+}
+
 // ── Phase functions ───────────────────────────────────────────
 
 export async function runResearchPhase(
@@ -41,6 +52,7 @@ export async function runResearchPhase(
   pub: BlogStatePublisher,
   driver: Pick<IMessagingDriver, 'publish'>,
   runLog: RunLogger,
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const taskId = await dispatchToAgent(driver, 'researcher', {
     instruction: `Research the latest news, key developments, and verifiable facts on: "${topic}". Include specific data points, statistics, and notable developments.`,
@@ -49,8 +61,8 @@ export async function runResearchPhase(
   });
   pub.taskQueued(taskId, `Research: ${topic}`, 'researcher');
 
-  const raw = await router.wait(taskId, RESEARCH_WAIT_MS, 'research')
-    .catch((err: Error) => { pub.taskFailed(taskId, 'researcher', 'Research task', err.message); throw err; });
+  const raw = await router.wait(taskId, RESEARCH_WAIT_MS, 'research', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(taskId, 'researcher', 'Research task', err.message)));
 
   const parsed = parseHandlerResult(raw);
   runLog.logTask('research', taskId, 'researcher', { ...parsed, answer: parsed.answer });
@@ -66,6 +78,7 @@ export async function runWritePhase(
   pub: BlogStatePublisher,
   driver: Pick<IMessagingDriver, 'publish'>,
   runLog: RunLogger,
+  signal?: AbortSignal,
 ): Promise<WriteResult> {
   const taskId = await dispatchToAgent(driver, 'writer', {
     instruction: `Write an engaging blog post about: "${topic}". Use the research provided in the context. Structure: headline, introduction, 3–4 sections, conclusion. Only include verified facts.`,
@@ -75,8 +88,8 @@ export async function runWritePhase(
   });
   pub.taskQueued(taskId, `Write blog: ${topic}`, 'writer');
 
-  const raw = await router.wait(taskId, WRITE_WAIT_MS, 'writing')
-    .catch((err: Error) => { pub.taskFailed(taskId, 'writer', 'Writing task', err.message); throw err; });
+  const raw = await router.wait(taskId, WRITE_WAIT_MS, 'writing', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(taskId, 'writer', 'Writing task', err.message)));
 
   const parsed = parseHandlerResult(raw);
   runLog.logTask('write', taskId, 'writer', { ...parsed, answer: parsed.answer });
@@ -93,6 +106,7 @@ export async function runEditorialPhase(
   pub: BlogStatePublisher,
   driver: Pick<IMessagingDriver, 'publish'>,
   runLog: RunLogger,
+  signal?: AbortSignal,
 ): Promise<EditResult> {
   const taskId = await dispatchToAgent(driver, 'editor', {
     instruction: 'Review the blog post draft for factual accuracy. Cross-reference every claim against the research summary. Output your review in the exact structured format from your background instructions.',
@@ -102,8 +116,8 @@ export async function runEditorialPhase(
   });
   pub.taskQueued(taskId, 'Editorial Review', 'editor');
 
-  const raw = await router.wait(taskId, EDIT_WAIT_MS, 'editorial review')
-    .catch((err: Error) => { pub.taskFailed(taskId, 'editor', 'Editorial review', err.message); throw err; });
+  const raw = await router.wait(taskId, EDIT_WAIT_MS, 'editorial review', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(taskId, 'editor', 'Editorial review', err.message)));
 
   const parsed = parseHandlerResult(raw);
   const recommendation = parseRecommendation(parsed.answer);
@@ -155,7 +169,8 @@ export async function runBlogRevision(deps: RevisionDeps): Promise<'PUBLISHED' |
   });
   pub.taskQueued(revTaskId, `Revision: ${topic}`, 'writer');
 
-  const revRaw    = await router.wait(revTaskId, WRITE_WAIT_MS, 'revision', signal);
+  const revRaw    = await router.wait(revTaskId, WRITE_WAIT_MS, 'revision', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(revTaskId, 'writer', 'Revision task', err.message)));
   const revParsed = parseHandlerResult(revRaw);
   runLog.logTask('revision', revTaskId, 'writer', { ...revParsed, answer: revParsed.answer });
   pub.publishMetadata({ totalTokens: runLog.totals.totalTokens, estimatedCost: runLog.totals.totalCost });

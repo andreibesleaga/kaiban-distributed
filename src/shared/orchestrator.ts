@@ -454,6 +454,9 @@ export class WorkflowOrchestrator {
    * This is how the example orchestrators consume the shared orchestrator while
    * keeping their phase functions intact: each phase call is wrapped in
    * `memoize(stepName, () => runXxxPhase(...))`.
+   *
+   * A producer that returns `undefined` (a void step) is checkpointed as JSON
+   * `null`, so a resume replays `null` instead of failing to parse.
    */
   async memoize<T>(name: string, produce: () => Promise<T>): Promise<T> {
     this.assertStepName(name);
@@ -465,7 +468,7 @@ export class WorkflowOrchestrator {
     this.assertDispatchAllowed();
     const value = await this.untilStopped(produce());
 
-    cp[name] = { taskId: `memoize:${name}`, result: JSON.stringify(value) };
+    cp[name] = { taskId: `memoize:${name}`, result: JSON.stringify(value ?? null) };
     this.account(value); // before the save — see runStep
     await this.persist();
     return value;

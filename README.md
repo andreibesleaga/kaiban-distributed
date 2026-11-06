@@ -316,7 +316,7 @@ stateDiagram-v2
 | `AgentStatePublisher` | `src/adapters/state/` | Publishes IDLE/EXECUTING/DONE/ERROR to Redis Pub/Sub; 15s heartbeat; enforces the per-agent and per-task token caps (build it with `createAgentStatePublisher`) |
 | `BullMQDriver` | `src/infrastructure/messaging/` | Redis-backed job queue (default); optional TLS; no colon queue names |
 | `KafkaDriver` | `src/infrastructure/messaging/` | Kafka-backed messaging; optional SSL/mTLS; unique consumer group per worker role |
-| `DistributedStateMiddleware` | `src/adapters/state/` | Intercepts Zustand store `setState()` and publishes deltas to messaging layer |
+| `DistributedStateMiddleware` | `src/adapters/state/` | Subscribes to the Zustand store and publishes each change as a signed board delta |
 | `GatewayApp` | `src/adapters/gateway/` | Express HTTP: `/health`, `/.well-known/agent-card.json`, `/a2a/rpc` |
 | `SocketGateway` | `src/adapters/gateway/` | Socket.io server + Redis pub/sub subscriber; broadcasts `state:update` to board |
 | A2A stack (`buildA2AStack`: `KaibanAgentExecutor` + `RedisTaskStore` + `AgentStatusTracker`) | `src/infrastructure/federation/` | Official `@a2a-js/sdk` v0.3 server; `message/send` validates + publishes to the agent mailbox (ADR-015) |
@@ -1030,7 +1030,7 @@ kaiban-distributed/
 │   │   │   ├── GatewayApp.ts       # Express: /health, agent-card, /a2a/rpc, 404
 │   │   │   └── SocketGateway.ts    # Socket.io + Redis pub/sub → board
 │   │   └── state/
-│   │       ├── distributedMiddleware.ts    # Intercepts Zustand setState → messaging
+│   │       ├── distributedMiddleware.ts    # Zustand store subscription → board deltas
 │   │       └── agent-state-publisher.ts   # Direct Redis pub/sub; 15s heartbeat; lifecycle
 │   ├── infrastructure/
 │   │   ├── messaging/

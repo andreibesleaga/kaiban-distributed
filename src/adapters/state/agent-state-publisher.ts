@@ -419,7 +419,9 @@ export class AgentStatePublisher {
                 : {}),
             },
           ],
-          ...(tokenMeta ? { metadata: tokenMeta } : {}),
+          // No run-level `metadata` here: this task's usage rides on the task card
+          // (`tokens` / `cost`); the orchestrator owns the run totals, and a
+          // per-task `metadata` would overwrite them on the board.
         });
 
         return result;
@@ -431,8 +433,7 @@ export class AgentStatePublisher {
         const failure = this.accountFailedAttempt(payload.taskId, err);
         // A newer attempt already took over this agent: report nothing for the old one.
         if (attempt !== this.attemptSeq) throw failure;
-        // → ERROR
-        this.currentStatus = "ERROR";
+        // → ERROR (published once; the failure stays visible on the task card)
         pub({
           agents: [
             {
@@ -452,6 +453,10 @@ export class AgentStatePublisher {
             },
           ],
         });
+        // The agent is free again: the heartbeat must report IDLE, not keep
+        // re-announcing ERROR on this finished task (or override the next run's reset).
+        this.currentStatus = "IDLE";
+        this.currentTaskId = null;
         throw failure;
       }
     };

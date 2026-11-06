@@ -39,6 +39,7 @@ import {
   AgentStatePublisher,
   type AgentInfo,
 } from "../adapters/state/agent-state-publisher";
+import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import { createDriver } from "./driver-factory";
 import { buildSecurityDeps } from "./build-security-deps";
 import { resolveSpendCaps } from "./budget";
@@ -116,14 +117,9 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   const handler = statePublisher.wrapHandler(
     createKaibanTaskHandler(agentConfig, driver, tokenProvider),
   );
-  // AGENT_TIMEOUT_MS bounds each task attempt on this worker (unset = 5 min default).
-  const taskTimeoutMs = timeoutMsFromEnv("AGENT_TIMEOUT_MS");
-  // RETRY_ON_TIMEOUT=true|1 re-enables bounded retry of a timed-out task (default: off).
-  const retryOnTimeout = boolEnv("RETRY_ON_TIMEOUT");
   const actor = new AgentActor(agentId, driver, queue, handler, {
     ...actorDeps,
-    ...(taskTimeoutMs !== undefined ? { taskTimeoutMs } : {}),
-    ...(retryOnTimeout ? { retryOnTimeout } : {}),
+    ...actorTimeoutOptionsFromEnv(),
     onEmergencyStop: (payload): void => statePublisher.publishStopped(payload),
   });
 
@@ -141,11 +137,42 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
   log.info({ label, agent: displayName, queue }, "Agent node started");
   statePublisher.publishIdle();
 
-  // Graceful drain (Phase R): stop the actor (no new work) → drain in-flight →
-  // close driver → close publisher, ordered + best-effort, within a bounded
-  // deadline (after which the orchestrator SIGKILLs anyway). SIGTERM and SIGINT
-  // drain every node of this process together, once, then flush telemetry and
-  // exit (process-drain.ts).
+  registerWorkerDrain({ actor, control, driver, statePublisher });
+}
+
+/**
+ * The actor's timeout options from the environment, so every worker entry point
+ * (`startAgentNode` and custom ones such as the global-research searcher) honours
+ * the same variables: `AGENT_TIMEOUT_MS` bounds each task attempt (unset = the
+ * 5 min default); `RETRY_ON_TIMEOUT=true|1` re-enables bounded retry of a timed-out
+ * task (default: off).
+ */
+export function actorTimeoutOptionsFromEnv(): {
+  taskTimeoutMs?: number;
+  retryOnTimeout?: boolean;
+} {
+  const taskTimeoutMs = timeoutMsFromEnv("AGENT_TIMEOUT_MS");
+  const retryOnTimeout = boolEnv("RETRY_ON_TIMEOUT");
+  return {
+    ...(taskTimeoutMs !== undefined ? { taskTimeoutMs } : {}),
+    ...(retryOnTimeout ? { retryOnTimeout } : {}),
+  };
+}
+
+/**
+ * Graceful drain (Phase R): stop the actor (no new work) → drain in-flight →
+ * close control, driver, publisher, ordered + best-effort, within a bounded
+ * deadline (after which the orchestrator SIGKILLs anyway). SIGTERM and SIGINT
+ * drain every node of this process together, once, then flush telemetry and
+ * exit (process-drain.ts).
+ */
+export function registerWorkerDrain(parts: {
+  actor: Pick<AgentActor, "stop">;
+  control: EmergencyStopHandle | null;
+  driver: IMessagingDriver;
+  statePublisher: Pick<AgentStatePublisher, "disconnect">;
+}): void {
+  const { actor, control, driver, statePublisher } = parts;
   registerNodeDrain(async (): Promise<boolean> => {
     const result = await gracefulShutdown({
       deadlineMs: NODE_SHUTDOWN_DEADLINE_MS,

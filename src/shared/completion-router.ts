@@ -231,23 +231,28 @@ export class CompletionRouter {
 
   /**
    * Waits for ALL given taskIds to complete or fail (fan-in aggregation).
-   * Never rejects — failed tasks appear in the result array with an `error` field
-   * so the caller can decide how to handle partial failures.
+   * Never rejects for a failed task — failures appear in the result array with an
+   * `error` field so the caller can decide how to handle partial failures. The one
+   * exception is the optional `signal`: when it aborts (e.g. an emergency STOP
+   * ALL), every in-flight wait is cleaned up and the call rejects with the stop
+   * error instead of reporting each task as a failure.
    *
    * @param taskIds   Array of task IDs to fan-in.
    * @param timeoutMs Per-task timeout in milliseconds.
    * @param label     Human-readable label prefix used in timeout error messages.
+   * @param signal    Optional AbortSignal — aborting removes every waiter and rejects.
    */
   async waitAll(
     taskIds: string[],
     timeoutMs: number,
     label: string,
+    signal?: AbortSignal,
   ): Promise<Array<{ taskId: string; result?: string; error?: string }>> {
     const results: Array<{ taskId: string; result?: string; error?: string }> =
       [];
     await Promise.all(
       taskIds.map((taskId) =>
-        this.wait(taskId, timeoutMs, `${label}[${taskId.slice(-8)}]`)
+        this.wait(taskId, timeoutMs, `${label}[${taskId.slice(-8)}]`, signal)
           .then((result) => {
             results.push({ taskId, result });
           })
@@ -257,6 +262,7 @@ export class CompletionRouter {
           }),
       ),
     );
+    if (signal?.aborted) throw abortError(signal, label);
     return results;
   }
 }

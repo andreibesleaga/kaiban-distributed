@@ -76,15 +76,16 @@ export class BlogStatePublisher extends OrchestratorStatePublisher {
   }
 
   /**
-   * Emergency STOP ALL (ADR-025): the review the orchestrator was waiting on
-   * ends STOPPED, so the board shows no pending decision after the run exits.
+   * The review the orchestrator was waiting on ends STOPPED, so the board shows
+   * no pending decision after the run exits — on an emergency STOP ALL (ADR-025,
+   * the default reason) and on every other terminal path (budget stop, failure).
    */
-  reviewStopped(): void {
+  reviewStopped(reason = 'Emergency stop: no decision was taken'): void {
     if (!this.pendingReviewTaskId) return;
     this.publish({
       tasks: [{
         taskId: this.pendingReviewTaskId, title: 'Review stopped', status: 'STOPPED',
-        assignedToAgentId: 'editor', result: 'Emergency stop: no decision was taken',
+        assignedToAgentId: 'editor', result: reason,
       }],
     });
     this.pendingReviewTaskId = null;

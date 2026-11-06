@@ -124,6 +124,15 @@ describe("blog-team BlogStatePublisher — emergency STOP ALL (ADR-025)", () => 
     expect(mockPublish.mock.calls.length).toBe(calls);
   });
 
+  it("reviewStopped(reason) closes the pending card with that reason (WF-11)", () => {
+    const pub = new BlogStatePublisher("redis://localhost:6379");
+    pub.awaitingHITL("edit-1", "Editorial Review", "REVISE", "6/10");
+    pub.reviewStopped("Workflow failed: no decision was taken");
+    expect(last()["tasks"]).toEqual([
+      expect.objectContaining({ taskId: "edit-1", status: "STOPPED", result: "Workflow failed: no decision was taken" }),
+    ]);
+  });
+
   it("reviewStopped() does nothing when no review is pending", () => {
     const pub = new BlogStatePublisher("redis://localhost:6379");
     pub.reviewStopped();

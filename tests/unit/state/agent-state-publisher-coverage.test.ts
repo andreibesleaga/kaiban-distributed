@@ -64,13 +64,13 @@ describe("AgentStatePublisher — coverage branches", () => {
 
     const done = JSON.parse(mockPublish.mock.calls.at(-1)![1] as string) as {
       tasks: Array<{ result: string; tokens: number; cost: number }>;
-      metadata: { totalTokens: number; estimatedCost: number };
     };
     expect(done.tasks[0]?.result).toContain('"summary":"structured output"');
     expect(done.tasks[0]?.tokens).toBe(12);
     expect(done.tasks[0]?.cost).toBe(0);
-    expect(done.metadata.totalTokens).toBe(12);
-    expect(done.metadata.estimatedCost).toBe(0);
+    // UI-02: a worker's DONE delta must not carry run-level `metadata`
+    // (it would overwrite the orchestrator's run totals on the board).
+    expect(done).not.toHaveProperty("metadata");
   });
 
   it("falls back to zero when token fields are present but undefined", async () => {
@@ -91,11 +91,9 @@ describe("AgentStatePublisher — coverage branches", () => {
 
     const done = JSON.parse(mockPublish.mock.calls.at(-1)![1] as string) as {
       tasks: Array<{ tokens: number; cost: number }>;
-      metadata: { totalTokens: number; estimatedCost: number };
     };
     expect(done.tasks[0]?.tokens).toBe(0);
     expect(done.tasks[0]?.cost).toBe(0);
-    expect(done.metadata.totalTokens).toBe(0);
-    expect(done.metadata.estimatedCost).toBe(0);
+    expect(done).not.toHaveProperty("metadata");
   });
 });

@@ -13,10 +13,11 @@ export type ResearchStatus =
   | 'FAILED';
 
 export interface SearchResult {
-  sourceUrl: string;
+  /** A URL the searcher's answer names (absent when it names none). */
+  sourceUrl?: string;
   title: string;
   snippet: string;
-  relevanceScore: number;
+  relevanceScore?: number;
   agentId: string;
   timestamp: string;
 }

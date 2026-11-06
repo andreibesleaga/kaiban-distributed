@@ -155,6 +155,24 @@ describe("AgentStatePublisher", () => {
     ).toBe("BLOCKED");
   });
 
+  it("after a failed attempt the heartbeat reports IDLE with no task, not ERROR on the old task (WF-08)", async () => {
+    publisher.publishIdle(3000);
+    const wrapped = publisher.wrapHandler(vi.fn().mockRejectedValue(new Error("boom")));
+    await expect(wrapped({
+      taskId: "old-task", agentId: "researcher", timestamp: Date.now(), data: {},
+    } as MessagePayload)).rejects.toThrow("boom");
+    // The failure itself was published once, as ERROR on the task.
+    const failed = mockPublish.mock.calls.map((c) => JSON.parse(c[1] as string) as { agents?: Array<{ status: string; currentTaskId: string | null }> });
+    expect(failed.some((m) => m.agents?.[0]?.status === "ERROR" && m.agents[0].currentTaskId === "old-task")).toBe(true);
+
+    mockPublish.mockClear();
+    vi.advanceTimersByTime(3001);
+    const beat = JSON.parse(mockPublish.mock.calls.at(-1)![1] as string) as {
+      agents: Array<{ status: string; currentTaskId: string | null }>;
+    };
+    expect(beat.agents[0]).toMatchObject({ status: "IDLE", currentTaskId: null });
+  });
+
   it("disconnect() with heartbeat: stops timer and calls quit", async () => {
     publisher.publishIdle(5000);
     vi.useRealTimers();

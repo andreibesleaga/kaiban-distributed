@@ -16,7 +16,19 @@ const log = createStructuredLogger({ component: "Telemetry" });
 
 export interface TelemetryConfig {
   serviceName: string;
+  /**
+   * The OTLP/HTTP base endpoint (OpenTelemetry's `OTEL_EXPORTER_OTLP_ENDPOINT`
+   * semantics), e.g. `http://otel-collector:4318`. Traces go to `<base>/v1/traces`
+   * and metrics to `<base>/v1/metrics`. A value that already ends in one of the
+   * signal paths (the older documented form `…/v1/traces`) is reduced to its base.
+   */
   exporterEndpoint?: string;
+}
+
+/** Per-signal OTLP/HTTP URLs for a base endpoint (a trailing signal path is tolerated). */
+export function otlpSignalUrls(endpoint: string): { traces: string; metrics: string } {
+  const base = endpoint.replace(/\/+$/, "").replace(/\/v1\/(traces|metrics|logs)$/, "");
+  return { traces: `${base}/v1/traces`, metrics: `${base}/v1/metrics` };
 }
 
 export function initTelemetry(config: TelemetryConfig): void {
@@ -25,12 +37,15 @@ export function initTelemetry(config: TelemetryConfig): void {
       "No OTEL_EXPORTER_OTLP_ENDPOINT configured — using Console exporters (dev only)",
     );
   }
-  const exporter = config.exporterEndpoint
-    ? new OTLPTraceExporter({ url: config.exporterEndpoint })
+  const urls = config.exporterEndpoint
+    ? otlpSignalUrls(config.exporterEndpoint)
+    : null;
+  const exporter = urls
+    ? new OTLPTraceExporter({ url: urls.traces })
     : new ConsoleSpanExporter();
 
-  const metricExporter = config.exporterEndpoint
-    ? new OTLPMetricExporter({ url: config.exporterEndpoint })
+  const metricExporter = urls
+    ? new OTLPMetricExporter({ url: urls.metrics })
     : new ConsoleMetricExporter();
 
   const metricReader = new PeriodicExportingMetricReader({

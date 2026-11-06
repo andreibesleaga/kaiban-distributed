@@ -130,30 +130,30 @@ describe("E2E: Distributed Task Execution", () => {
     await sub.subscribe(stateChannel);
     sub.on("message", (channel, message) => {
       if (channel === stateChannel) {
-        const payload = JSON.parse(message);
-        receivedDeltas.push(payload.data?.["stateUpdate"]);
+        receivedDeltas.push(JSON.parse(message));
       }
     });
 
     const middleware = new DistributedStateMiddleware(REDIS_URL, stateChannel);
-    interface E2EStore {
-      state: Record<string, unknown>;
-      setState: (partial: Record<string, unknown>) => void;
-    }
-    const store: E2EStore = {
-      state: { taskCount: 0 },
-      setState(partial: Record<string, unknown>): void {
-        this.state = { ...this.state, ...partial };
+    type S = Record<string, unknown>;
+    const listeners = new Set<(state: S, prev: S) => void>();
+    const store = {
+      subscribe: (l: (state: S, prev: S) => void): (() => void) => {
+        listeners.add(l);
+        return (): void => {
+          listeners.delete(l);
+        };
       },
     };
     middleware.attach(store);
 
-    await store.setState({ taskCount: 5 });
+    // A KaibanJS-style change: the board delta carries teamWorkflowStatus.
+    listeners.forEach((l) => l({ teamWorkflowStatus: "RUNNING" }, {}));
     await new Promise((r) => setTimeout(r, 800));
 
     expect(receivedDeltas.length).toBeGreaterThan(0);
     const delta = receivedDeltas[0] as Record<string, unknown>;
-    expect(delta["taskCount"]).toBe(5);
+    expect(delta["teamWorkflowStatus"]).toBe("RUNNING");
 
     await sub.quit();
     await middleware.disconnect();

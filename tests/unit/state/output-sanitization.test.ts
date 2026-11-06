@@ -157,11 +157,8 @@ describe("Large LLM output truncation via AgentStatePublisher", () => {
     >;
     // Answer should be extracted from the .answer field
     expect(tasks[0]["result"]).toBe("The answer to everything.");
-    // Token metadata should be published
-    const meta = (done as Record<string, unknown>)["metadata"] as Record<
-      string,
-      unknown
-    >;
-    expect(meta?.["totalTokens"]).toBe(150);
+    // Usage rides on the task card; run-level `metadata` is the orchestrator's (UI-02)
+    expect(tasks[0]["tokens"]).toBe(150);
+    expect(done).not.toHaveProperty("metadata");
   });
 });

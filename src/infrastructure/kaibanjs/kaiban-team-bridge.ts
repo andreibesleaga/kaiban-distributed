@@ -13,7 +13,9 @@ export interface KaibanTeamConfig {
 
 /** Minimal interface for state middleware — allows injection without importing adapters. */
 export interface IStateMiddleware {
-  attach(store: { setState: (partial: Record<string, unknown>) => void }): void;
+  attach(store: {
+    subscribe: (listener: (state: never, prev: never) => void) => () => void;
+  }): unknown;
   disconnect(): Promise<void>;
 }
 
@@ -49,9 +51,11 @@ export class KaibanTeamBridge {
     this.middleware = middleware ?? null;
 
     if (this.middleware) {
-      const store = this.team.getStore() as unknown as {
-        setState: (p: Record<string, unknown>) => void;
-      };
+      // KaibanJS store actions call the `set` Zustand gave them at creation, so
+      // patching `setState` would never see them; `subscribe` sees every change.
+      const store = this.team.getStore() as unknown as Parameters<
+        IStateMiddleware["attach"]
+      >[0];
       this.middleware.attach(store);
     }
   }
