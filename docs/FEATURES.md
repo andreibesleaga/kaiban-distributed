@@ -72,7 +72,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
   scale horizontally.
 - **Location transparency & horizontal scale.** Actors on one host or a global cluster look identical
   to the rest of the system; competing consumers (BullMQ round-robin / Kafka group rebalance) spread
-  load. **Value:** "horizontal scale is one command" (`docker compose up --scale searcher=N` or
+  load. On Kafka, replicas share the load only when the task topic has at least as many partitions as replicas (an auto-created topic has one), and a new consumer group reads a task mailbox from its start; the group's committed offsets expire after the broker's `offsets.retention.minutes` (7 days by default). **Value:** "horizontal scale is one command" (`docker compose up --scale searcher=N` or
   `kubectl scale --replicas=N`), and agents can be placed near data or specialized hardware (run
   searchers in one region, the writer in another).
 - **W3C trace-context propagation.** `traceparent`/`tracestate` headers ride every message across

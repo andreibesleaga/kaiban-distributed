@@ -662,7 +662,7 @@ class CompletionRouter {
       }
     });
 
-    // Failed tasks (after 3 retries → DLQ)
+    // Failed tasks (after 3 attempts → DLQ)
     void (failedDriver ?? completedDriver).subscribe('kaiban-events-failed', async (payload) => {
       const reject = this.pendingReject.get(payload.taskId);
       if (reject) {

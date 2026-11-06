@@ -287,7 +287,10 @@ npx ts-node examples/blog-team/writer-node.ts &
 **Kafka** — Consumer Group auto-rebalance:
 ```bash
 # Each writer-node joins the same Consumer Group
-# Kafka assigns partitions automatically as instances join/leave
+# Kafka assigns partitions automatically as instances join/leave.
+# One partition has one active consumer: create the task topic
+# (kaiban-agents-<id>) with at least as many partitions as replicas,
+# otherwise the extra replicas stay idle. Auto-created topics have one.
 MESSAGING_DRIVER=kafka npx ts-node examples/blog-team/writer-node.ts &
 MESSAGING_DRIVER=kafka npx ts-node examples/blog-team/writer-node.ts &
 ```
@@ -312,7 +315,7 @@ See the E2E horizontal scaling tests:
 |---------|-----------|---------|
 | `kaiban-agents-{agentId}` | BullMQ queue / Kafka topic | Actor mailbox — task messages |
 | `kaiban-events-completed` | BullMQ queue / Kafka topic | Completion results → CompletionRouter |
-| `kaiban-events-failed` | BullMQ queue / Kafka topic | DLQ — failed after 3 retries, or after one attempt on a non-retryable error |
+| `kaiban-events-failed` | BullMQ queue / Kafka topic | DLQ — failed after 3 attempts, or after one attempt on a non-retryable error |
 | `kaiban-state-events` | Redis Pub/Sub | Observability — actor state → board |
 | `kaiban-hitl-decisions` | Redis Pub/Sub | HITL — board decision → orchestrator |
 | `kaiban-control` | Redis Pub/Sub | Emergency STOP ALL (2.1.0, [ADR-025](../decisions/ADR-025-emergency-stop-control-channel.md)) — gateway / CLI → every worker and orchestrator; only with `CONTROL_PLANE_ENABLED=true` |
