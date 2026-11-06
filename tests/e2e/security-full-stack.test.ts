@@ -28,6 +28,7 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import Redis from "ioredis";
 
 import { BullMQDriver } from "../../src/infrastructure/messaging/bullmq-driver";
+import { createDriver } from "../../src/shared/driver-factory";
 import { AgentActor } from "../../src/application/actor/AgentActor";
 import { HeuristicFirewall } from "../../src/infrastructure/security/heuristic-firewall";
 import { SlidingWindowBreaker } from "../../src/infrastructure/security/sliding-window-breaker";
@@ -774,6 +775,37 @@ describe("5. Redis Password Auth", () => {
       taskId: `pw-task-${agentId}`,
       agentId,
       data: { instruction: "Redis auth test" },
+      timestamp: Date.now(),
+    });
+
+    await waitFor(() => completed, 5000);
+    expect(completed).toBe(true);
+
+    await pub.disconnect();
+    await sub.disconnect();
+  });
+
+  it("createDriver() (the production path) authenticates with the password in REDIS_URL", async () => {
+    // The shipped worker and gateway build their drivers here, not by hand.
+    const pub = createDriver("pw-pub");
+    const sub = createDriver("pw-sub");
+
+    const queueName = `sec-pw-cd-${randomUUID().slice(0, 8)}`;
+    const agentId = randomUUID().slice(0, 8);
+
+    let completed = false;
+    const actor = new AgentActor(agentId, sub, queueName, async () => "ok");
+    await actor.start();
+    await new Promise((r) => setTimeout(r, 200));
+
+    await pub.subscribe(COMPLETED, async (p) => {
+      if (p.agentId === agentId) completed = true;
+    });
+
+    await pub.publish(queueName, {
+      taskId: `pw-cd-task-${agentId}`,
+      agentId,
+      data: { instruction: "Redis auth via createDriver" },
       timestamp: Date.now(),
     });
 
