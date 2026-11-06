@@ -1585,7 +1585,7 @@ export const UNLIMITED: number;
 export const UNLIMITED_SENTINEL = "unlimited";
 
 // @public
-export function unwrapVerified(raw: string): Record<string, unknown> | null;
+export function unwrapVerified(raw: string, maxAgeMs?: number): Record<string, unknown> | null;
 
 // @public
 export interface ValidatedTaskInput {
