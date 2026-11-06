@@ -12,9 +12,15 @@
   <h1>Kaiban Distributed — Global Research Swarm</h1>
   <span class="badge badge-connecting" id="conn-badge">Connecting...</span>
   <span id="workflow-badge" style="font-size:0.75rem; color:#475569"></span>
+  <button type="button" id="stop-all-btn" class="stop-all-btn" aria-haspopup="dialog" hidden>STOP ALL</button>
+  <span id="control-error" class="control-error" role="alert" hidden></span>
 </header>
 
 <!-- Banners (shown dynamically by board.js) -->
+<div id="banner-control" class="control-banner" role="status" hidden>
+  <span class="control-banner-msg" id="banner-control-msg"></span>
+  <span class="control-banner-acks" id="banner-control-acks"></span>
+</div>
 <div id="banner-hitl" class="banner banner-hitl">
   <div class="banner-title">HUMAN DECISION REQUIRED</div>
   <div class="banner-msg" id="banner-hitl-msg"></div>
@@ -123,6 +129,19 @@
   <strong id="gateway-url-display">Gateway</strong>
   <span id="conn-detail">Connecting...</span>
 </div>
+
+<dialog id="stop-all-dialog" class="stop-all-dialog" aria-labelledby="stop-all-title" aria-describedby="stop-all-desc">
+  <form id="stop-all-form">
+    <h2 id="stop-all-title">Stop everything now?</h2>
+    <p id="stop-all-desc">This kills every running model call, task and workflow, including tasks still waiting in a queue. Nothing is resumed. Work started after the stop runs normally.</p>
+    <label for="stop-all-reason">Reason (optional)</label>
+    <input type="text" id="stop-all-reason" maxlength="500" autocomplete="off">
+    <div class="stop-all-actions">
+      <button type="button" id="stop-all-cancel" class="stop-all-cancel">Cancel</button>
+      <button type="submit" id="stop-all-confirm" class="stop-all-btn">Stop all</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
 <script src="board.js"></script>

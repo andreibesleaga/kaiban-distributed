@@ -390,6 +390,7 @@ Start the stack and a run as above, then stop everything that is running, from a
 
 ```bash
 # the board: the STOP ALL button in the header (start the board with VITE_BOARD_TOKEN=<board token>)
+# a static viewer (2.1.1): the same button; open examples/blog-team/viewer/board.html#token=<board token>
 # HTTP (a board token from issueBoardToken):
 curl -X POST http://localhost:3000/control/stop-all \
   -H "Authorization: Bearer <board token>" -H "content-type: application/json" \

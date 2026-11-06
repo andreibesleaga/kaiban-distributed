@@ -309,3 +309,75 @@ details.task-result[open] summary::before { content: '▼ '; }
 .hitl-task-group { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
 .hitl-task-group:first-child { border-top: none; margin-top: 6px; }
 .hitl-task-label { font-size: 0.78rem; color: #94a3b8; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+
+/* ── Emergency STOP ALL (ADR-025) ── */
+.stop-all-btn {
+  margin-left: auto;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #b91c1c;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.stop-all-btn:hover { background: #dc2626; }
+.stop-all-btn:focus-visible,
+.stop-all-cancel:focus-visible,
+#stop-all-reason:focus-visible { outline: 3px solid #fbbf24; outline-offset: 2px; }
+.stop-all-btn[hidden], .control-error[hidden], .control-banner[hidden] { display: none; }
+.control-error { color: #f87171; font-size: 0.8rem; font-weight: 600; }
+.control-banner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: 1px solid #b91c1c;
+  background: #450a0a;
+  color: #fecaca;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.control-banner-acks { color: #fca5a5; font-size: 0.85rem; font-weight: 500; }
+.stop-all-dialog {
+  margin: auto;
+  width: min(32rem, 92vw);
+  padding: 20px 24px;
+  border: 1px solid #b91c1c;
+  border-radius: 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.stop-all-dialog::backdrop { background: rgba(0,0,0,0.7); }
+.stop-all-dialog h2 { font-size: 1.1rem; margin-bottom: 8px; color: #f87171; }
+.stop-all-dialog p { font-size: 0.85rem; line-height: 1.5; margin-bottom: 14px; }
+.stop-all-dialog label { display: block; font-size: 0.85rem; margin-bottom: 4px; }
+#stop-all-reason {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font: inherit;
+}
+.stop-all-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
+.stop-all-actions .stop-all-btn { margin-left: 0; }
+.stop-all-cancel {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #334155;
+  color: #f1f5f9;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.stop-all-cancel:hover { background: #475569; }
+.task-card.stopped { border-left-color: #f59e0b; background: #1c1206; }
+.task-badge-stopped { background: #78350f; color: #fcd34d; }

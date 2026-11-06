@@ -21,6 +21,16 @@ const GATEWAY_URL = window.GATEWAY_URL
 
 document.getElementById('gateway-url-display').textContent = GATEWAY_URL;
 
+// Board token for a gateway that sets BOARD_JWT_SECRET (and for STOP ALL): read from the URL
+// fragment #token=... or window.BOARD_TOKEN. The fragment is removed from the address bar at once.
+// The token is kept only in this constant: never logged, never in a query string, never stored.
+function readBoardToken() {
+  const fromHash = new URLSearchParams(location.hash.replace(/^#/, '')).get('token');
+  if (fromHash) window.history.replaceState(null, '', location.pathname + location.search);
+  return fromHash || window.BOARD_TOKEN || '';
+}
+const BOARD_TOKEN = readBoardToken();
+
 // ── State ────────────────────────────────────────────────────────────────
 
 const state = {
@@ -28,6 +38,7 @@ const state = {
   tasks: [],
   workflowStatus: 'INITIAL',
   metadata: null,
+  controlPlane: null, // set by the gateway only when the control plane is on
 };
 
 // Live-duration timer — active while workflow is RUNNING
@@ -94,14 +105,17 @@ function makeTaskCard(task) {
   const statusUpper = (task.status || 'TODO').toUpperCase();
   const isAwaiting  = statusUpper === 'AWAITING_VALIDATION';
   const isBlocked   = statusUpper === 'BLOCKED';
+  const isStopped = statusUpper === 'STOPPED';
 
   const badge = isAwaiting
     ? '<span class="task-badge task-badge-hitl">⏸ HUMAN DECISION</span>'
+    : isStopped
+    ? '<span class="task-badge task-badge-stopped">⏹ Stopped</span>'
     : isBlocked
     ? '<span class="task-badge task-badge-error">⛔ ERROR</span>'
     : '';
 
-  const resultClass = isBlocked ? ' blocked' : isAwaiting ? ' awaiting' : '';
+  const resultClass = (isBlocked || isStopped) ? ' blocked' : isAwaiting ? ' awaiting' : '';
   const resultText  = parseTaskResult(task.result);
   const resultHtml  = resultText
     ? resultText.length > 400
@@ -131,7 +145,9 @@ function renderTasks() {
   const cols = { TODO: [], DOING: [], AWAITING_VALIDATION: [], DONE: [], BLOCKED: [] };
 
   for (const task of state.tasks) {
-    const key = (task.status || 'TODO').toUpperCase();
+    const rawKey = (task.status || 'TODO').toUpperCase();
+    // STOPPED tasks (emergency stop) are shown in the Blocked column with a Stopped badge
+    const key = rawKey === 'STOPPED' ? 'BLOCKED' : rawKey;
     if (cols[key]) cols[key].push(task);
   }
 
@@ -257,6 +273,7 @@ function render() {
   renderTasks();
   renderWorkflow();
   renderBanners();
+  renderControl();
   renderEconomics();
 }
 
@@ -305,6 +322,13 @@ function applyDelta(delta) {
     state.metadata = { ...(state.metadata || {}), ...delta.metadata };
   }
 
+  if (delta.controlPlane) {
+    state.controlPlane = { ...delta.controlPlane };
+  }
+  if (delta.control && state.controlPlane) {
+    state.controlPlane = applyControlAck(state.controlPlane, delta.control);
+  }
+
   if (delta.inputs?.topic) {
     document.getElementById('topic-label').textContent = `Topic: "${delta.inputs.topic}"`;
   }
@@ -313,9 +337,13 @@ function applyDelta(delta) {
 // ── Log delta events ─────────────────────────────────────────────────────
 
 const AGENT_ICONS = { IDLE: '⚪', EXECUTING: '🟢', THINKING: '🔵', ERROR: '🔴' };
-const TASK_ICONS  = { DOING: '🔵', DONE: '✅', BLOCKED: '🔴', AWAITING_VALIDATION: '⏸' };
+const TASK_ICONS  = { DOING: '🔵', DONE: '✅', BLOCKED: '🔴', AWAITING_VALIDATION: '⏸', STOPPED: '⏹' };
 
 function logDelta(delta) {
+  if (delta.control) {
+    addLog('CONTROL', controlMessage(delta.control), true);
+  }
+
   if (delta.teamWorkflowStatus) {
     addLog('WORKFLOW', `Status → ${delta.teamWorkflowStatus}`, true);
   }
@@ -344,6 +372,104 @@ function logDelta(delta) {
   }
 }
 
+// ── Emergency STOP ALL (ADR-025) ─────────────────────────────────────────
+// The button, the confirmation and the banner exist only while the gateway snapshot
+// says the control plane is on (CONTROL_PLANE_ENABLED). Same behaviour as the React board.
+
+const STOP_ACK_TIMEOUT_MS = 8000;
+
+function timeOf(ms) {
+  const d = new Date(ms);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+}
+
+/** Count node acknowledgements for the latest stop; a newer stop resets the count. */
+function applyControlAck(plane, ack) {
+  const { commandId, issuedAt, issuedBy, reason } = ack;
+  const next = !plane.lastStop || issuedAt > plane.lastStop.issuedAt
+    ? { enabled: true, lastStop: { commandId, issuedAt, issuedBy, ...(reason ? { reason } : {}) }, acks: 0 }
+    : { ...plane };
+  if (ack.outcome !== 'issued' && commandId === next.lastStop?.commandId) next.acks++;
+  return next;
+}
+
+/** One event-log line for a control ack. */
+function controlMessage(ack) {
+  if (ack.outcome === 'issued') {
+    return `STOP ALL issued by ${ack.issuedBy}${ack.reason ? ` — ${ack.reason}` : ''}`;
+  }
+  const who = ack.agentId ? `${ack.agentId} on ${ack.nodeId}` : ack.nodeId;
+  return `${who}: ${ack.outcome}, ${ack.aborted} task(s) killed`;
+}
+
+function renderControl() {
+  const plane = state.controlPlane;
+  const stop = plane?.lastStop;
+  document.getElementById('stop-all-btn').hidden = !plane?.enabled;
+  document.getElementById('banner-control').hidden = !stop;
+  if (!stop) return;
+  document.getElementById('banner-control-msg').textContent =
+    `Emergency stop at ${timeOf(stop.issuedAt)} by ${stop.issuedBy}` + (stop.reason ? ` — ${stop.reason}` : '');
+  const acks = plane.acks || 0;
+  document.getElementById('banner-control-acks').textContent =
+    `${acks} node acknowledgement${acks === 1 ? '' : 's'}`;
+}
+
+function showControlError(message) {
+  addLog('ERROR', message, true);
+  const el = document.getElementById('control-error');
+  el.textContent = message;
+  el.hidden = false;
+}
+
+function clearControlError() {
+  const el = document.getElementById('control-error');
+  el.textContent = '';
+  el.hidden = true;
+}
+
+function sendStopAll(reason) {
+  clearControlError();
+  if (!socket.connected) {
+    showControlError('Cannot send STOP ALL — not connected to the gateway. Run npm run stop-all instead.');
+    return;
+  }
+  addLog('CONTROL', 'Sending STOP ALL…', true);
+  let answered = false;
+  const timer = setTimeout(() => {
+    if (!answered) {
+      showControlError(`STOP ALL not confirmed by the gateway within ${STOP_ACK_TIMEOUT_MS / 1000}s — check the gateway, or run npm run stop-all`);
+    }
+  }, STOP_ACK_TIMEOUT_MS);
+
+  socket.emit('control:stop-all', reason ? { reason } : {}, response => {
+    answered = true;
+    window.clearTimeout(timer);
+    if (response?.ok) {
+      clearControlError(); // a late confirmation replaces the timeout alert
+      addLog('CONTROL', `STOP ALL issued (command ${String(response.commandId).slice(0, 8)})`, true);
+    } else {
+      showControlError(`STOP ALL refused: ${response?.error ?? 'gateway error'}`);
+    }
+  });
+}
+
+function wireStopAll() {
+  const dialog = document.getElementById('stop-all-dialog');
+  const reasonInput = document.getElementById('stop-all-reason');
+  document.getElementById('stop-all-btn').addEventListener('click', () => {
+    reasonInput.value = '';
+    dialog.showModal();
+  });
+  document.getElementById('stop-all-cancel').addEventListener('click', () => dialog.close());
+  document.getElementById('stop-all-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const reason = reasonInput.value.trim();
+    dialog.close();
+    sendStopAll(reason || undefined);
+  });
+}
+
 // ── Socket.io ────────────────────────────────────────────────────────────
 
 addLog('INIT', `Connecting to ${GATEWAY_URL}`);
@@ -352,6 +478,7 @@ const socket = io(GATEWAY_URL, {
   transports: ['websocket', 'polling'],
   reconnectionAttempts: Infinity,
   reconnectionDelay: 2000,
+  ...(BOARD_TOKEN ? { auth: { token: BOARD_TOKEN } } : {}),
 });
 
 socket.on('connect', () => {
@@ -359,6 +486,7 @@ socket.on('connect', () => {
   state.agents = [];
   state.tasks  = [];
   state.workflowStatus = 'INITIAL';
+  state.controlPlane = null;
   state.metadata = null;
   if (durationTimer) { clearInterval(durationTimer); durationTimer = null; }
   // Request full snapshot replay from gateway
@@ -394,3 +522,5 @@ socket.on('state:update', delta => {
 socket.on('task:completed', data => {
   addLog('DONE', `Task ${data.taskId} completed by ${data.agentId}`, true);
 });
+
+wireStopAll();

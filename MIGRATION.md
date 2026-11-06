@@ -110,6 +110,13 @@
       `docs/decisions/ADR-021`.
 - [ ] … (one entry per breaking change; cross-referenced to its ADR.)
 
+## 2.1.0 → 2.1.1 (STOP ALL in the static viewers, additive)
+
+Nothing to change. The static viewers under `examples/*/viewer` gain the STOP ALL button, which shows
+only when the gateway has the control plane on. If you copied a viewer into your own deployment,
+copy the new `board.html`, `board.js` and `board.css`. To connect a viewer to a gateway that sets
+`BOARD_JWT_SECRET`, open it with `#token=<board token>` (or set `window.BOARD_TOKEN`).
+
 ## 2.0.x → 2.1.0 (emergency STOP ALL, additive)
 
 Nothing to change: every addition is off unless `CONTROL_PLANE_ENABLED=true`, and with it unset
