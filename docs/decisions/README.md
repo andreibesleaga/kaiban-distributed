@@ -33,5 +33,3 @@ One file per decision. A decision keeps its history: when something changes, a d
 Numbers 022 to 024 were reserved for planned decisions and have never been used for a file, so the list jumps from 021 to 025.
 
 Some older ADRs mention section numbers such as "§B1.2" or "invariant #8". Those point to the v2.0 planning notes, which are private and not in this repository; the ADR text itself is the public record.
-
-For how to add an ADR, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
