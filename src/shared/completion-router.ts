@@ -42,7 +42,8 @@ export class CompletionRouter {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly completedDriver: IMessagingDriver;
   private readonly dlqDriver: IMessagingDriver;
-  private subscribed = false;
+  private completedSubscribed = false;
+  private failedSubscribed = false;
 
   constructor(
     completedDriver: IMessagingDriver,
@@ -64,42 +65,97 @@ export class CompletionRouter {
    * still waits in the queue for the late consumer.
    */
   private ensureSubscribed(): void {
-    if (this.subscribed) return;
-    this.subscribed = true;
+    if (!this.completedSubscribed) {
+      this.completedSubscribed = true;
+      this.subscribeCompleted();
+    }
+    if (!this.failedSubscribed) {
+      this.failedSubscribed = true;
+      this.subscribeFailed();
+    }
+  }
 
+  /**
+   * Runs a subscribe call. If it fails (a synchronous throw or a rejection), the
+   * error is logged, the queue is marked unsubscribed so the next `wait()` tries
+   * again, and every pending waiter is rejected with the cause instead of timing
+   * out. Never an unhandled rejection.
+   */
+  private subscribeWithRecovery(
+    queue: string,
+    subscribe: () => Promise<void>,
+    reset: () => void,
+  ): void {
+    const failed = (err: unknown): void => {
+      reset();
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`Subscribe to ${queue} failed: ${message}`);
+      this.rejectAllPending(
+        new Error(`Could not subscribe to ${queue}: ${message}`),
+      );
+    };
+    try {
+      subscribe().catch(failed);
+    } catch (err) {
+      failed(err);
+    }
+  }
+
+  private rejectAllPending(err: Error): void {
+    for (const [taskId, reject] of [...this.pendingReject]) {
+      this.clearPending(taskId);
+      reject(err);
+    }
+  }
+
+  private subscribeCompleted(): void {
     // Successful completions
-    void this.completedDriver.subscribe(COMPLETED_QUEUE, async (payload) => {
-      const resolve = this.pendingResolve.get(payload.taskId);
-      if (resolve) {
-        this.clearPending(payload.taskId);
-        const result = payload.data["result"];
-        resolve(
-          typeof result === "string" ? result : JSON.stringify(result ?? ""),
-        );
-      }
-    });
+    this.subscribeWithRecovery(
+      COMPLETED_QUEUE,
+      () =>
+        this.completedDriver.subscribe(COMPLETED_QUEUE, async (payload) => {
+          const resolve = this.pendingResolve.get(payload.taskId);
+          if (resolve) {
+            this.clearPending(payload.taskId);
+            const result = payload.data["result"];
+            resolve(
+              typeof result === "string"
+                ? result
+                : JSON.stringify(result ?? ""),
+            );
+          }
+        }),
+      () => (this.completedSubscribed = false),
+    );
+  }
 
+  private subscribeFailed(): void {
     // Failed tasks (after max retries → DLQ) — surfaces real LLM error to orchestrator
-    void this.dlqDriver.subscribe(FAILED_QUEUE, async (payload) => {
-      const reject = this.pendingReject.get(payload.taskId);
-      if (reject) {
-        this.clearPending(payload.taskId);
-        const errMsg = String(
-          payload.data["error"] ?? "Task failed after max retries",
-        );
-        // The reason (e.g. the budget breach detail) follows the stable code.
-        const reason = payload.data["reason"];
-        const detail =
-          typeof reason === "string" && reason ? ` — ${reason}` : "";
-        const message = `Agent failed: ${errMsg}${detail}`;
-        // A task killed by an emergency STOP ALL ends the waiting workflow too.
-        reject(
-          errMsg === EMERGENCY_STOP_REASON
-            ? new EmergencyStopError(message)
-            : new Error(message),
-        );
-      }
-    });
+    this.subscribeWithRecovery(
+      FAILED_QUEUE,
+      () =>
+        this.dlqDriver.subscribe(FAILED_QUEUE, async (payload) => {
+          const reject = this.pendingReject.get(payload.taskId);
+          if (reject) {
+            this.clearPending(payload.taskId);
+            const errMsg = String(
+              payload.data["error"] ?? "Task failed after max retries",
+            );
+            // The reason (e.g. the budget breach detail) follows the stable code.
+            const reason = payload.data["reason"];
+            const detail =
+              typeof reason === "string" && reason ? ` — ${reason}` : "";
+            const message = `Agent failed: ${errMsg}${detail}`;
+            // A task killed by an emergency STOP ALL ends the waiting workflow too.
+            reject(
+              errMsg === EMERGENCY_STOP_REASON
+                ? new EmergencyStopError(message)
+                : new Error(message),
+            );
+          }
+        }),
+      () => (this.failedSubscribed = false),
+    );
   }
 
   private clearPending(taskId: string): void {
@@ -128,7 +184,6 @@ export class CompletionRouter {
     label: string,
     signal?: AbortSignal,
   ): Promise<string> {
-    this.ensureSubscribed();
     return new Promise((resolve, reject) => {
       // Guard against a duplicate in-flight taskId: overwriting the maps would
       // orphan the first waiter's resolver + timer, hanging it forever.
@@ -169,6 +224,8 @@ export class CompletionRouter {
           }
         }, timeoutMs),
       );
+      // After registering, so a subscribe that fails at once rejects this waiter.
+      this.ensureSubscribed();
     });
   }
 

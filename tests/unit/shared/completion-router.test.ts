@@ -534,3 +534,58 @@ describe("CompletionRouter — emergency STOP ALL (ADR-025, ES-4)", () => {
     await expect(router.wait("t-b", 5_000, "step", controller.signal)).rejects.toBe(stop);
   });
 });
+
+describe("CompletionRouter — a failed subscribe", () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown): void => void unhandled.push(e);
+  beforeEach(() => {
+    unhandled.length = 0;
+    process.on("unhandledRejection", onUnhandled);
+  });
+  afterEach(() => {
+    process.off("unhandledRejection", onUnhandled);
+  });
+
+  const failingDriver = (
+    failures: number,
+    sync = false,
+  ): { driver: IMessagingDriver; calls: () => number } => {
+    let calls = 0;
+    const driver: IMessagingDriver = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      subscribe: vi.fn().mockImplementation(() => {
+        calls++;
+        if (calls <= failures) {
+          if (sync) throw new Error("amqp not implemented");
+          return Promise.reject(new Error("broker down"));
+        }
+        return Promise.resolve();
+      }),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    };
+    return { driver, calls: () => calls };
+  };
+
+  it("rejects the waiter with the cause, raises no unhandled rejection, and retries on the next wait()", async () => {
+    const { driver, calls } = failingDriver(1);
+    const router = new CompletionRouter(driver);
+    const first = router.wait("t1", 60_000, "x");
+    await expect(first).rejects.toThrow(/Could not subscribe to .*broker down/);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(unhandled).toEqual([]);
+
+    const second = router.wait("t2", 60_000, "x");
+    second.catch(() => undefined);
+    expect(calls()).toBe(3); // 1 failed completed + failed-queue once, then completed again
+  });
+
+  it("handles a synchronous throw from subscribe the same way", async () => {
+    const { driver } = failingDriver(2, true);
+    const router = new CompletionRouter(driver);
+    await expect(router.wait("t1", 60_000, "x")).rejects.toThrow(
+      /Could not subscribe .*amqp not implemented/,
+    );
+    expect(unhandled).toEqual([]);
+  });
+});
