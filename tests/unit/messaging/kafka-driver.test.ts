@@ -90,6 +90,14 @@ describe("KafkaDriver", () => {
     expect(mockRun).toHaveBeenCalledOnce();
   });
 
+  it("a task mailbox (kaiban-agents-<id>) is read from the beginning for a new group", async () => {
+    await driver.subscribe("kaiban-agents-writer", vi.fn());
+    expect(mockConsumerSubscribe).toHaveBeenCalledWith({
+      topic: "kaiban-agents-writer",
+      fromBeginning: true,
+    });
+  });
+
   it("2nd subscribe() throws (one topic per driver — C2)", async () => {
     await driver.subscribe("t", vi.fn());
     await expect(driver.subscribe("t2", vi.fn())).rejects.toThrow(

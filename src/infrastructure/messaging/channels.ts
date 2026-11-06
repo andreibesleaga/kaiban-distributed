@@ -7,6 +7,9 @@ export const STATE_CHANNEL = "kaiban-state-events";
 export const COMPLETED_CHANNEL = "kaiban-events-completed";
 export const DLQ_CHANNEL = "kaiban-events-failed";
 
+/** Prefix of an agent's task mailbox: `kaiban-agents-<agentId>`. */
+export const AGENT_MAILBOX_PREFIX = "kaiban-agents-";
+
 /** HITL decision channel: board → SocketGateway → Redis → orchestrator */
 export const HITL_CHANNEL = "kaiban-hitl-decisions";
 
