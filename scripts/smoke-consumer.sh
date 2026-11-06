@@ -22,7 +22,11 @@ echo "── Tarball must be core-only (no examples/board/tests; Apache LICENSE)
 if tar -tzf "$TGZ" | grep -qE '(^|/)(examples|board|tests)/'; then
   echo "FAIL: tarball leaks examples/board/tests:"; tar -tzf "$TGZ" | grep -E '(^|/)(examples|board|tests)/'; exit 1
 fi
-echo "  core-only OK"
+LICENSE_TEXT="$(tar -xOzf "$TGZ" package/LICENSE)"
+if ! grep -q "Apache License" <<<"$LICENSE_TEXT" || grep -q "GNU GENERAL PUBLIC LICENSE" <<<"$LICENSE_TEXT"; then
+  echo "FAIL: package/LICENSE is not the Apache-2.0 text (the GPL root LICENSE must not ship, ADR-011)"; exit 1
+fi
+echo "  core-only OK; LICENSE is Apache-2.0"
 
 echo "── Fresh consumer install + import both entry points ───────────────────"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT

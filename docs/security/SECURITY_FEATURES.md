@@ -428,11 +428,12 @@ redis:
 
 - When `REDIS_PASSWORD` is set, Redis starts with `requirepass`.
 - Port is bound to `127.0.0.1` only — not externally reachable on a single-host deployment.
-- Update `REDIS_URL` to include the password: `redis://:${REDIS_PASSWORD}@redis:6379` (or `localhost:6379` for bare-metal).
+- The compose file puts the password into the gateway's and worker's `REDIS_URL` (`redis://:${REDIS_PASSWORD}@redis:6379`) for you. For processes on the host use `localhost:6379` in that URL.
+- Use a URL-safe password (`openssl rand -hex 24`): base64 output can contain `/`, `+` and `=`, which break the URL.
 
 **Healthcheck** handles the optional password automatically:
 ```yaml
-test: ["CMD", "redis-cli", "${REDIS_PASSWORD:+-a}", "${REDIS_PASSWORD:-}", "ping"]
+test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+--no-auth-warning -a \"$$REDIS_PASSWORD\"} ping | grep -q PONG"]
 ```
 
 ---
@@ -568,7 +569,7 @@ Run through this before deploying to any internet-facing or multi-tenant environ
 - [ ] `SOCKET_CORS_ORIGINS=https://board.example.com` — prevents wildcard CORS
 - [ ] `A2A_JWT_SECRET=<openssl rand -base64 32>` — enables RPC auth
 - [ ] `CHANNEL_SIGNING_SECRET=<openssl rand -base64 32>` — enables Redis signing
-- [ ] `REDIS_PASSWORD=<openssl rand -base64 24>` and `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379`
+- [ ] `REDIS_PASSWORD=<openssl rand -hex 24>` and `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379`
 - [ ] `TRUST_PROXY=true` if behind Nginx / Railway / Kubernetes ingress
 - [ ] Board token supplied at run time, **not** `VITE_BOARD_TOKEN` in the production bundle (a bundled token is public and can issue STOP ALL and HITL decisions)
 
@@ -586,7 +587,7 @@ Run through this before deploying to any internet-facing or multi-tenant environ
 echo "BOARD_JWT_SECRET=$(openssl rand -base64 32)"
 echo "A2A_JWT_SECRET=$(openssl rand -base64 32)"
 echo "CHANNEL_SIGNING_SECRET=$(openssl rand -base64 32)"
-echo "REDIS_PASSWORD=$(openssl rand -base64 24)"
+echo "REDIS_PASSWORD=$(openssl rand -hex 24)"
 ```
 
 ---

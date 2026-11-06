@@ -21,15 +21,19 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAGE="${ROOT}/dist-staging"
 PUBLISH="${1:-}"
 
-echo "▶ building…"
+# tsc never deletes the output of a source file that was removed, so start from an empty
+# dist/: a stale compiled file must not end up in the tarball.
+echo "▶ building (clean dist/)…"
+rm -rf "${ROOT:?}/dist"
 npm --prefix "$ROOT" run build
 
 echo "▶ assembling staging dir: $STAGE"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 
-# Compiled output (package.json `main`/`exports`/`files` reference dist/src).
-cp -R "$ROOT/dist" "$STAGE/dist"
+# Compiled library only (package.json `exports`/`files` reference dist/src; dist/examples stays out).
+mkdir -p "$STAGE/dist"
+cp -R "$ROOT/dist/src" "$STAGE/dist/src"
 
 # Curated, license-correct files only. LICENSE-APACHE becomes the canonical LICENSE
 # so the tarball carries Apache-2.0, never the root GPL text.

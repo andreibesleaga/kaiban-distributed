@@ -20,7 +20,8 @@ metadata:
   name: kaiban-research-secrets
 type: Opaque
 stringData:
-  # Base64 encoded values or managed via external secret operators
-  # Replace with actual keys before applying
+  # Plain-text values (stringData; Kubernetes encodes them), or manage the Secret with an external secret operator.
+  # Replace OPENAI_API_KEY before applying. Leave OPENROUTER_API_KEY empty unless you use OpenRouter:
+  # when it is set it takes precedence over OPENAI_API_KEY.
   OPENAI_API_KEY: "sk-..."
-  OPENROUTER_API_KEY: "sk-or-v1-..."
+  OPENROUTER_API_KEY: ""

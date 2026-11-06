@@ -15,7 +15,7 @@ laptop: the npm trusted publisher and the build provenance need the workflow's O
 
 1. On a branch (`main` is protected; changes land through a pull request), set the new version in
    every place that carries it: `package.json` and `package-lock.json` (`version`) and the
-   agent-card example in `README.md`; `site/index.html` also names the current release (two
+   agent-card example in `README.md`, `appVersion` in `examples/*/infra/helm/Chart.yaml` (the default image tag of the Helm charts); `site/index.html` also names the current release (two
    places). The agent card and the MCP server read their version from `package.json`
    (`src/infrastructure/federation/package-version.ts`), so no source file needs an edit. Move the
    `CHANGELOG.md` `[Unreleased]` entries under `## [X.Y.Z] — <date>`.
