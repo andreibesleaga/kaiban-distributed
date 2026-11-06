@@ -21,12 +21,14 @@ export function loadTlsConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): TlsConfig | undefined {
   if (!caPath || !certPath || !keyPath) return undefined;
-  const reject = env["TLS_REJECT_UNAUTHORIZED"];
+  // Verification stays on unless the documented opt-out literal is given; a
+  // mistyped value ("True", "no", "off") must not silently disable it.
+  const reject = (env["TLS_REJECT_UNAUTHORIZED"] ?? "").trim().toLowerCase();
   return {
     ca: readFileSync(caPath),
     cert: readFileSync(certPath),
     key: readFileSync(keyPath),
-    rejectUnauthorized: !reject ? true : reject === "true" || reject === "1",
+    rejectUnauthorized: !(reject === "false" || reject === "0"),
   };
 }
 

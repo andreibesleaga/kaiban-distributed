@@ -27,8 +27,23 @@ export interface TelemetryConfig {
 
 /** Per-signal OTLP/HTTP URLs for a base endpoint (a trailing signal path is tolerated). */
 export function otlpSignalUrls(endpoint: string): { traces: string; metrics: string } {
-  const base = endpoint.replace(/\/+$/, "").replace(/\/v1\/(traces|metrics|logs)$/, "");
-  return { traces: `${base}/v1/traces`, metrics: `${base}/v1/metrics` };
+  // The signal path goes on the URL's pathname; a query string (tenant, key)
+  // and fragment are kept. Plain string work, no regular expression.
+  const url = new URL(endpoint);
+  let base = url.pathname;
+  while (base.endsWith("/")) base = base.slice(0, -1);
+  for (const signal of ["/v1/traces", "/v1/metrics", "/v1/logs"]) {
+    if (base.endsWith(signal)) {
+      base = base.slice(0, -signal.length);
+      break;
+    }
+  }
+  const withPath = (signal: string): string => {
+    const u = new URL(url.href);
+    u.pathname = `${base}${signal}`;
+    return u.href;
+  };
+  return { traces: withPath("/v1/traces"), metrics: withPath("/v1/metrics") };
 }
 
 export function initTelemetry(config: TelemetryConfig): void {

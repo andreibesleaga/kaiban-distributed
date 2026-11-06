@@ -86,6 +86,7 @@ A correctness and security release from a full audit of the runtime, gateway, bo
 - `IStateMiddleware.attach` / `DistributedStateMiddleware.attach` take a subscribable store (`team.getStore()`), not a `setState` store.
 - `CompletionRouter.waitAll(taskIds, timeoutMs, label, signal?)`: with a signal, an abort rejects; without one, behaviour is unchanged.
 - New exports `otlpSignalUrls(endpoint)`, the types `UnwrapOptions`, `McpSessionLimits`, `ObservableStore`, `KaibanStoreState`, `KaibanAgentLike`, `KaibanTaskLike`; `TlsConfig` and `loadTlsConfig` live in `src/infrastructure/security/tls-config.ts` (the `TlsConfig` type is still exported from the root).
+- `TLS_REJECT_UNAUTHORIZED` turns certificate verification off only for the literals `false` and `0` (case-insensitive); any other value keeps it on. `OTEL_EXPORTER_OTLP_ENDPOINT` may carry a query string (tenant, key); the signal path goes on the URL path. The global-research searcher identity is keyed by host name and pid, so local replicas on one machine get distinct cards. `.dockerignore` keeps `certs/` and key files out of the image build context.
 - Socket.io dev default CORS origin is the string `"*"` (the former `["*"]` matched no origin). Task card accessible name: "View details for task: <title>, status <status>".
 - All GitHub Actions are pinned to commit SHAs; Dependabot ignores major versions and groups `@opentelemetry/*`; CI gains a `deploy-manifests` job (`docker compose config`, `helm lint`, `helm template` for every stack and chart).
 

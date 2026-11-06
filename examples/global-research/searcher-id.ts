@@ -3,8 +3,9 @@
  * Searcher identity: which `searcher-<n>` card a replica publishes as.
  *
  * Each replica claims the next index from a Redis counter and remembers it per
- * host name, so a replica that is restarted in place (compose `restart:
- * on-failure` keeps the container, hence the host name) takes ITS OLD id back:
+ * host key (host name and pid: a container restarted in place keeps both, local
+ * replicas on one machine differ by pid), so a replica that is restarted in
+ * place (compose `restart: on-failure` keeps the container) takes ITS OLD id back:
  * no second process publishes as another live card, and the dead card is reused
  * instead of staying stuck. A new stack starts on a fresh Redis (the example
  * compose files keep no Redis volume), so the counter restarts at 0. With a

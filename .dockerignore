@@ -12,6 +12,11 @@ dist
 dist-staging
 coverage
 *.tgz
+# Generated TLS material (scripts/generate-dev-certs.sh) is mounted at run time, never built in.
+certs
+*.key
+*.pem
+*.crt
 **/runs
 temp
 reports

@@ -28,7 +28,9 @@ async function claimSearcherId(): Promise<string> {
   if (process.env['SEARCHER_ID']) return process.env['SEARCHER_ID'];
   const tmp = createRedisClient(REDIS_URL);
   try {
-    return await assignSearcherId(tmp, hostname());
+    // Host name alone would make local replicas on one machine share an id; the
+    // pid tells them apart, and in a restarted container it is the same again.
+    return await assignSearcherId(tmp, `${hostname()}:${process.pid}`);
   } finally {
     await tmp.quit();
   }
