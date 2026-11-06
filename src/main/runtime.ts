@@ -5,6 +5,7 @@ import { BullMQDriver } from "../infrastructure/messaging/bullmq-driver";
 import { KafkaDriver } from "../infrastructure/messaging/kafka-driver";
 import { type IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import { createStructuredLogger } from "../shared/structured-logger";
+import { redisConnectionFromUrl } from "../shared/redis-connection";
 
 const log = createStructuredLogger({ component: "runtime" });
 
@@ -27,7 +28,7 @@ export function buildMessagingDriver(config: AppConfig): IMessagingDriver {
     "Messaging driver selected",
   );
   return new BullMQDriver({
-    connection: { host: config.redis.host, port: config.redis.port },
+    connection: redisConnectionFromUrl(config.redis.url),
     tls: config.redis.tls,
   });
 }

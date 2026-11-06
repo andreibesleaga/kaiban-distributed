@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-import { readFileSync } from "fs";
 import type { EconomicsConfig } from "../economics/types";
 import type { GovernanceConfig } from "../governance/types";
 import { resolveSpendCaps } from "../shared/budget";
 import { createStructuredLogger } from "../shared/structured-logger";
+import {
+  kafkaSslFromEnv,
+  redisTlsFromEnv,
+  type TlsConfig,
+} from "../infrastructure/security/tls-config";
+
+export type { TlsConfig };
 
 const log = createStructuredLogger({ component: "config" });
 
 export type MessagingDriver = "bullmq" | "kafka" | "amqp";
-
-export interface TlsConfig {
-  ca: Buffer;
-  cert: Buffer;
-  key: Buffer;
-  rejectUnauthorized: boolean;
-}
 
 /**
  * MCP server surface (master plan §B5.1 Phase M). OFF by default — `enabled`
@@ -123,20 +122,6 @@ function parseMessagingDriver(value: string): MessagingDriver {
   );
 }
 
-function loadTlsConfig(
-  caPath?: string,
-  certPath?: string,
-  keyPath?: string,
-): TlsConfig | undefined {
-  if (!caPath || !certPath || !keyPath) return undefined;
-  return {
-    ca: readFileSync(caPath),
-    cert: readFileSync(certPath),
-    key: readFileSync(keyPath),
-    rejectUnauthorized: getBoolEnv("TLS_REJECT_UNAUTHORIZED", true),
-  };
-}
-
 /** Secrets that sign or verify tokens and channel messages. */
 const SIGNING_SECRETS = [
   "BOARD_JWT_SECRET",
@@ -205,21 +190,13 @@ export function loadConfig(): AppConfig {
       url: redisUrl,
       host: parsed.hostname,
       port: parseInt(parsed.port || "6379", 10),
-      tls: loadTlsConfig(
-        process.env["REDIS_TLS_CA"],
-        process.env["REDIS_TLS_CERT"],
-        process.env["REDIS_TLS_KEY"],
-      ),
+      tls: redisTlsFromEnv(),
     },
     kafka: {
       brokers: getEnv("KAFKA_BROKERS", "localhost:9092").split(","),
       clientId: getEnv("KAFKA_CLIENT_ID", "kaiban-worker"),
       groupId: getEnv("KAFKA_GROUP_ID", "kaiban-group"),
-      ssl: loadTlsConfig(
-        process.env["KAFKA_SSL_CA"],
-        process.env["KAFKA_SSL_CERT"],
-        process.env["KAFKA_SSL_KEY"],
-      ),
+      ssl: kafkaSslFromEnv(),
     },
     agentIds: agentIdsRaw
       .split(",")

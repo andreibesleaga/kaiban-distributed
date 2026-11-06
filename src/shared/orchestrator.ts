@@ -34,7 +34,8 @@
  * broker; the result/HITL channels are unchanged); I3 (`taskId` dedup).
  */
 
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import { createRedisClient } from "./redis-connection";
 import {
   BudgetExceededError,
   cleanSpendAmount,
@@ -605,7 +606,7 @@ export class RedisCheckpointStore implements CheckpointStore {
   private readonly ttlSeconds: number;
 
   constructor(redisUrl: string, opts?: RedisCheckpointStoreOptions) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false });
+    this.redis = createRedisClient(redisUrl, { lazyConnect: false });
     this.ttlSeconds = opts?.ttlSeconds ?? DEFAULT_TTL_SECONDS;
   }
 

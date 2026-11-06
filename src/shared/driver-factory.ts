@@ -15,6 +15,11 @@ import { KafkaDriver } from "../infrastructure/messaging/kafka-driver";
 import { AmqpDriver } from "../infrastructure/messaging/amqp-driver";
 import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import { createLogger } from "./logger";
+import {
+  kafkaSslFromEnv,
+  redisTlsFromEnv,
+} from "../infrastructure/security/tls-config";
+import { redisConnectionFromUrl } from "./redis-connection";
 
 export type DriverType = "bullmq" | "kafka" | "amqp";
 
@@ -58,13 +63,18 @@ function createKafkaDriver(groupIdSuffix: string): IMessagingDriver {
     : groupIdSuffix;
   const groupId = suffix ? `${base}-${suffix}` : base;
   log.info(`Kafka  brokers=${brokers.join(",")}  group=${groupId}`);
-  return new KafkaDriver({ brokers, clientId, groupId });
+  const ssl = kafkaSslFromEnv();
+  return new KafkaDriver({
+    brokers,
+    clientId,
+    groupId,
+    ...(ssl ? { ssl } : {}),
+  });
 }
 
 function createBullMQDriver(): IMessagingDriver {
-  const url = new URL(process.env["REDIS_URL"] ?? "redis://localhost:6379");
-  const host = url.hostname;
-  const port = parseInt(url.port || "6379", 10);
-  log.info(`BullMQ  redis=${host}:${port}`);
-  return new BullMQDriver({ connection: { host, port } });
+  const connection = redisConnectionFromUrl(process.env["REDIS_URL"]);
+  const tls = redisTlsFromEnv();
+  log.info(`BullMQ  redis=${connection.host}:${connection.port}`);
+  return new BullMQDriver({ connection, ...(tls ? { tls } : {}) });
 }

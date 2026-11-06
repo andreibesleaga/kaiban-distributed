@@ -22,7 +22,7 @@
  *   // Waits only for a board signal; call is unresolved until one arrives.
  */
 
-import { Redis } from "ioredis";
+import { createRedisClient } from "./redis-connection";
 import readline from "readline";
 import { unwrapVerified } from "../infrastructure/security/channel-signing";
 
@@ -94,7 +94,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     // ── Board path A: pub/sub (fast — delivers in <1ms when timing is right) ─
     // Register handler BEFORE subscribe() to avoid the race where a message
     // arrives between subscribe completing and .then() continuation.
-    const sub = new Redis(redisUrl, { lazyConnect: false });
+    const sub = createRedisClient(redisUrl, { lazyConnect: false });
 
     sub.on("error", (err: unknown) => {
       /* v8 ignore next — FALSE branch: error fires after resolution (already disconnected) */
@@ -124,7 +124,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
     // ── Board path B: BRPOP polling (reliable — works even if pub/sub races) ─
     // The gateway writes to `kaiban-hitl-decisions:<taskId>` via LPUSH so the
     // message persists in Redis until BRPOP consumes it — no timing dependency.
-    const poller = new Redis(redisUrl, { lazyConnect: false });
+    const poller = createRedisClient(redisUrl, { lazyConnect: false });
 
     poller.on("error", (err: unknown) => {
       if (!resolved) console.warn("[HITL] Redis poller error:", err);

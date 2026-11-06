@@ -8,7 +8,8 @@
  * the message, or starts later, reads it on start and on every reconnect.
  */
 import { createHmac, timingSafeEqual } from "crypto";
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import { createRedisClient } from "../../shared/redis-connection";
 import { z } from "zod";
 import { CONTROL_CHANNEL } from "../messaging/channels";
 import { unwrapVerified, wrapSigned } from "../security/channel-signing";
@@ -199,8 +200,8 @@ export class ControlSubscriber {
   constructor(private readonly opts: ControlSubscriberOptions) {}
 
   async start(): Promise<void> {
-    const subscriber = new Redis(this.opts.redisUrl, { lazyConnect: false });
-    const reader = new Redis(this.opts.redisUrl, { lazyConnect: false });
+    const subscriber = createRedisClient(this.opts.redisUrl, { lazyConnect: false });
+    const reader = createRedisClient(this.opts.redisUrl, { lazyConnect: false });
     this.subscriber = subscriber;
     this.reader = reader;
     for (const client of [subscriber, reader]) {

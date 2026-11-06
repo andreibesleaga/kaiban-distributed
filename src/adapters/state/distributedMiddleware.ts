@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Redis } from "ioredis";
+import { createRedisClient } from "../../shared/redis-connection";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
 import { createStructuredLogger } from "../../shared/structured-logger";
@@ -45,7 +46,7 @@ export class DistributedStateMiddleware {
   private channelName: string;
 
   constructor(redisUrl: string, channelName = STATE_CHANNEL) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false });
+    this.redis = createRedisClient(redisUrl, { lazyConnect: false });
     this.channelName = channelName;
   }
 

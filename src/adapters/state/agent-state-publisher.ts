@@ -8,7 +8,8 @@
  * Each worker node creates one publisher, registers its agent, and wraps its task
  * handler so the board sees IDLE → EXECUTING → DONE transitions in real-time.
  */
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import { createRedisClient } from "../../shared/redis-connection";
 import type { MessagePayload } from "../../infrastructure/messaging/interfaces";
 import type { TaskHandler } from "../../application/actor/AgentActor";
 import { STATE_CHANNEL } from "../../infrastructure/messaging/channels";
@@ -138,7 +139,7 @@ export class AgentStatePublisher {
     agentInfo: AgentInfo,
     opts?: AgentStatePublisherOpts,
   ) {
-    this.redis = new Redis(redisUrl, { lazyConnect: false });
+    this.redis = createRedisClient(redisUrl, { lazyConnect: false });
     this.agentInfo = agentInfo;
     this.maxTokenBudget = cappedAt(opts?.maxTokenBudget);
     this.maxTaskTokenBudget = cappedAt(opts?.maxTaskTokenBudget);

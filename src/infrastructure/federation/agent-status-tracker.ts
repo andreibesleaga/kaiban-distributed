@@ -12,7 +12,7 @@
  * it keeps working identically under any `MESSAGING_DRIVER`. It uses a dedicated
  * subscriber connection and never publishes.
  */
-import { Redis } from "ioredis";
+import { createRedisClient } from "../../shared/redis-connection";
 import { STATE_CHANNEL } from "../messaging/channels";
 import { unwrapVerified } from "../security/channel-signing";
 import type { AgentStatus } from "../../domain/entities/DistributedAgentState";
@@ -40,7 +40,7 @@ export class AgentStatusTracker {
 
   constructor(redis: RedisSubscriber | string) {
     if (typeof redis === "string") {
-      this.redis = new Redis(redis) as unknown as RedisSubscriber;
+      this.redis = createRedisClient(redis) as unknown as RedisSubscriber;
       this.ownsClient = true;
     } else {
       this.redis = redis;

@@ -11,7 +11,7 @@
  * The SDK `TaskStore` interface is intentionally tiny (`save` / `load`); this class
  * implements exactly that surface plus a `close()` for lifecycle management.
  */
-import { Redis } from "ioredis";
+import { createRedisClient } from "../../shared/redis-connection";
 import type { Task } from "@a2a-js/sdk";
 import type { TaskStore } from "@a2a-js/sdk/server";
 
@@ -48,7 +48,7 @@ export class RedisTaskStore implements TaskStore {
     options: RedisTaskStoreOptions = {},
   ) {
     if (typeof redis === "string") {
-      this.redis = new Redis(redis) as unknown as RedisLike;
+      this.redis = createRedisClient(redis) as unknown as RedisLike;
       this.ownsClient = true;
     } else {
       this.redis = redis;

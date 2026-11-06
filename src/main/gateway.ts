@@ -2,6 +2,7 @@
 import { createServer } from "http";
 import { randomUUID } from "crypto";
 import { Redis } from "ioredis";
+import { redisClientOptions } from "../shared/redis-connection";
 import { loadConfig } from "./config";
 import { buildMessagingDriver, initRuntimeTelemetry } from "./runtime";
 import { createDriver, getDriverType } from "../shared/driver-factory";
@@ -161,15 +162,7 @@ export async function runGateway(): Promise<void> {
   const failedDriver = isKafka ? createDriver("-gateway-failed") : completedDriver;
   const router = new CompletionRouter(completedDriver, failedDriver);
 
-  const redisOpts = config.redis.tls
-    ? {
-        tls: {
-          ca: config.redis.tls.ca,
-          cert: config.redis.tls.cert,
-          key: config.redis.tls.key,
-        },
-      }
-    : {};
+  const redisOpts = redisClientOptions({}, config.redis.tls);
   const redisSocketPub = new Redis(config.redis.url, redisOpts);
   const redisSocketSub = new Redis(config.redis.url, redisOpts);
   const redisHitlPub = new Redis(config.redis.url, redisOpts);
