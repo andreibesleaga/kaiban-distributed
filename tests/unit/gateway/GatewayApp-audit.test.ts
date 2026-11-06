@@ -6,10 +6,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { IncomingMessage } from "http";
 import request from "supertest";
+import { GatewayApp } from "../../../src/adapters/gateway/GatewayApp";
 import {
-  GatewayApp,
   DEFAULT_LONG_REQUEST_TIMEOUT_MS,
-} from "../../../src/adapters/gateway/GatewayApp";
+  longRequestTimeoutFor,
+} from "../../../src/adapters/gateway/request-timeouts";
 import type { EmergencyStopIngress } from "../../../src/adapters/gateway/emergency-stop-ingress";
 import type { McpHttpHandler } from "../../../src/infrastructure/federation/mcp-http";
 import { makeRequestHandler, makeStatusTracker } from "./gateway-test-helpers";
@@ -55,6 +56,13 @@ describe("socket idle timeout per route (SEC-02)", () => {
     const gw = build({ longRequestTimeoutMs: 123_456 });
     await request(gw.app).post("/a2a/rpc").send({ jsonrpc: "2.0", id: 1, method: "tasks/get", params: { id: "t" } });
     expect(spy).toHaveBeenCalledWith(123_456);
+  });
+});
+
+describe("longRequestTimeoutFor", () => {
+  it("is at least 15 minutes and always beyond the task wait", () => {
+    expect(longRequestTimeoutFor(1_000)).toBe(DEFAULT_LONG_REQUEST_TIMEOUT_MS);
+    expect(longRequestTimeoutFor(2_000_000)).toBe(2_060_000);
   });
 });
 

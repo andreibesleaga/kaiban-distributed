@@ -115,7 +115,11 @@ export class AgentRegistry {
 
   private isExpired(record: AgentRecord, now?: string): boolean {
     const { expiresAt } = record.registration;
-    return expiresAt !== undefined && now !== undefined && expiresAt < now;
+    if (expiresAt === undefined || now === undefined) return false;
+    // Compare instants, not strings (offsets differ); an unreadable time fails closed.
+    const expiry = Date.parse(expiresAt);
+    const current = Date.parse(now);
+    return Number.isNaN(expiry) || Number.isNaN(current) || expiry < current;
   }
 
   private overLimit(record: AgentRecord): boolean {

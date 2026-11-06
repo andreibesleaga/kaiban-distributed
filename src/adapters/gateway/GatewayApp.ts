@@ -20,6 +20,10 @@ import type { ProbeResult } from "../../resilience/health";
 import { createStructuredLogger } from "../../shared/structured-logger";
 import { SlidingWindowRateLimiter } from "./rate-limiter";
 import type { EmergencyStopIngress } from "./emergency-stop-ingress";
+import {
+  DEFAULT_LONG_REQUEST_TIMEOUT_MS,
+  SHORT_REQUEST_TIMEOUT_MS,
+} from "./request-timeouts";
 
 /** HTTP route of the emergency STOP ALL (ADR-025; only with CONTROL_PLANE_ENABLED). */
 export const CONTROL_STOP_ALL_PATH = "/control/stop-all";
@@ -49,17 +53,6 @@ function clientIpOf(req: Request): string {
   return req.ip ?? req.socket.remoteAddress ?? "unknown";
 }
 
-/**
- * Socket idle limit for short routes (`POST /control/stop-all`): a slow-read
- * client cannot hold the connection open.
- */
-const REQUEST_TIMEOUT_MS = 30_000;
-/**
- * Socket idle limit for the routes that legitimately stay silent for as long
- * as a task runs: blocking A2A `message/send`, `message/stream` and the MCP
- * stream. Overridable with `longRequestTimeoutMs`.
- */
-export const DEFAULT_LONG_REQUEST_TIMEOUT_MS = 900_000;
 /** Largest body the A2A and MCP routes parse. */
 const JSON_BODY_LIMIT = "1mb";
 /** The stop-all body is only an optional short reason. */
@@ -225,7 +218,7 @@ export class GatewayApp {
     if (emergencyStop) {
       this.app.post(
         CONTROL_STOP_ALL_PATH,
-        this.enforceRequestTimeout(REQUEST_TIMEOUT_MS),
+        this.enforceRequestTimeout(SHORT_REQUEST_TIMEOUT_MS),
         express.json({ limit: STOP_BODY_LIMIT }),
         (req: Request, res: Response) => void this.handleStopAll(emergencyStop, req, res),
       );
