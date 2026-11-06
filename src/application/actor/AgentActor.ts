@@ -68,21 +68,35 @@ function truncateToBytes(str: string, maxBytes: number): string {
   return buf.toString("utf8", 0, end);
 }
 
+/** Serialized (JSON) size of a value in bytes. */
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
 /**
- * Cap outbound message data to MAX_PUBLISH_DATA_LEN BYTES. When the serialized
- * payload is over budget, the `result` string is byte-truncated (multi-byte
- * safe) and `_truncated` is flagged.
+ * Cap outbound message data to MAX_PUBLISH_DATA_LEN BYTES of serialized JSON.
+ * When it is over budget, the `result` string is truncated (multi-byte safe) to
+ * what is left after the other fields, measured as JSON: a quote, a newline or a
+ * control character takes 2 to 6 bytes once escaped. `_truncated` is flagged.
  */
 function capDataSize(data: Record<string, unknown>): Record<string, unknown> {
-  if (Buffer.byteLength(JSON.stringify(data), "utf8") <= MAX_PUBLISH_DATA_LEN) {
-    return data;
+  if (jsonBytes(data) <= MAX_PUBLISH_DATA_LEN) return data;
+  const capped = { ...data, result: "", _truncated: true };
+  const budget = MAX_PUBLISH_DATA_LEN - jsonBytes(capped);
+  let result = String(data["result"] ?? "");
+  let rawLimit = Math.max(budget, 0);
+  // Each raw byte encodes to at least one JSON byte, so cutting the excess off the
+  // raw limit always makes progress and ends within a few rounds.
+  for (;;) {
+    result = truncateToBytes(result, rawLimit);
+    const excess = jsonBytes(result) - 2 - budget;
+    if (excess <= 0 || rawLimit === 0) return { ...capped, result };
+    rawLimit = Math.max(Buffer.byteLength(result, "utf8") - excess, 0);
   }
-  return {
-    ...data,
-    result: truncateToBytes(String(data["result"] ?? ""), MAX_PUBLISH_DATA_LEN),
-    _truncated: true,
-  };
 }
+
+/** Longest `error` or `reason` text in a dead-letter record (bytes before JSON escaping). */
+const MAX_DLQ_TEXT_BYTES = 4_096;
 
 /** Default per-task execution timeout: 5 minutes */
 const DEFAULT_TASK_TIMEOUT_MS = 300_000;
@@ -438,13 +452,14 @@ export class AgentActor {
     reason?: string,
   ): Promise<void> {
     recordMessageProcessed("failed");
-    // Byte-cap each free-text field so a giant error/reason cannot blow the 64 KB
-    // outbound invariant (multi-byte safe). capDataSize is the outer guard.
+    // Byte-cap each free-text field to a few KB so a giant error/reason cannot
+    // use up the 64 KB outbound budget (multi-byte safe) and push out the inputs.
+    // Two such fields stay far below the cap even when fully JSON-escaped.
     const failure: Record<string, unknown> = {
       status: "failed",
-      error: truncateToBytes(error, MAX_PUBLISH_DATA_LEN),
+      error: truncateToBytes(error, MAX_DLQ_TEXT_BYTES),
       ...(reason
-        ? { reason: truncateToBytes(reason, MAX_PUBLISH_DATA_LEN) }
+        ? { reason: truncateToBytes(reason, MAX_DLQ_TEXT_BYTES) }
         : {}),
     };
     // The record carries the task's original inputs so replayDlq can re-run the
@@ -453,14 +468,14 @@ export class AgentActor {
     // record is marked, so replay skips it rather than running an empty task.
     const withInputs: Record<string, unknown> = { ...payload.data, ...failure };
     const data =
-      Buffer.byteLength(JSON.stringify(withInputs), "utf8") <= MAX_PUBLISH_DATA_LEN
+      jsonBytes(withInputs) <= MAX_PUBLISH_DATA_LEN
         ? withInputs
         : { ...failure, _inputs_omitted: true };
     await this.driver.publish(DLQ_CHANNEL, {
       taskId: payload.taskId,
       agentId: this.id,
       timestamp: Date.now(),
-      data: capDataSize(data),
+      data,
     });
   }
 
