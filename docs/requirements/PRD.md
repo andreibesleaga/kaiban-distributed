@@ -1,4 +1,6 @@
 # Product Requirements Document (PRD)
+
+> Original product requirements (March 2026), kept as written; for current behaviour see [README.md](../../README.md) and [docs/FEATURES.md](../FEATURES.md).
 ## Distributed KaibanJS
 
 ### 1. Overview
@@ -27,8 +29,12 @@ Kaiban Distributed transforms the KaibanJS framework into a fully distributed, h
 
 **Epic 4: Compliance & Observability**
 - As a Security Officer, I want PII to be excluded from message queues and all secrets loaded securely via the environment.
+  - *Update (2.1.2):* the code strips personal-data keys from the state events sent to boards (top-level keys; `docs/security/SECURITY_FEATURES.md`), not from task payloads. Read the requirement as: personal data keys stripped from state events, and all secrets loaded from the environment.
 - As an SRE, I want full OpenTelemetry distributed tracing so I can track an agent's reasoning cycle, LLM inference time, and network delivery across services.
 
+**Epic 5: Operator control** *(added with 2.1.0)*
+- As an operator, I want one command to stop every running model call, task and workflow (ADR-025).
+
 ### 4. Out of Scope
-- A complete rewrite of the KaibanJS frontend UI (we will integrate via Socket.io to the existing UI).
+- A complete rewrite of the KaibanJS frontend UI (we will integrate via Socket.io to the existing UI). *Update:* the project ships its own React board in `board/`, fed over Socket.io.
 - Implementing new core LLM models from scratch.
