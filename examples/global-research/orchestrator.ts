@@ -59,12 +59,13 @@ const REVIEW_WAIT_MS = parseInt(process.env['REVIEW_WAIT_MS'] ?? '180000', 10);
 const EDIT_WAIT_MS   = parseInt(process.env['EDIT_WAIT_MS']   ?? '300000', 10);
 
 /**
- * When AUTO_PUBLISH=1, skip all readline prompts and auto-approve HITL as PUBLISH.
- * Also activates automatically when stdin is not a TTY (CI / piped usage).
+ * Explicit opt-in only: when AUTO_PUBLISH=1 (or "true"), skip all readline
+ * prompts and auto-approve HITL as PUBLISH (CI / unattended runs). Never inferred
+ * from a missing TTY: a human gate must not be skipped because stdin is a pipe.
+ * Without it, the decision comes from the terminal or from the board.
  */
 const AUTO_PUBLISH = process.env['AUTO_PUBLISH'] === '1'
-                  || process.env['AUTO_PUBLISH'] === 'true'
-                  || !process.stdin.isTTY;
+                  || process.env['AUTO_PUBLISH'] === 'true';
 
 // ── Pipeline: all research steps extracted so main() stays under complexity 10 ──
 

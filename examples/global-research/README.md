@@ -64,6 +64,7 @@ Open `examples/global-research/viewer/board.html` in your browser to watch the s
 | `OPENROUTER_API_KEY` | — | OpenRouter API key (alternative) |
 | `LLM_MODEL` | `gpt-4o-mini` | LLM model identifier |
 | `CHAOS_MODE` | `false` | Enable 20% crash rate on searchers |
+| `AUTO_PUBLISH` | unset | Set to `1` or `true` to skip the human decision and publish automatically (CI / unattended runs). Never implied by a missing terminal: without it the decision comes from the terminal or the board |
 | `SEARCHER_ID` | `searcher` | Identity for multi-instance searcher nodes |
 
 ## NODE_TYPE — Single Entry Point
