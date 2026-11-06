@@ -592,16 +592,13 @@ export interface DistributedAgentState {
     version: string;
 }
 
-// @public (undocumented)
+// @public
 export class DistributedStateMiddleware {
     constructor(redisUrl: string, channelName?: string);
-    // Warning: (ae-forgotten-export) The symbol "ZustandStore" needs to be exported by the entry point index.d.ts
-    //
-    // (undocumented)
-    attach(store: ZustandStore): ZustandStore;
+    // Warning: (ae-forgotten-export) The symbol "ObservableStore" needs to be exported by the entry point index.d.ts
+    attach(store: ObservableStore): ObservableStore;
     // (undocumented)
     disconnect(): Promise<void>;
-    // (undocumented)
     listen(onStateChange: (delta: Record<string, unknown>) => void): Promise<void>;
 }
 
@@ -1193,6 +1190,12 @@ export abstract class NonRetryableError extends DomainError {
 export function ok<T>(value: T): Result<T, never>;
 
 // @public
+export function otlpSignalUrls(endpoint: string): {
+    traces: string;
+    metrics: string;
+};
+
+// @public
 export function overBudgetReason(totals: SpendTotals, budget: WorkflowBudget): string | null;
 
 // @public
@@ -1548,7 +1551,6 @@ export type TaskStatus = "TODO" | "DOING" | "AWAITING_VALIDATION" | "DONE" | "BL
 
 // @public (undocumented)
 export interface TelemetryConfig {
-    // (undocumented)
     exporterEndpoint?: string;
     // (undocumented)
     serviceName: string;

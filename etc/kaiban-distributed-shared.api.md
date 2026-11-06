@@ -115,7 +115,7 @@ export class CompletionRouter {
     // Warning: (ae-forgotten-export) The symbol "IMessagingDriver" needs to be exported by the entry point index.d.ts
     constructor(completedDriver: IMessagingDriver, failedDriver?: IMessagingDriver);
     wait(taskId: string, timeoutMs: number, label: string, signal?: AbortSignal): Promise<string>;
-    waitAll(taskIds: string[], timeoutMs: number, label: string): Promise<Array<{
+    waitAll(taskIds: string[], timeoutMs: number, label: string, signal?: AbortSignal): Promise<Array<{
         taskId: string;
         result?: string;
         error?: string;

@@ -978,10 +978,11 @@ describe("global-research — a stop does not publish taskFailed (WF-03)", () =>
   beforeEach(() => vi.clearAllMocks());
 
   const gov = { recommendation: "APPROVED", score: "9/10", text: "gov" };
-  const phases: Array<[string, (m: ReturnType<typeof makeMocks>, signal?: AbortSignal) => Promise<unknown>]> = [
-    ["write", (m, signal) => runWritePhase(makeCtx({ rawSearchData: [] }), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
-    ["governance", (m, signal) => runGovernancePhase(makeCtx(), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
-    ["editorial", (m, signal) => runEditorialPhase(makeCtx(), "q", gov, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+  type Mocks = ReturnType<typeof makeMocks>;
+  const phases: Array<[string, (m: Mocks, signal?: AbortSignal) => Promise<unknown>]> = [
+    ["write", (m, signal): Promise<unknown> => runWritePhase(makeCtx({ rawSearchData: [] }), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["governance", (m, signal): Promise<unknown> => runGovernancePhase(makeCtx(), "q", 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["editorial", (m, signal): Promise<unknown> => runEditorialPhase(makeCtx(), "q", gov, 1000, m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
   ];
 
   for (const [name, run] of phases) {

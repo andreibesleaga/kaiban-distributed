@@ -601,10 +601,11 @@ describe("blog-team — emergency STOP ALL signal (ADR-025)", () => {
 describe("blog-team — a stop does not publish taskFailed (WF-03)", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  const phases: Array<[string, (m: ReturnType<typeof makeMocks>, signal?: AbortSignal) => Promise<unknown>]> = [
-    ["research", (m, signal) => runResearchPhase("t", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
-    ["write", (m, signal) => runWritePhase("t", "r", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
-    ["editorial", (m, signal) => runEditorialPhase("t", "r", "d", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+  type Mocks = ReturnType<typeof makeMocks>;
+  const phases: Array<[string, (m: Mocks, signal?: AbortSignal) => Promise<unknown>]> = [
+    ["research", (m, signal): Promise<unknown> => runResearchPhase("t", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["write", (m, signal): Promise<unknown> => runWritePhase("t", "r", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
+    ["editorial", (m, signal): Promise<unknown> => runEditorialPhase("t", "r", "d", m.mockRouter as never, m.mockPub as never, m.driver, m.mockRunLog as never, signal)],
   ];
 
   for (const [name, run] of phases) {

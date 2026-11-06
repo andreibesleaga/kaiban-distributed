@@ -12,7 +12,7 @@ vi.mock("../../../src/shared/structured-logger", () => ({
   resolveLogLevel: (): string => "silent",
 }));
 
-import { DistributedStateMiddleware, toBoardDelta } from "../../../src/adapters/state/distributedMiddleware";
+import { DistributedStateMiddleware, toBoardDelta, sanitizeDelta } from "../../../src/adapters/state/distributedMiddleware";
 import { Agent, Task, Team } from "kaibanjs";
 
 const mockRedis = {
@@ -59,6 +59,17 @@ function makeStore(initial: State = {}): {
 function published(): Record<string, unknown> {
   return JSON.parse(mockRedis.publish.mock.calls.at(-1)![1] as string);
 }
+
+describe("sanitizeDelta", () => {
+  it("strips PII-named top-level keys", () => {
+    expect(sanitizeDelta({ count: 2, email: "x@y.com", token: "t", password: "p", name: "n" })).toEqual({ count: 2 });
+  });
+  it("returns {} for null and non-objects", () => {
+    expect(sanitizeDelta(null)).toEqual({});
+    expect(sanitizeDelta("text")).toEqual({});
+    expect(sanitizeDelta(undefined)).toEqual({});
+  });
+});
 
 describe("toBoardDelta", () => {
   it("returns only the parts that changed", () => {
