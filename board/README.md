@@ -51,8 +51,10 @@ These specs opt into the `jsdom` environment with a per-file
 
 These jsdom checks **do not cover colour contrast**: jsdom loads no CSS, so axe reports
 `color-contrast` as "incomplete" rather than as a violation. Contrast is checked in a real
-browser by `e2e/viewers-visual.spec.ts` (static viewers). For the React board, text uses
-`slate-400` or lighter on the dark panels (at least 4.5:1); keep to that when adding text.
+browser by two Playwright specs that run axe's `color-contrast` rule on the rendered page, with
+a stub gateway on a random port (no dev server or gateway needed):
+`npm run test:visual -- board-contrast` (React board) and
+`npm run test:visual -- viewers-control` (the static viewers).
 
 Run them with the rest of the suite:
 

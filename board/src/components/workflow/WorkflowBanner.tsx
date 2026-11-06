@@ -13,14 +13,14 @@ function HitlButtons({ taskId, title }: { taskId: string; title: string }) {
       <button
         onClick={() => send('PUBLISH')}
         aria-label={`Approve: ${title}`}
-        className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors"
+        className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
       >
         Approve
       </button>
       <button
         onClick={() => send('REVISE')}
         aria-label={`Revise: ${title}`}
-        className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition-colors"
+        className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-white text-sm font-semibold transition-colors"
       >
         Revise
       </button>
