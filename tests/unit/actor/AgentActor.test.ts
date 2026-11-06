@@ -116,16 +116,20 @@ describe("AgentActor", () => {
     );
   });
 
-  it("does not log raw agentId in console output", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  it("does not log the raw agentId through the structured logger", async () => {
+    for (const fn of Object.values(mockLog)) fn.mockClear();
     const d = makeMockDriver();
     const actor = new AgentActor("agent-secret-id", d, "q", vi.fn());
     await actor.start();
     await actor.stop();
-    for (const log of logSpy.mock.calls.map((c) => c.join(" "))) {
-      expect(log).not.toContain("agent-secret-id");
+    const entries = Object.values(mockLog).flatMap((fn) =>
+      fn.mock.calls.map((args: unknown[]) => JSON.stringify(args)),
+    );
+    // "Actor stopping" is logged, so the loop below cannot pass on an empty list.
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      expect(entry).not.toContain("agent-secret-id");
     }
-    logSpy.mockRestore();
   });
 
   it("ignores a task addressed to a different agent", async () => {

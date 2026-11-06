@@ -125,17 +125,35 @@ describe("AgentActor — retry recovery (partial failure)", () => {
   });
 
   it("retry delay increases with backoff (attempt * 100ms)", async () => {
-    const { driver, getHandler } = makeCapturingDriver();
-    const handler = vi.fn().mockRejectedValue(new Error("always fails"));
-    const actor = new AgentActor("agent-1", driver, "q", handler);
-    await actor.start();
+    vi.useFakeTimers();
+    try {
+      const { driver, getHandler } = makeCapturingDriver();
+      const handler = vi.fn().mockRejectedValue(new Error("always fails"));
+      const actor = new AgentActor("agent-1", driver, "q", handler);
+      await actor.start();
 
-    const start = Date.now();
-    await getHandler()(makePayload());
-    const elapsed = Date.now() - start;
+      const done = getHandler()(makePayload());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(handler).toHaveBeenCalledTimes(1);
 
-    // 3 retries: delays of 100ms + 200ms = 300ms minimum (3rd attempt does not delay)
-    expect(elapsed).toBeGreaterThanOrEqual(250); // allow some tolerance
+      // 1st retry after 100 ms, not before
+      await vi.advanceTimersByTimeAsync(99);
+      expect(handler).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(handler).toHaveBeenCalledTimes(2);
+
+      // 2nd retry after a further 200 ms, not before
+      await vi.advanceTimersByTimeAsync(199);
+      expect(handler).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(handler).toHaveBeenCalledTimes(3);
+
+      // the 3rd attempt is the last: no further delay, the task settles
+      await done;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
