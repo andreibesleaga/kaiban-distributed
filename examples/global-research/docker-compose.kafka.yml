@@ -100,6 +100,25 @@ services:
       CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
       # Board/HTTP stop commands need a board token (unset = board auth off, stop refused).
       BOARD_JWT_SECRET: ${BOARD_JWT_SECRET:-}
+      # Production and tuning settings from .env. Unset or empty keeps the code default.
+      # Production (NODE_ENV=production) also needs the three secrets of docs/security/SECURITY_FEATURES.md, section 10.
+      NODE_ENV: ${NODE_ENV:-}
+      A2A_JWT_SECRET: ${A2A_JWT_SECRET:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      AGENT_TIMEOUT_MS: ${AGENT_TIMEOUT_MS:-}
+      RETRY_ON_TIMEOUT: ${RETRY_ON_TIMEOUT:-}
+      MCP_SERVER_ENABLED: ${MCP_SERVER_ENABLED:-}
+      MCP_DISPATCH_CONSENT: ${MCP_DISPATCH_CONSENT:-}
+      # An EMPTY value would break these (an empty origin list, an empty path or allow-list, an empty URL),
+      # so they reach the container only when set in .env or the shell.
+      SOCKET_CORS_ORIGINS:
+      A2A_PUBLIC_URL:
+      MCP_SERVER_PATH:
+      MCP_ALLOWED_TOOLS:
+      MCP_ALLOWED_RESOURCES:
+      MCP_ALLOWED_PROMPTS:
+      OTEL_EXPORTER_OTLP_ENDPOINT:
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-gateway
@@ -149,6 +168,15 @@ services:
       # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
       MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
       MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+      # Timeouts and log level from .env; set them identically on the gateway and every worker.
+      AGENT_TIMEOUT_MS: ${AGENT_TIMEOUT_MS:-}
+      RETRY_ON_TIMEOUT: ${RETRY_ON_TIMEOUT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
     restart: on-failure
     healthcheck:
       disable: true
@@ -185,6 +213,15 @@ services:
       # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
       MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
       MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+      # Timeouts and log level from .env; set them identically on the gateway and every worker.
+      AGENT_TIMEOUT_MS: ${AGENT_TIMEOUT_MS:-}
+      RETRY_ON_TIMEOUT: ${RETRY_ON_TIMEOUT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
     restart: on-failure
     healthcheck:
       disable: true
@@ -220,6 +257,15 @@ services:
       # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
       MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
       MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+      # Timeouts and log level from .env; set them identically on the gateway and every worker.
+      AGENT_TIMEOUT_MS: ${AGENT_TIMEOUT_MS:-}
+      RETRY_ON_TIMEOUT: ${RETRY_ON_TIMEOUT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
     restart: on-failure
     healthcheck:
       disable: true
@@ -255,6 +301,15 @@ services:
       # Per-agent and per-task token caps (defaults 200000 / 50000; the literal `unlimited` removes one, 0 does not).
       MAX_TOKEN_BUDGET: ${MAX_TOKEN_BUDGET:-200000}
       MAX_TASK_TOKEN_BUDGET: ${MAX_TASK_TOKEN_BUDGET:-50000}
+      SEMANTIC_FIREWALL_ENABLED: ${SEMANTIC_FIREWALL_ENABLED:-false}
+      CIRCUIT_BREAKER_ENABLED: ${CIRCUIT_BREAKER_ENABLED:-false}
+      JIT_TOKENS_ENABLED: ${JIT_TOKENS_ENABLED:-false}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD:-10}
+      CIRCUIT_BREAKER_WINDOW_MS: ${CIRCUIT_BREAKER_WINDOW_MS:-60000}
+      # Timeouts and log level from .env; set them identically on the gateway and every worker.
+      AGENT_TIMEOUT_MS: ${AGENT_TIMEOUT_MS:-}
+      RETRY_ON_TIMEOUT: ${RETRY_ON_TIMEOUT:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
     restart: on-failure
     healthcheck:
       disable: true
