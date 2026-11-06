@@ -20,7 +20,9 @@ Examples dedicated repository: [kaiban-distributed-examples](https://github.com/
 
 Website: [andreibesleaga.github.io/kaiban-distributed](https://andreibesleaga.github.io/kaiban-distributed/)
 
-- While most frameworks treat agents as scripts, Kaiban Distributed treats them as Stateful Actors. By using async Node.js, each agent operates in its own space, communicating via a pluggable Messaging Abstraction Layer (Kafka or BullMQ/Redis), horizontally scaling AI workforce.
+Read next: users, [Quick start (full demo)](#quick-start-full-demo); developers, [Use as a library](#use-as-a-library); operators, [docs/deployment](docs/deployment/); security, [SECURITY_FEATURES](docs/security/SECURITY_FEATURES.md). The full index by reader is [docs/README.md](docs/README.md).
+
+- While most frameworks treat agents as scripts, Kaiban Distributed treats them as Stateful Actors. By using async Node.js, each agent operates in its own space, communicating via a pluggable Messaging Abstraction Layer (Kafka or BullMQ/Redis), horizontally scaling AI workforce. "Stateful" is meant in the actor-model sense: each agent has its own process, identity and mailbox, and per-process state (token tallies, circuit breaker). The task itself runs in a fresh `Team`, so no conversation state survives between tasks.
 
 - The system allows creation of Teams of Agents for various Tasks, Systems Integrations, and Data handling/analytics, with scalable AI workflows, from local usage to customizable Enterprise Grade Systems.
 
@@ -42,7 +44,7 @@ Published on npm as [`kaiban-distributed`](https://www.npmjs.com/package/kaiban-
 
 ---
 
-## Summary
+## Quick start (full demo)
 
 ```bash
 # 1. Clone and install
@@ -73,15 +75,15 @@ cd board && npm ci && npm run dev   # React board → http://localhost:5173
 # ./scripts/global-research.sh stop
 ```
 
-To wire your own agent into a distributed worker node:
+To wire your own agent into a distributed worker node (the `./src/...` paths below apply to a clone of this repository; see [Use as a library](#use-as-a-library) for the package imports):
 
 ```typescript
-import { BullMQDriver } from './src/infrastructure/messaging/bullmq-driver';
 import { AgentActor } from './src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from './src/infrastructure/kaibanjs/kaiban-agent-bridge';
-import { createAgentStatePublisher } from './src/shared';
+import { createDriver, createAgentStatePublisher } from './src/shared';
 
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+// BullMQ or Kafka from MESSAGING_DRIVER; REDIS_URL credentials and REDIS_TLS_* are applied.
+const driver = createDriver('my-agent');
 
 // Applies MAX_TOKEN_BUDGET / MAX_TASK_TOKEN_BUDGET from the environment
 // (defaults 200000 / 50000; the literal 'unlimited' removes a cap).
@@ -103,11 +105,24 @@ await actor.start();
 statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 ```
 
+### Use as a library
+
+```bash
+npm install kaiban-distributed
+```
+
+```typescript
+import { AgentActor, BullMQDriver, createKaibanTaskHandler } from 'kaiban-distributed';
+import { createDriver, createAgentStatePublisher, dispatchToAgent, CompletionRouter } from 'kaiban-distributed/shared';
+```
+
+The package has two entry points: `kaiban-distributed` (actor, drivers, bridges, security, governance, economics) and `kaiban-distributed/shared` (driver factory, state publisher factory, dispatch, completion router, orchestration helpers). `createAgentStatePublisher` and `DistributedStateMiddleware` are exported from the root too. Prefer `createDriver()` to a hand-built `BullMQDriver`: it applies the user, password, database and `rediss://` of `REDIS_URL` and the `REDIS_TLS_*` files, which a connection built from host and port alone drops.
+
 ---
 
 ## Running example - blog-team
 (Blog team of: researcher, writer, editor - nodes distributed locally over docker services with Redis/Kafka messaging between them and their processes tasks status and results)
-![(running example gif)](docs/images/blogTeam.gif)
+![(the React board after STOP ALL: the banner with the node acknowledgements and the Stopped badges)](docs/images/board-stopped.png)
 
 ---
 
@@ -119,164 +134,49 @@ statePublisher.publishIdle();  // board shows agent as IDLE within 15s
 flowchart TB
   subgraph Clients
     Board["Board UI<br/>(React/Vite or static HTML)"]
-    Ext["External orchestrator / agent<br/>(A2A JSON-RPC)"]
+    Ext["External orchestrator / agent<br/>(A2A JSON-RPC, MCP)"]
+    CLI["npm run stop-all<br/>(CLI)"]
   end
   subgraph Gateway["Edge Gateway :3000"]
-    GW["GatewayApp<br/>HTTP: /health · /agent-card · /a2a/rpc"]
+    GW["GatewayApp<br/>/health · /ready · /startup · /.well-known/agent-card.json<br/>/a2a/rpc · /mcp · /control/stop-all"]
+    A2A["A2A stack<br/>(buildA2AStack)"]
     SG["SocketGateway<br/>(Socket.io)"]
+    CR["CompletionRouter"]
   end
-  Redis[("Redis 7<br/>BullMQ queues + state pub/sub")]
-  Kafka[("Kafka<br/>(optional transport)")]
+  subgraph Redis["Redis 7 Pub/Sub (always)"]
+    SE["kaiban-state-events"]
+    HD["kaiban-hitl-decisions"]
+    CC["kaiban-control"]
+  end
+  Broker[("Durable broker: BullMQ (Redis) or Kafka<br/>kaiban-agents-* mailboxes · kaiban-events-completed · kaiban-events-failed")]
   subgraph Workers["Agent worker nodes (1..N)"]
-    A1["AgentActor<br/>+ KaibanJS bridge<br/>+ AgentStatePublisher"]
+    A1["AgentActor + KaibanJS bridge<br/>AgentStatePublisher · ControlSubscriber"]
   end
-  Ext -- "message/send (A2A v0.3)" --> GW
-  GW -- "publish task" --> Redis
-  Redis -- "consume (kaiban-agents-*)" --> A1
-  Kafka -. "alt transport" .- A1
-  A1 -- "state delta (kaiban-state-events)" --> Redis
-  A1 -- "events-completed / failed" --> Redis
-  Redis -- "state events" --> SG
-  SG -- "ws state + hitl:decision" --> Board
+  Orch["Orchestrator (WorkflowOrchestrator)<br/>ControlSubscriber"]
+  Ext -- "message/send" --> GW
+  GW --> A2A
+  A2A -- "publish task" --> Broker
+  Broker -- "consume" --> A1
+  A1 -- "completed / failed" --> Broker
+  Broker -- "completed / failed" --> CR
+  Broker -- "completed / failed" --> Orch
+  A1 -- "state delta" --> SE
+  Orch -- "state delta" --> SE
+  SE --> SG
+  SG -- "state:update" --> Board
+  Board -- "hitl:decision" --> SG
+  SG --> HD
+  HD --> Orch
+  Board -- "control:stop-all" --> SG
+  Board -- "POST /control/stop-all" --> GW
+  CLI --> CC
+  SG --> CC
+  GW --> CC
+  CC --> A1
+  CC --> Orch
 ```
 
-### Detailed ASCII view
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Board Viewers (browser)                                             │
-│  A. board/  — React + Vite app  (npm run dev → :5173)                │
-│     Interactive HITL: Approve / Revise / Reject buttons              │
-│     socket.emit('hitl:decision') ───────────────────────────────┐    │
-│  B. examples/blog-team/viewer/board.html  (zero-setup)          │    │
-│  Socket.io client ──────────────────────────────────────────────┼────┘
-└─────────────────────────────────────────────────────────────────│────┘
-                                                                  │ ws
-┌─────────────────────────────────────────────────────────────────▼────┐
-│  Edge Gateway  (port 3000)                                           │
-│  GatewayApp:   GET /health · GET /.well-known/agent-card.json        │
-│                POST /a2a/rpc  (JSON-RPC 2.0 → routes to queue)       │
-│  SocketGateway: subscribes Redis kaiban-state-events → Socket.io     │
-│                 listens 'hitl:decision' → publishes kaiban-hitl-     │
-│                 decisions (Redis) → orchestrator picks up decision   │
-└──────────────────────────────────────────────────────────────────────┘
-         │ BullMQ / Kafka task queues        │ Redis Pub/Sub
-         │ kaiban-agents-{agentId}           │ kaiban-state-events
-┌────────▼──────────┐  ┌────────▼────────┐  ┌────────▼───────────────┐
-│ Worker: researcher│  │ Worker: writer  │  │ Worker: editor         │
-│  AgentActor       │  │  AgentActor     │  │  AgentActor            │
-│  KaibanAgentBridge│  │  KaibanBridge   │  │  KaibanBridge          │
-│  → team.start()   │  │  → team.start() │  │  → team.start()        │
-│  AgentState       │  │  AgentState     │  │  AgentState            │
-│  Publisher        │  │  Publisher      │  │  Publisher             │
-│  (ioredis pub/sub)│  │  (ioredis)      │  │  (ioredis)             │
-└───────────────────┘  └─────────────────┘  └────────────────────────┘
-         │                      │                        │
-         └──────────────────────┴────────────────────────┘
-                                │
-                    ┌───────────▼────────────┐
-                    │  Redis 7 (always)      │
-                    │  BullMQ queues +       │
-                    │  kaiban-state-events   │
-                    └────────────────────────┘
-
-  Optional: Kafka (MESSAGING_DRIVER=kafka)
-┌─────────────────────────────────────────────────────────────────────┐
-│  Zookeeper + Kafka — high-throughput alternative to BullMQ          │
-│  KafkaDriver implements IMessagingDriver (swap via env var)         │
-│  State broadcast still uses Redis Pub/Sub (SocketGateway)           │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-
-### High-Level Distributed Topology Example
-
-```mermaid
-graph TD
-    UI[Kanban Board UI<br>Browser] -- WebSockets --> Gateway[Edge Gateway APP<br>Port 3000]
-    Gateway -- Pub/Sub (Socket.io) --> RedisPubSub[(Redis Pub/Sub<br>State Stream)]
-    Gateway -- HTTP POST --> A2A[A2A Executor]
-    
-    A2A --> Queue[(Message Queue<br>BullMQ / Kafka)]
-    
-    Queue --> |Tasks| AgentA[Node 1: Researcher Actor]
-    Queue --> |Tasks| AgentB[Node 2: Writer Actor]
-    Queue --> |Tasks| AgentC[Node 3: Editor Actor]
-    
-    AgentA -- State Updates --> RedisPubSub
-    AgentB -- State Updates --> RedisPubSub
-    AgentC -- State Updates --> RedisPubSub
-    
-    AgentA <--> LLM[LLM APIs<br>OpenAI/Anthropic]
-    AgentB <--> MCP[MCP Servers<br>Search/Database]
-```
-
-### Complete Architectural Schema (Digitalized from Sketch)
-
-```mermaid
-flowchart TD
-    classDef plain fill:none,stroke:none,color:inherit,font-style:italic;
-    classDef solidBox fill:none,stroke:#333,stroke-width:2px;
-
-    %% Row 1
-    subgraph TopLevel [" "]
-        direction LR
-        TL["DISTRIBUTED AGENTIC"]:::plain
-        Kanban["VISUALIZE TASKS, STREAMS:<br/> KANBAN STYLE BOARD<br/>(TODO, DOING, DONE, BLOCKED, AWAITING_VALIDATION)"]:::solidBox
-        TR["WRAPPER ON KAIBANJS + OTHERS(DIFY, MCP, ETC.)<br/>ACTOR MODEL, ENTERPRISE GRADE MESSAGING + QUEUEING"]:::plain
-        TL ~~~ Kanban ~~~ TR
-    end
-    style TopLevel fill:none,stroke:none;
-
-    %% Row 2
-    subgraph MidLevel [" "]
-        direction LR
-        MsgLayer["MESSAGE LAYER<br/>ASYNC. STREAMING MSG. / REALTIME (KAFKA, REDIS, ETC)"]:::solidBox
-        MAL["MAL + DRIVERS / INTERFACES<br/>(MESSAGING AGENT LAYER)"]:::plain
-        MsgLayer ~~~ MAL
-    end
-    style MidLevel fill:none,stroke:none;
-
-    Kanban <--> MsgLayer
-
-    %% Row 3
-    subgraph AgentLevel [" "]
-        direction LR
-        ActorModelText["DISTRIBUTED INFRA: AI NODE AGENTS<br/>EACH AGENT ACTOR MODEL<br/>EDGE, IOT, LOCAL, KUBERNETES, ETC."]:::plain
-        N1(("AGENT NODE<br/>optional V. SCALING"))
-        N2(("AGENT<br/>NODE"))
-        N3(("AGENT<br/>NODE"))
-        N4(("AGENT NODE"))
-        DistInfraText["TEAM WORKFLOW: RUNNING → FINISHED / STOPPED"]:::plain
-
-        ActorModelText ~~~ N1
-        N1 -- "optional H. SCALING" --- N2
-        N2 ~~~ N3
-        N3 -- "optional H. SCALING" --- N4
-        N4 ~~~ DistInfraText
-    end
-    style AgentLevel fill:none,stroke:none;
-
-    MsgLayer <--> N1
-    MsgLayer <--> N2
-    MsgLayer <--> N3
-    MsgLayer <--> N4
-
-    %% Row 4
-    subgraph BottomLevel [" "]
-        direction LR
-        OtherSystemsText["OTHER SYSTEMS COMPONENTS<br/>INTERACTING VIA A2A, MCP, MESSAGING"]:::plain
-        Dify["WORKFLOWS: ◯ ➞ ◻️ ➞ ◇ ➞ ◻️ [RES/OK]<br/>GRAPHIC AI PROGRAMMING"]:::solidBox
-        OtherSystemsBox["OTHER SYSTEMS: CONNECTORS TO M.A.L<br/>CUSTOMIZED TO ORG/PROJECT"]:::solidBox
-
-        OtherSystemsText ~~~ Dify ~~~ OtherSystemsBox
-    end
-    style BottomLevel fill:none,stroke:none;
-
-    N1 -. "I/O - A2A" .-> Dify
-    N2 -. "MCP I/O" .-> Dify
-    N4 -->|"I/O: A2A, MCP MESSAGING"| OtherSystemsBox
-```
+More views (ASCII layout, request topology, conceptual overview) are in [docs/architecture/DIAGRAMS.md](docs/architecture/DIAGRAMS.md). The kaiban-control channel exists only when `CONTROL_PLANE_ENABLED=true`.
 
 ### Task State Machine (The Worker Lifecycle)
 
@@ -293,10 +193,15 @@ stateDiagram-v2
     DOING --> BLOCKED : Max Retries Exceeded (→ kaiban-events-failed)
 
     DOING --> AWAITING_VALIDATION : HITL Required
-    AWAITING_VALIDATION --> DOING : Human Approved
+    AWAITING_VALIDATION --> DOING : Human approved, or asked for a revision (REVISE)
 
     TODO --> STOPPED : Emergency STOP ALL (sent before the stop)
     DOING --> STOPPED : Emergency STOP ALL (→ kaiban-events-failed)
+
+    note right of STOPPED
+        Workflow level: RUNNING to FINISHED, STOPPED or ERRORED.
+        A rejected draft ends the workflow STOPPED.
+    end note
 
     DONE --> [*]
     BLOCKED --> [*]
