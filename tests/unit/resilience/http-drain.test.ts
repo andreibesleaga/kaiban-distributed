@@ -15,7 +15,7 @@ const listen = async (
 describe("drainHttpServer", () => {
   it("resolves when an upgraded (WebSocket-like) connection is ended by disconnectClients", async () => {
     const { server, port } = await listen(undefined);
-    const upgraded: Array<import("net").Socket> = [];
+    const upgraded: Array<import("stream").Duplex> = [];
     server.on("upgrade", (_req, socket) => {
       socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\nConnection: Upgrade\r\n\r\n");
       upgraded.push(socket);

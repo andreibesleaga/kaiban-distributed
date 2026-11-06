@@ -45,4 +45,14 @@ describe("SlidingWindowRateLimiter memory bounds", () => {
     vi.advanceTimersByTime(1_001);
     expect(limiter.isAllowed("x")).toBe(true);
   });
+
+  it("forgets a key's oldest hits as they leave the window (sliding, not fixed)", () => {
+    const limiter = new SlidingWindowRateLimiter(1_000, 2);
+    expect(limiter.isAllowed("x")).toBe(true); // t=0
+    vi.advanceTimersByTime(600);
+    expect(limiter.isAllowed("x")).toBe(true); // t=600
+    vi.advanceTimersByTime(500); // t=1100: the t=0 hit is out, t=600 still in
+    expect(limiter.isAllowed("x")).toBe(true);
+    expect(limiter.isAllowed("x")).toBe(false);
+  });
 });

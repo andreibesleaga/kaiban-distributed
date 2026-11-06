@@ -549,8 +549,10 @@ export function createEmergencyStopSignal(redisUrl: string, startedAt?: number):
 // @public
 export function createKaibanTaskHandler(agentConfig: KaibanAgentConfig, _driver: IMessagingDriver, tokenProvider?: ITokenProvider): TaskHandler;
 
+// Warning: (ae-forgotten-export) The symbol "McpSessionLimits" needs to be exported by the entry point index.d.ts
+//
 // @public
-export function createMcpHttpHandler(deps: McpServerDeps): McpHttpHandler;
+export function createMcpHttpHandler(deps: McpServerDeps, limits?: McpSessionLimits): McpHttpHandler;
 
 // @public
 export function createStopAllCommand(issuedBy: string, reason?: string, now?: number): StopAllCommand;
@@ -805,6 +807,7 @@ export class GatewayApp {
 export interface GatewayAppDeps {
     // Warning: (ae-forgotten-export) The symbol "EmergencyStopIngress" needs to be exported by the entry point index.d.ts
     emergencyStop?: EmergencyStopIngress;
+    longRequestTimeoutMs?: number;
     mcpHandler?: McpHttpHandler;
     mcpPath?: string;
     readinessProbe?: () => Promise<ProbeResult>;
@@ -966,6 +969,7 @@ export class KaibanAgentExecutor implements AgentExecutor {
 
 // @public (undocumented)
 export interface KaibanExecutorDeps {
+    agentIds?: readonly string[];
     driver: Pick<IMessagingDriver, "publish">;
     router: Pick<CompletionRouter, "wait">;
     taskStore: TaskStore;
@@ -1429,9 +1433,10 @@ export class SlidingWindowBreaker implements ICircuitBreaker {
 
 // @public
 export class SlidingWindowRateLimiter {
-    constructor(windowMs?: number, maxRequests?: number);
+    constructor(windowMs?: number, maxRequests?: number, maxKeys?: number);
     // (undocumented)
     isAllowed(key: string): boolean;
+    get size(): number;
 }
 
 // @public (undocumented)
@@ -1440,7 +1445,9 @@ export class SocketGateway {
         validHitlDecisions?: string[];
         hitlPublisher?: Redis;
         control?: EmergencyStopIngress;
+        trustProxy?: boolean;
     });
+    disconnectClients(): void;
     // (undocumented)
     initialize(): void;
     noteStop(cmd: {
@@ -1602,7 +1609,7 @@ export interface ValidatedTaskInput {
 }
 
 // @public
-export function validateTaskInput(params: Record<string, unknown> | undefined): ValidationResult;
+export function validateTaskInput(params: Record<string, unknown> | undefined, allowedAgentIds?: readonly string[]): ValidationResult;
 
 // @public (undocumented)
 export class ValidationError extends DomainError {
