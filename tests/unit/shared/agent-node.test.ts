@@ -349,7 +349,7 @@ describe("startAgentNode — 2.0.1: timeout and signals", () => {
   });
 
   it("leaves the actor default when AGENT_TIMEOUT_MS is unset or not a positive number", async () => {
-    for (const v of [undefined, "abc", "0", "-5"]) {
+    for (const v of [undefined, "abc", "0", "-5", "5m", "1e6", "3000000000"]) {
       if (v === undefined) delete process.env["AGENT_TIMEOUT_MS"];
       else process.env["AGENT_TIMEOUT_MS"] = v;
       await startAgentNode(cfg);

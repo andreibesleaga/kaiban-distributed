@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+/** The longest delay Node timers accept (larger values fire after 1 ms). */
+const MAX_TIMER_MS = 2_147_483_647;
+
 /** Attempts per task (the first try plus retries). */
 export const RETRY_ATTEMPTS = 3;
 /** Linear back-off: the wait after attempt n is `RETRY_BASE_DELAY_MS * n`. */
@@ -21,10 +24,10 @@ export function taskWaitMs(
   attemptTimeoutMs: number,
   retryOnTimeout: boolean,
 ): number {
-  if (!retryOnTimeout) return attemptTimeoutMs;
+  if (!retryOnTimeout) return Math.min(attemptTimeoutMs, MAX_TIMER_MS);
   let total = attemptTimeoutMs * RETRY_ATTEMPTS + TASK_WAIT_MARGIN_MS;
   for (let attempt = 1; attempt < RETRY_ATTEMPTS; attempt++) {
     total += RETRY_BASE_DELAY_MS * attempt;
   }
-  return total;
+  return Math.min(total, MAX_TIMER_MS);
 }

@@ -29,6 +29,7 @@
  *   });
  */
 
+import { timeoutMsFromEnv } from "./timeout-env";
 import { AgentActor } from "../application/actor/AgentActor";
 import {
   createKaibanTaskHandler,
@@ -116,7 +117,7 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
     createKaibanTaskHandler(agentConfig, driver, tokenProvider),
   );
   // AGENT_TIMEOUT_MS bounds each task attempt on this worker (unset = 5 min default).
-  const taskTimeoutMs = positiveIntEnv("AGENT_TIMEOUT_MS");
+  const taskTimeoutMs = timeoutMsFromEnv("AGENT_TIMEOUT_MS");
   // RETRY_ON_TIMEOUT=true|1 re-enables bounded retry of a timed-out task (default: off).
   const retryOnTimeout = boolEnv("RETRY_ON_TIMEOUT");
   const actor = new AgentActor(agentId, driver, queue, handler, {
@@ -162,12 +163,6 @@ export async function startAgentNode(config: AgentNodeConfig): Promise<void> {
     });
     return !result.timedOut && result.errors.length === 0;
   });
-}
-
-/** A positive integer from the environment, or undefined (unset, text, 0, negative). */
-function positiveIntEnv(name: string): number | undefined {
-  const n = Number.parseInt(process.env[name] ?? "", 10);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 /** True only for the literals "true" or "1" (the repo's boolean env convention). */

@@ -2,6 +2,7 @@
 import type { EconomicsConfig } from "../economics/types";
 import type { GovernanceConfig } from "../governance/types";
 import { resolveSpendCaps } from "../shared/budget";
+import { timeoutMsFromEnv } from "../shared/timeout-env";
 import { createStructuredLogger } from "../shared/structured-logger";
 import {
   kafkaSslFromEnv,
@@ -206,7 +207,7 @@ export function loadConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    agentTimeoutMs: parseIntEnv("AGENT_TIMEOUT_MS", 300000),
+    agentTimeoutMs: timeoutMsFromEnv("AGENT_TIMEOUT_MS") ?? 300000,
     retryOnTimeout: getBoolEnv("RETRY_ON_TIMEOUT", false),
     maxTokenBudget: caps.maxTokenBudget,
     maxTaskTokenBudget: caps.maxTaskTokenBudget,
