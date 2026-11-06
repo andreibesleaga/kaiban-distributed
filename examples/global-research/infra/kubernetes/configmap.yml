@@ -13,6 +13,18 @@ data:
   # Emergency STOP ALL (2.1.0, ADR-025): "true" turns it on (also set BOARD_JWT_SECRET).
   CONTROL_PLANE_ENABLED: "false"
   CHAOS_MODE: "false"
+  # Optional settings: uncomment to turn one on (the code default applies while a line is absent).
+  # NODE_ENV: "production"        # needs BOARD_JWT_SECRET, A2A_JWT_SECRET, CHANNEL_SIGNING_SECRET in the Secret below
+  #                               # (32+ bytes each, all different) and SOCKET_CORS_ORIGINS on the gateway
+  # SOCKET_CORS_ORIGINS: "https://board.example.com"
+  # TRUST_PROXY: "true"           # behind an ingress or load balancer
+  # A2A_PUBLIC_URL: "https://gateway.example.com"
+  # AGENT_TIMEOUT_MS: "300000"    # set identically on the gateway and every worker
+  # RETRY_ON_TIMEOUT: "true"
+  # MCP_SERVER_ENABLED: "true"
+  # SEMANTIC_FIREWALL_ENABLED: "true"
+  # CIRCUIT_BREAKER_ENABLED: "true"
+  # JIT_TOKENS_ENABLED: "true"
 ---
 apiVersion: v1
 kind: Secret
@@ -25,3 +37,8 @@ stringData:
   # when it is set it takes precedence over OPENAI_API_KEY.
   OPENAI_API_KEY: "sk-..."
   OPENROUTER_API_KEY: ""
+  # Emergency STOP ALL and production: uncomment and fill in (openssl rand -base64 32 for each). The gateway and
+  # every agent Deployment read this Secret with secretRef.
+  # BOARD_JWT_SECRET: ""
+  # CHANNEL_SIGNING_SECRET: ""
+  # A2A_JWT_SECRET: ""
