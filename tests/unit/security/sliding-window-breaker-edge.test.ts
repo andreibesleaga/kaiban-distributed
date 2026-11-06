@@ -102,3 +102,12 @@ describe("SlidingWindowBreaker — edge cases", () => {
     warnSpy.mockRestore();
   });
 });
+
+describe("SlidingWindowBreaker — constructor validation", () => {
+  it.each([0, -1, NaN, 1.5])("rejects threshold %s", (t) => {
+    expect(() => new SlidingWindowBreaker(t, 1000)).toThrow(RangeError);
+  });
+  it.each([0, -5, NaN, Infinity])("rejects window %s", (w) => {
+    expect(() => new SlidingWindowBreaker(3, w)).toThrow(RangeError);
+  });
+});

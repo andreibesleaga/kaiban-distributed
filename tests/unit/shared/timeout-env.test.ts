@@ -23,3 +23,20 @@ describe("timeoutMsFromEnv", () => {
     },
   );
 });
+
+import { positiveIntFromEnv } from "../../../src/shared/timeout-env";
+
+describe("positiveIntFromEnv", () => {
+  const get = (v?: string): number =>
+    positiveIntFromEnv("N", 10, v === undefined ? {} : { N: v });
+  it("uses the fallback when unset or blank", () => {
+    expect(get()).toBe(10);
+    expect(get(" ")).toBe(10);
+  });
+  it("accepts a whole number >= 1", () => {
+    expect(get("3")).toBe(3);
+  });
+  it.each(["0", "-1", "ten", "2.5", "1e3"])("falls back for %s", (v) => {
+    expect(get(v)).toBe(10);
+  });
+});

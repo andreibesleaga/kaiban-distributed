@@ -12,6 +12,7 @@
  *   CIRCUIT_BREAKER_WINDOW_MS=60000 → rolling window in ms (default 60s)
  *   JIT_TOKENS_ENABLED=true         → EnvTokenProvider (per-task API key injection)
  */
+import { positiveIntFromEnv } from "./timeout-env";
 import type { AgentActorDeps } from "../application/actor/AgentActor";
 import type { ITokenProvider } from "../domain/security/token-provider";
 import { HeuristicFirewall } from "../infrastructure/security/heuristic-firewall";
@@ -77,14 +78,8 @@ export function buildSecurityDeps(): {
   const circuitBreakerEnabled = getBoolEnv("CIRCUIT_BREAKER_ENABLED", false);
   const jitTokensEnabled = getBoolEnv("JIT_TOKENS_ENABLED", false);
 
-  const threshold = parseInt(
-    process.env["CIRCUIT_BREAKER_THRESHOLD"] ?? "10",
-    10,
-  );
-  const windowMs = parseInt(
-    process.env["CIRCUIT_BREAKER_WINDOW_MS"] ?? "60000",
-    10,
-  );
+  const threshold = positiveIntFromEnv("CIRCUIT_BREAKER_THRESHOLD", 10);
+  const windowMs = positiveIntFromEnv("CIRCUIT_BREAKER_WINDOW_MS", 60000);
 
   const admissionGate = buildAdmissionGateFromEnv();
   warnIfEconomicsUnwired();

@@ -28,3 +28,23 @@ export function timeoutMsFromEnv(
   );
   return undefined;
 }
+
+/**
+ * A whole number of at least 1 from the environment, or `fallback` (unset gives
+ * the fallback silently; any other invalid value also logs a warning).
+ */
+export function positiveIntFromEnv(
+  name: string,
+  fallback: number,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
+  if (Number.isSafeInteger(n) && n >= 1) return n;
+  log.warn(
+    { name, value: raw, fallback },
+    `${name} must be a whole number of at least 1; using the default`,
+  );
+  return fallback;
+}

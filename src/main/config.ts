@@ -2,7 +2,7 @@
 import type { EconomicsConfig } from "../economics/types";
 import type { GovernanceConfig } from "../governance/types";
 import { resolveSpendCaps } from "../shared/budget";
-import { timeoutMsFromEnv } from "../shared/timeout-env";
+import { positiveIntFromEnv, timeoutMsFromEnv } from "../shared/timeout-env";
 import { createStructuredLogger } from "../shared/structured-logger";
 import {
   kafkaSslFromEnv,
@@ -238,8 +238,8 @@ export function loadConfig(): AppConfig {
       semanticFirewallLlmUrl: process.env["SEMANTIC_FIREWALL_LLM_URL"],
       jitTokensEnabled: getBoolEnv("JIT_TOKENS_ENABLED", false),
       circuitBreakerEnabled: getBoolEnv("CIRCUIT_BREAKER_ENABLED", false),
-      circuitBreakerThreshold: parseIntEnv("CIRCUIT_BREAKER_THRESHOLD", 10),
-      circuitBreakerWindowMs: parseIntEnv("CIRCUIT_BREAKER_WINDOW_MS", 60000),
+      circuitBreakerThreshold: positiveIntFromEnv("CIRCUIT_BREAKER_THRESHOLD", 10),
+      circuitBreakerWindowMs: positiveIntFromEnv("CIRCUIT_BREAKER_WINDOW_MS", 60000),
       boardJwtSecret: process.env["BOARD_JWT_SECRET"],
       a2aJwtSecret: process.env["A2A_JWT_SECRET"],
       channelSigningSecret: process.env["CHANNEL_SIGNING_SECRET"],
