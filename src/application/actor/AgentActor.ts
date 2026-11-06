@@ -474,14 +474,6 @@ export class AgentActor {
     // Definite-assignment: the Promise executor runs synchronously, so the
     // handle is always set before the finally below.
     let timeoutHandle!: ReturnType<typeof setTimeout>;
-    const handlerPromise = handler(payload, controller.signal);
-    // C10: if the timeout wins the race, the handler promise can still reject
-    // afterwards (the aborted LLM call throws late) — that rejection now has no
-    // awaiter and would surface as an unhandledRejection. Attach a no-op catch
-    // so the losing side is always handled. Promise.resolve() normalizes a
-    // possibly non-thenable handler return; the race below still awaits the
-    // original handlerPromise, so a winning rejection is NOT swallowed.
-    Promise.resolve(handlerPromise).catch(() => {});
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
         // Abort first so the handler's underlying work (LLM .invoke) cancels,
@@ -494,16 +486,27 @@ export class AgentActor {
         reject(timedOut);
       }, timeoutMs);
     });
-    // An emergency stop settles the task at once, even when the handler ignores
-    // its signal (ES-12); the handler's late result has no awaiter and is dropped.
-    const emergencyPromise = new Promise<never>((_, reject) => {
+    // A runtime abort (emergency stop, node stop) settles the task at once, even
+    // when the handler ignores its signal (ES-12); the handler's late result has
+    // no awaiter and is dropped.
+    const abortPromise = new Promise<never>((_, reject) => {
       controller.signal.addEventListener("abort", () => {
         const reason: unknown = controller.signal.reason;
-        if (reason instanceof EmergencyStopError) reject(reason);
+        if (reason instanceof NonRetryableError) reject(reason);
       });
     });
     try {
-      return await Promise.race([handlerPromise, timeoutPromise, emergencyPromise]);
+      // Called inside the try so a handler that throws synchronously still
+      // clears the timer and its in-flight entry (the finally below).
+      const handlerPromise = handler(payload, controller.signal);
+      // C10: if another side wins the race, the handler promise can still reject
+      // afterwards (the aborted LLM call throws late) — that rejection now has no
+      // awaiter and would surface as an unhandledRejection. Attach a no-op catch
+      // so the losing side is always handled. Promise.resolve() normalizes a
+      // possibly non-thenable handler return; the race below still awaits the
+      // original handlerPromise, so a winning rejection is NOT swallowed.
+      Promise.resolve(handlerPromise).catch(() => {});
+      return await Promise.race([handlerPromise, timeoutPromise, abortPromise]);
     } finally {
       // Clear the timer whichever side won, so a completed task never leaves an
       // armed timeout (default 300 000 ms) accumulating / holding the event loop.
