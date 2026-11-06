@@ -639,7 +639,7 @@ describe("waitForHITLDecision — BRPOP path", () => {
     });
     expect(mockUnwrapVerified).toHaveBeenCalledWith(
       boardMsg(taskId, "PUBLISH"),
-      300_000,
+      { maxSkewMs: 300_000 },
     );
   });
 
