@@ -22,6 +22,7 @@ import { join } from "path";
 const h = vi.hoisted(() => {
   const socketInit = vi.fn();
   const socketShutdown = vi.fn(() => Promise.resolve());
+  const socketDisconnect = vi.fn();
   const driverDisconnect = vi.fn(() => Promise.resolve());
   const a2aStart = vi.fn(() => Promise.resolve());
   const a2aClose = vi.fn(() => Promise.resolve());
@@ -36,6 +37,7 @@ const h = vi.hoisted(() => {
   return {
     socketInit,
     socketShutdown,
+    socketDisconnect,
     driverDisconnect,
     driverPublish,
     getStatus,
@@ -55,7 +57,11 @@ const h = vi.hoisted(() => {
       return { start: vi.fn(), stop: vi.fn() };
     }),
     SocketGateway: vi.fn(function () {
-      return { initialize: socketInit, shutdown: socketShutdown };
+      return {
+        initialize: socketInit,
+        shutdown: socketShutdown,
+        disconnectClients: socketDisconnect,
+      };
     }),
     GatewayApp: vi.fn(function (_deps?: unknown) {
       return { app: {} };
@@ -88,7 +94,12 @@ const h = vi.hoisted(() => {
     Redis: vi.fn(function () {
       return { ping: vi.fn(() => Promise.resolve("PONG")) };
     }),
-    createServer: vi.fn(() => ({ listen, close: serverClose })),
+    createServer: vi.fn(() => ({
+      listen,
+      close: serverClose,
+      closeIdleConnections: vi.fn(),
+      closeAllConnections: vi.fn(),
+    })),
   };
 });
 
@@ -216,6 +227,29 @@ describe("runGateway", () => {
     expect(h.a2aClose).toHaveBeenCalledTimes(1);
     expect(h.socketShutdown).toHaveBeenCalledTimes(1);
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("shutdown ends the board sockets before waiting for the HTTP server (SEC-V-02)", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    await runGateway();
+    await vi.waitFor(() => expect(h.listen).toHaveBeenCalled());
+    await handlers["SIGTERM"]!();
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalled());
+    expect(h.socketDisconnect).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("gives A2A/MCP a socket limit beyond the task wait and the socket gateway the proxy setting (SEC-02, SEC-03)", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    process.env["TRUST_PROXY"] = "true";
+    process.env["AGENT_TIMEOUT_MS"] = "2000000";
+    await runGateway();
+    const appDeps = h.GatewayApp.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(appDeps["longRequestTimeoutMs"]).toBe(2_060_000);
+    const socketOpts = (h.SocketGateway.mock.calls.at(-1) as unknown as unknown[])[3] as Record<string, unknown>;
+    expect(socketOpts["trustProxy"]).toBe(true);
+    delete process.env["TRUST_PROXY"];
+    delete process.env["AGENT_TIMEOUT_MS"];
   });
 
   it("selects the Kafka driver and drains on SIGINT", async () => {
@@ -398,6 +432,13 @@ describe("runGateway", () => {
     await expect(
       mcpDeps.dispatchTask({ agentId: "", instruction: "x" }),
     ).rejects.toThrow("agentId is required");
+
+    // An id outside AGENT_IDS never reaches a queue (SEC-05).
+    h.driverPublish.mockClear();
+    await expect(
+      mcpDeps.dispatchTask({ agentId: "stranger", instruction: "x" }),
+    ).rejects.toThrow("Unknown agentId");
+    expect(h.driverPublish).not.toHaveBeenCalled();
 
     expect(mcpDeps.listAgents()).toEqual([{ id: "gateway", status: "IDLE" }]);
     expect(mcpDeps.getAgentStatus("gateway")).toEqual({

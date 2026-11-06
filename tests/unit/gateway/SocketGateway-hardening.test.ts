@@ -60,13 +60,13 @@ describe("SocketGateway — hardening options", () => {
     expect(capturedOptions!["pingInterval"]).toBe(25_000);
   });
 
-  it("still sets CORS origin (wildcard array when SOCKET_CORS_ORIGINS unset)", () => {
+  it("still sets CORS origin (wildcard when SOCKET_CORS_ORIGINS unset)", () => {
     capturedOptions = null;
     const httpServer = createServer();
     const sg = new SocketGateway(httpServer, redisClient, redisClient);
     sg.initialize();
     const cors = capturedOptions!["cors"] as Record<string, unknown>;
-    // When SOCKET_CORS_ORIGINS is not set (non-production), origin is ['*']
-    expect(cors["origin"]).toEqual(["*"]);
+    // When SOCKET_CORS_ORIGINS is not set (non-production), origin is the wildcard
+    expect(cors["origin"]).toBe("*");
   });
 });

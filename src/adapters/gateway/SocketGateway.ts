@@ -29,8 +29,35 @@ const TASK_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
 const HITL_MAX_PER_WINDOW = 10;
 const HITL_WINDOW_MS = 10_000;
 
+/** Snapshot requests accepted per connection per window (each re-sends the whole snapshot). */
+const SNAPSHOT_MAX_PER_WINDOW = 5;
+const SNAPSHOT_WINDOW_MS = 10_000;
+/** The longest delay `setTimeout` honours; larger values fire after 1 ms. */
+const MAX_TIMER_MS = 2_147_483_647;
+
 type HitlAck = (response: { ok: boolean; error?: string }) => void;
 type StopAllAck = (response: Record<string, unknown>) => void;
+
+/**
+ * The client's acknowledgement callback, or undefined. Socket.io hands the
+ * handler whatever the client sent last, so a string or object must never be
+ * called (a `TypeError` there would take the gateway process down).
+ */
+function ackOf<F>(candidate: unknown): F | undefined {
+  return typeof candidate === "function" ? (candidate as F) : undefined;
+}
+
+/**
+ * Admit one event for a connection: true when fewer than `max` events were
+ * admitted in the last `windowMs`. `sentAt` is the connection's own window.
+ */
+function admit(sentAt: number[], max: number, windowMs: number): boolean {
+  const now = Date.now();
+  while (sentAt.length > 0 && now - sentAt[0]! >= windowMs) sentAt.shift();
+  if (sentAt.length >= max) return false;
+  sentAt.push(now);
+  return true;
+}
 
 /** The latest emergency stop as boards see it (ADR-025). */
 interface LastStop {
@@ -72,6 +99,11 @@ function hitlPayloadError(
   return null;
 }
 
+/** A request without an Origin header (not a browser) or from a listed origin. */
+function originAllowed(origin: string | undefined, allowed: string[]): boolean {
+  return origin === undefined || allowed.includes(origin);
+}
+
 /**
  * Accumulated state snapshot.
  * Merged from every delta received on kaiban-state-events since gateway start.
@@ -98,6 +130,8 @@ export class SocketGateway {
   private validDecisions: string[];
   /** Emergency STOP ALL ingress; set only with CONTROL_PLANE_ENABLED (ADR-025). */
   private control?: EmergencyStopIngress;
+  /** Behind one trusted proxy: key rate limits by `X-Forwarded-For` (as Express does). */
+  private trustProxy: boolean;
 
   /** Running state snapshot — gate truth for reconnecting clients */
   private snapshot: StateSnapshot = { agents: new Map(), tasks: new Map() };
@@ -110,6 +144,7 @@ export class SocketGateway {
       validHitlDecisions?: string[];
       hitlPublisher?: Redis;
       control?: EmergencyStopIngress;
+      trustProxy?: boolean;
     },
   ) {
     this.httpServer = httpServer;
@@ -118,6 +153,7 @@ export class SocketGateway {
     this.hitlPublisher = opts?.hitlPublisher ?? redisPublisher;
     this.validDecisions = opts?.validHitlDecisions ?? DEFAULT_DECISIONS;
     this.control = opts?.control;
+    this.trustProxy = opts?.trustProxy ?? false;
     if (this.control) this.snapshot.controlPlane = { enabled: true, acks: 0 };
   }
 
@@ -136,6 +172,10 @@ export class SocketGateway {
       (prev === "FINISHED" || prev === "STOPPED" || prev === "ERRORED")
     ) {
       this.snapshot.tasks.clear();
+      // The new run's own metadata and inputs arrive in this or later deltas;
+      // the old run's totals and end time must not leak into replays.
+      delete this.snapshot.metadata;
+      delete this.snapshot.inputs;
     }
     this.snapshot.teamWorkflowStatus = newStatus;
   }
@@ -230,14 +270,10 @@ export class SocketGateway {
       ack?.({ ok: false, error });
       return;
     }
-    const now = Date.now();
-    while (sentAt.length > 0 && now - sentAt[0]! >= HITL_WINDOW_MS)
-      sentAt.shift();
-    if (sentAt.length >= HITL_MAX_PER_WINDOW) {
+    if (!admit(sentAt, HITL_MAX_PER_WINDOW, HITL_WINDOW_MS)) {
       ack?.({ ok: false, error: "rate limited" });
       return;
     }
-    sentAt.push(now);
     const { taskId, decision } = payload as {
       taskId: string;
       decision: string;
@@ -250,6 +286,23 @@ export class SocketGateway {
     this.forwardHitlDecision(taskId, decision, ack);
   }
 
+  /**
+   * The address rate limits are keyed by. Behind one trusted proxy
+   * (`TRUST_PROXY`) that is the last `X-Forwarded-For` entry, the same address
+   * Express uses for `req.ip`; otherwise the socket's own address.
+   */
+  private clientKeyOf(socket: Socket): string {
+    if (this.trustProxy) {
+      const header = socket.handshake.headers?.["x-forwarded-for"];
+      const forwarded = (Array.isArray(header) ? header.join(",") : header)
+        ?.split(",")
+        .pop()
+        ?.trim();
+      if (forwarded) return forwarded;
+    }
+    return socket.handshake.address;
+  }
+
   /** Board → emergency STOP ALL; the ingress authenticates, limits and issues it. */
   private async handleStopAll(
     control: EmergencyStopIngress,
@@ -257,10 +310,16 @@ export class SocketGateway {
     payload: unknown,
     ack?: StopAllAck,
   ): Promise<void> {
-    const token = socket.handshake.auth["token"] as string | undefined;
-    const result = await control.stopAll(token, payload, socket.handshake.address);
-    if (result.ok) ack?.({ ...result });
-    else ack?.({ ok: false, error: result.error });
+    try {
+      const token = socket.handshake.auth["token"] as string | undefined;
+      const key = this.clientKeyOf(socket);
+      const result = await control.stopAll(token, payload, key);
+      if (result.ok) ack?.({ ...result });
+      else ack?.({ ok: false, error: result.error });
+    } catch (err) {
+      log.error({ err }, "Emergency stop failed");
+      ack?.({ ok: false, error: "Emergency stop failed" });
+    }
   }
 
   /**
@@ -278,7 +337,9 @@ export class SocketGateway {
     if (!plane || (plane.lastStop && plane.lastStop.issuedAt >= cmd.issuedAt)) return;
     plane.lastStop = stopOfAck(cmd)!;
     plane.acks = 0;
-    this.io?.emit(STATE_EVENT, { controlPlane: { ...plane } });
+    // Every gateway sees the control channel itself: local only, or each board
+    // would get the update once per gateway through the Redis adapter.
+    this.io?.local.emit(STATE_EVENT, { controlPlane: { ...plane } });
   }
 
   /**
@@ -322,10 +383,18 @@ export class SocketGateway {
         "SOCKET_CORS_ORIGINS must be set in production — refusing wildcard CORS",
       );
     }
-    const allowedOrigins = rawOrigins?.split(",").map((s) => s.trim()) ?? ["*"];
+    const allowedOrigins = rawOrigins?.split(",").map((s) => s.trim());
 
     this.io = new SocketIOServer(this.httpServer, {
-      cors: { origin: allowedOrigins, credentials: true },
+      // CORS headers only cover HTTP long-polling; the WebSocket upgrade is
+      // checked by `allowRequest`. Unset (development): any origin.
+      cors: { origin: allowedOrigins ?? "*", credentials: true },
+      ...(allowedOrigins
+        ? {
+            allowRequest: (req, callback): void =>
+              callback(null, originAllowed(req.headers.origin, allowedOrigins)),
+          }
+        : {}),
       maxHttpBufferSize: 1e6, // 1 MB — prevent oversized WebSocket frames
       pingTimeout: 20_000, // Disconnect dead clients after 20s without pong
       pingInterval: 25_000, // Ping every 25s to detect dead connections
@@ -353,15 +422,21 @@ export class SocketGateway {
       // Enforce token expiry on long-running connections
       const exp = socket.data["exp"] as number | undefined;
       if (exp !== undefined) {
-        const msUntilExpiry = exp * 1000 - Date.now();
-        if (msUntilExpiry <= 0) {
+        if (exp * 1000 - Date.now() <= 0) {
           socket.disconnect(true);
           return;
         }
-        const expiryTimer = setTimeout(
-          () => socket.disconnect(true),
-          msUntilExpiry,
-        );
+        let expiryTimer: NodeJS.Timeout;
+        const armExpiry = (): void => {
+          // Re-arm in chunks: a delay above ~24.8 days would fire after 1 ms.
+          const left = exp * 1000 - Date.now();
+          if (left <= 0) {
+            socket.disconnect(true);
+            return;
+          }
+          expiryTimer = setTimeout(armExpiry, Math.min(left, MAX_TIMER_MS));
+        };
+        armExpiry();
         // Clear the expiry timer if the client disconnects first, so it doesn't
         // linger (holding a closure over the dead socket) until token expiry.
         socket.on("disconnect", () => clearTimeout(expiryTimer));
@@ -371,20 +446,26 @@ export class SocketGateway {
       this.sendSnapshot(socket);
 
       // Client can explicitly request a state refresh (e.g. after reconnect)
-      socket.on(STATE_EVENT_REQUEST, () => this.sendSnapshot(socket));
+      // Rate-limited: each request re-sends the whole snapshot.
+      const snapshotAt: number[] = [];
+      socket.on(STATE_EVENT_REQUEST, () => {
+        if (admit(snapshotAt, SNAPSHOT_MAX_PER_WINDOW, SNAPSHOT_WINDOW_MS)) {
+          this.sendSnapshot(socket);
+        }
+      });
 
       // Forward HITL decisions from board → Redis → orchestrator.
       // The optional ack callback lets the board confirm delivery end-to-end.
       const sentAt: number[] = []; // per-connection rate window
-      socket.on(HITL_SOCKET_EVENT, (payload: unknown, ack?: HitlAck) =>
-        this.handleHitlDecision(socket, sentAt, payload, ack),
+      socket.on(HITL_SOCKET_EVENT, (payload: unknown, ack?: unknown) =>
+        this.handleHitlDecision(socket, sentAt, payload, ackOf<HitlAck>(ack)),
       );
 
       // Emergency STOP ALL (ADR-025) — only with the control plane on.
       const control = this.control;
       if (control) {
-        socket.on(CONTROL_STOP_ALL_EVENT, (payload: unknown, ack?: StopAllAck) =>
-          void this.handleStopAll(control, socket, payload, ack),
+        socket.on(CONTROL_STOP_ALL_EVENT, (payload: unknown, ack?: unknown) =>
+          void this.handleStopAll(control, socket, payload, ackOf<StopAllAck>(ack)),
         );
       }
     });
@@ -398,11 +479,18 @@ export class SocketGateway {
           return;
         }
         this.applyToSnapshot(parsed); // keep snapshot current
-        this.io?.emit(STATE_EVENT, parsed); // broadcast incremental delta to all
+        // Every gateway subscribes to the state channel itself, so deliver to
+        // its own clients only; the Redis adapter would repeat it per gateway.
+        this.io?.local.emit(STATE_EVENT, parsed);
       } catch {
         log.error("Failed to parse state message");
       }
     });
+  }
+
+  /** Disconnect this gateway's own board clients (shutdown: upgraded sockets never end by themselves). */
+  public disconnectClients(): void {
+    this.io?.local.disconnectSockets(true);
   }
 
   public async shutdown(): Promise<void> {

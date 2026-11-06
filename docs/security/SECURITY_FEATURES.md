@@ -64,7 +64,9 @@
 BOARD_JWT_SECRET=<random 32+ bytes, base64>   # activates auth (token lifetime is 3600 s, set in code)
 ```
 
-**Board app:** Set `VITE_BOARD_TOKEN=<token>` in `board/.env` before running `npm run dev` or building the production bundle. The token is injected at build time (Vite `import.meta.env`).
+**Board app:** Set `VITE_BOARD_TOKEN=<token>` in `board/.env` before running `npm run dev`. The token is injected at build time (Vite `import.meta.env`).
+
+> **Do not build a production bundle with a token.** A build-time token is compiled into the public JavaScript, so every visitor of the board page can read it. Since 2.1.0 a board token also authorises STOP ALL and HITL decisions. Use `VITE_BOARD_TOKEN` for local development only; a run-time token for production boards is on the roadmap.
 
 **Issuing a token:**
 ```typescript
@@ -194,11 +196,14 @@ CHANNEL_SIGNING_SECRET=<random 32+ bytes, base64>   # activates signing
 | **Helmet** | `Content-Security-Policy: default-src 'none'` |
 | | `Strict-Transport-Security: max-age=63072000; includeSubDomains` |
 | | `Referrer-Policy: no-referrer` |
-| **Body size limit** | `express.json({ limit: '1mb' })` — rejects oversized payloads |
-| **Request timeout** | `req.setTimeout(30_000)` — prevents slow-read / Slowloris attacks |
-| **Rate limiting — RPC** | 100 req/min per IP via `SlidingWindowRateLimiter` |
+| **Body size limit** | `express.json` per route, after the rate limit: 1 MB on `/a2a/rpc` and the MCP route, 16 kB on `/control/stop-all`; larger bodies get `413`, malformed JSON gets a short JSON `400` (no stack trace) |
+| **Socket idle timeout** | `req.setTimeout` per route: 30 s on `/control/stop-all`; 15 minutes (at least the longest task wait plus 60 s) on `/a2a/rpc` and the MCP route, which stay silent while a task runs or a human consents. Header and body read limits (Node `headersTimeout`, `requestTimeout`) cover Slowloris on every route |
+| **Rate limiting — RPC** | 100 req/min per IP via `SlidingWindowRateLimiter`; unknown paths (404) share the bucket |
+| **Emergency STOP ALL** | `POST /control/stop-all` and the `control:stop-all` socket event (only with `CONTROL_PLANE_ENABLED=true`). Always needs a board token; refused with 401 when `BOARD_JWT_SECRET` is unset. Authentication runs first, then 5 commands per 10 s per token subject; refused attempts are limited separately (30 per 10 s per client address), so anonymous traffic cannot lock operators out. Not in the shared 100/min bucket. Behind a proxy set `TRUST_PROXY=true`, or every client shares the proxy's address. Every valid board token can stop everything (no roles yet) |
+| **Agent id allow-list** | `agentId` on A2A `message/send` and MCP `dispatch_task` must be one of `AGENT_IDS`; others get `-32602` and never create a queue or Redis connection |
+| **MCP sessions** | A session idle for 30 minutes is closed when the next one opens; above 200 live sessions `initialize` gets `503` |
 | **Rate limiting — probes** | 120 req/min per route per IP on `/health`, `/ready`, `/startup` (each route has its own bucket since 2.0.2; separate limiter: room for Kubernetes probe cadence, still bounded; 5/min before 2.0.1 restarted pods) |
-| **HITL decisions** | `taskId` must match `^[A-Za-z0-9._:-]{1,200}$` before it becomes a Redis key; 10 decisions per 10 s per connection; the board token's subject is logged with each decision (role checks: 2.1) |
+| **HITL decisions** | `taskId` must match `^[A-Za-z0-9._:-]{1,200}$` before it becomes a Redis key; 10 decisions per 10 s per connection; the board token's subject is logged with each decision (role checks: a later version) |
 | **Production secrets** | With `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct (`ALLOW_INSECURE_PRODUCTION=true` lets a missing one through with a warning; weak or repeated secrets are never allowed) |
 | **Trust proxy** | `app.set('trust proxy', 1)` only when `TRUST_PROXY=true` — prevents IP spoofing via `X-Forwarded-For` |
 | **Request logging** | UUID per request; logged on response finish (no sensitive data in log line) |
@@ -207,7 +212,7 @@ Not implemented today (removed from the table on 2026-10-21, roadmap §7.2): a `
 and production error-message sanitisation on `/a2a/rpc` and the MCP path. `express.json()` simply does
 not parse a non-JSON body, and error responses carry the error message in every environment.
 
-**Rate limiter design:** `SlidingWindowRateLimiter` uses an in-memory `Map<ip, number[]>`. Expired timestamps are evicted on each access; empty keys are replaced rather than accumulated — preventing unbounded memory growth under IP-spray attacks.
+**Rate limiter design:** `SlidingWindowRateLimiter` uses an in-memory `Map<ip, number[]>`. Expired timestamps are evicted on each access; once per window a sweep deletes every key whose newest hit is outside the window, and a hard cap of 100 000 keys drops the oldest first — so memory stays bounded under IP-spray attacks.
 
 ```bash
 # Trust proxy (required for Railway, Kubernetes, Nginx deployments)
@@ -225,7 +230,8 @@ NODE_ENV=production    # production boot checks: signing secrets and CORS allowl
 
 | Feature | Detail |
 |---------|--------|
-| **CORS** | Exact-origin allowlist from `SOCKET_CORS_ORIGINS`; throws in production if unset (wildcard refused) |
+| **CORS / origin** | Exact-origin allowlist from `SOCKET_CORS_ORIGINS`, applied to long-polling (CORS headers) and to the WebSocket upgrade (`allowRequest` refuses a listed-out `Origin`); throws in production if unset (wildcard refused). Unset in development: any origin. An origin check only constrains browsers: a script or `curl` sets any `Origin`, so the board token remains the control |
+| **Snapshot requests** | `state:request` is answered at most 5 times per 10 s per connection |
 | **Frame size limit** | `maxHttpBufferSize: 1e6` (1 MB) — prevents oversized WebSocket frames |
 | **Ping timeout** | `pingTimeout: 20_000` — disconnects dead clients after 20 s without pong |
 | **Ping interval** | `pingInterval: 25_000` — server-initiated heartbeat every 25 s |
@@ -299,7 +305,7 @@ This prevents crafted payloads from injecting malformed OpenTelemetry trace head
 **Configuration:**
 ```bash
 SEMANTIC_FIREWALL_ENABLED=true              # activates firewall
-SEMANTIC_FIREWALL_LLM_URL=http://...        # optional: deep LLM-based analysis
+SEMANTIC_FIREWALL_LLM_URL=http://...        # parsed but NOT used yet: no LLM analysis runs (regex firewall only)
 ```
 
 **OWASP:** ASI01 (Agent Goal Hijack), LLM01 (Prompt Injection)
@@ -529,7 +535,7 @@ All services in `docker-compose.yml` declare CPU and memory limits to prevent on
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `SEMANTIC_FIREWALL_ENABLED` | Optional | `false` | Enable regex-based prompt injection firewall on agents |
-| `SEMANTIC_FIREWALL_LLM_URL` | Optional | — | Optional local LLM endpoint for deep semantic analysis |
+| `SEMANTIC_FIREWALL_LLM_URL` | Optional | — | Reserved: read from the environment but not used; no model-based analysis runs |
 | `CIRCUIT_BREAKER_ENABLED` | Optional | `false` | Enable sliding-window circuit breaker on agents |
 | `CIRCUIT_BREAKER_THRESHOLD` | Optional | `10` | Failure count to trip breaker |
 | `CIRCUIT_BREAKER_WINDOW_MS` | Optional | `60000` | Sliding window duration in ms |
@@ -564,7 +570,7 @@ Run through this before deploying to any internet-facing or multi-tenant environ
 - [ ] `CHANNEL_SIGNING_SECRET=<openssl rand -base64 32>` — enables Redis signing
 - [ ] `REDIS_PASSWORD=<openssl rand -base64 24>` and `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379`
 - [ ] `TRUST_PROXY=true` if behind Nginx / Railway / Kubernetes ingress
-- [ ] `VITE_BOARD_TOKEN=<issued token>` in the board deployment
+- [ ] Board token supplied at run time, **not** `VITE_BOARD_TOKEN` in the production bundle (a bundled token is public and can issue STOP ALL and HITL decisions)
 
 ### Strongly Recommended
 

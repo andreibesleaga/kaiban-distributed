@@ -124,3 +124,17 @@ describe("validateTaskInput", () => {
     expect("params" in r).toBe(true);
   });
 });
+
+describe("validateTaskInput — agent allow-list (SEC-05)", () => {
+  it("accepts a listed id and refuses an unlisted one with -32602", () => {
+    expect(validateTaskInput({ agentId: "writer", instruction: "x" }, ["writer"])).toHaveProperty("params");
+    const refused = validateTaskInput({ agentId: "x1", instruction: "x" }, ["writer"]);
+    expect(refused).toHaveProperty("error");
+    expect(JSON.stringify(refused)).toContain("Unknown agentId");
+    expect(JSON.stringify(refused)).not.toContain("x1");
+  });
+
+  it("without a list only the shape is checked", () => {
+    expect(validateTaskInput({ agentId: "anything-1", instruction: "x" })).toHaveProperty("params");
+  });
+});

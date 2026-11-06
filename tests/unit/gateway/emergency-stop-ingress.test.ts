@@ -1,6 +1,6 @@
 /**
  * The gateway's emergency STOP ALL ingress (roadmap §6.10 ES-6, ES-9, ES-10;
- * ADR-025): board token always required, 5 commands per 10 s per client, the
+ * ADR-025): board token always required, 5 commands per 10 s per token holder, the
  * stop saved + published, an `issued` ack on the state channel.
  */
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
@@ -136,7 +136,7 @@ describe("EmergencyStopIngress.stopAll", () => {
     expect(redis.eval.mock.calls[0]![4]).toContain('"issuedBy":"board"');
   });
 
-  it("allows 5 commands per 10 s per client, then 429 (ES-10)", async () => {
+  it("allows 5 commands per 10 s per token holder, then 429 (ES-10)", async () => {
     const ingress = new EmergencyStopIngress(fakeRedis());
     const token = issueBoardToken("ops");
     for (let i = 0; i < 5; i++) {
@@ -147,7 +147,30 @@ describe("EmergencyStopIngress.stopAll", () => {
       status: 429,
       error: "Too Many Requests",
     });
-    await expect(ingress.stopAll(token, {}, "ip-b")).resolves.toMatchObject({ ok: true });
+    // another operator behind the same address, and the same one elsewhere: own budget / same budget
+    await expect(ingress.stopAll(issueBoardToken("other"), {}, "ip-a")).resolves.toMatchObject({ ok: true });
+    await expect(ingress.stopAll(token, {}, "ip-b")).resolves.toMatchObject({ status: 429 });
+  });
+
+  it("anonymous attempts from the operator's address do not use up the operator's budget (SEC-03)", async () => {
+    const redis = fakeRedis();
+    const ingress = new EmergencyStopIngress(redis);
+    for (let i = 0; i < 12; i++) {
+      await expect(ingress.stopAll(undefined, {}, "proxy-ip")).resolves.toMatchObject({ status: 401 });
+      await expect(ingress.stopAll("garbage", {}, "proxy-ip")).resolves.toMatchObject({ status: 401 });
+    }
+    await expect(ingress.stopAll(issueBoardToken("ops"), {}, "proxy-ip")).resolves.toMatchObject({ ok: true });
+  });
+
+  it("refused attempts are themselves limited per address (30 per 10 s), other addresses unaffected", async () => {
+    const ingress = new EmergencyStopIngress(fakeRedis());
+    for (let i = 0; i < 30; i++) {
+      await expect(ingress.stopAll(undefined, {}, "bad-ip")).resolves.toMatchObject({ status: 401 });
+    }
+    await expect(ingress.stopAll(undefined, {}, "bad-ip")).resolves.toMatchObject({ status: 429 });
+    await expect(ingress.stopAll(undefined, {}, "other-ip")).resolves.toMatchObject({ status: 401 });
+    // a valid token still gets through from the flooded address
+    await expect(ingress.stopAll(issueBoardToken("ops"), {}, "bad-ip")).resolves.toMatchObject({ ok: true });
   });
 
   it("a Redis failure is a 500 and nothing is acked", async () => {

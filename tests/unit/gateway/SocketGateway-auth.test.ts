@@ -285,11 +285,12 @@ describe("SocketGateway — JWT auth middleware", () => {
   // ─── CORS configuration ───────────────────────────────────────────────────
 
   describe("CORS configuration", () => {
-    it("uses wildcard origin when SOCKET_CORS_ORIGINS is not set (non-production)", () => {
+    it("uses the wildcard origin when SOCKET_CORS_ORIGINS is not set (non-production)", () => {
       const sg = getGateway();
       sg.initialize();
       const cors = capturedOptions!["cors"] as Record<string, unknown>;
-      expect(cors["origin"]).toEqual(["*"]);
+      expect(cors["origin"]).toBe("*");
+      expect(capturedOptions!["allowRequest"]).toBeUndefined();
     });
 
     it("uses origin list from SOCKET_CORS_ORIGINS", () => {

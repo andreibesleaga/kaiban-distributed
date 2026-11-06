@@ -19,11 +19,13 @@ import type { IMessagingDriver } from "../infrastructure/messaging/interfaces";
 import type { AgentStatusTracker } from "../infrastructure/federation/agent-status-tracker";
 import { GatewayApp } from "../adapters/gateway/GatewayApp";
 import { SocketGateway } from "../adapters/gateway/SocketGateway";
+import { longRequestTimeoutFor } from "../adapters/gateway/request-timeouts";
 import { EmergencyStopIngress } from "../adapters/gateway/emergency-stop-ingress";
 import { controlPlaneEnabled } from "../shared/emergency-stop";
 import { ControlSubscriber } from "../infrastructure/control/control-channel";
 import { buildReadinessProbe, buildStartupProbe } from "../resilience/health";
 import { gracefulShutdown } from "../resilience/graceful-shutdown";
+import { drainHttpServer } from "../resilience/http-drain";
 import { createStructuredLogger } from "../shared/structured-logger";
 import { taskWaitMs } from "../application/actor/retry-policy";
 import {
@@ -36,12 +38,8 @@ const log = createStructuredLogger({ component: "gateway" });
 /** Bounded deadline (ms) for graceful drain — fits inside k8s terminationGracePeriodSeconds. */
 const SHUTDOWN_DEADLINE_MS = 25_000;
 
-/** Stop accepting new HTTP connections; resolves once existing ones close. */
-function closeServer(server: ReturnType<typeof createServer>): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
-  });
-}
+/** In-flight HTTP requests may finish this long before shutdown cuts their sockets. */
+const HTTP_DRAIN_GRACE_MS = 10_000;
 
 /**
  * Build the env-gated MCP Streamable-HTTP handler (Phase M, ADR-017). Returns
@@ -67,11 +65,14 @@ function buildGatewayMcpHandler(
         : {}),
     },
     dispatchTask: async ({ agentId, instruction, expectedOutput }) => {
-      const validation = validateTaskInput({
-        agentId,
-        instruction,
-        ...(expectedOutput !== undefined ? { expectedOutput } : {}),
-      });
+      const validation = validateTaskInput(
+        {
+          agentId,
+          instruction,
+          ...(expectedOutput !== undefined ? { expectedOutput } : {}),
+        },
+        config.agentIds,
+      );
       if ("error" in validation) throw new Error(validation.error.message);
       const taskId = randomUUID();
       const p = validation.params;
@@ -167,6 +168,7 @@ export async function runGateway(): Promise<void> {
   const redisSocketSub = new Redis(config.redis.url, redisOpts);
   const redisHitlPub = new Redis(config.redis.url, redisOpts);
 
+  const taskWait = taskWaitMs(config.agentTimeoutMs, config.retryOnTimeout);
   const a2a = buildA2AStack({
     driver: messagingDriver,
     router,
@@ -176,7 +178,7 @@ export async function runGateway(): Promise<void> {
     baseUrl: process.env["A2A_PUBLIC_URL"] ?? `http://localhost:${config.port}`,
     agentIds: config.agentIds,
     // With RETRY_ON_TIMEOUT the worker may run three timed-out attempts; wait for all of them.
-    timeoutMs: taskWaitMs(config.agentTimeoutMs, config.retryOnTimeout),
+    timeoutMs: taskWait,
     jwtEnabled: Boolean(config.security.a2aJwtSecret),
   });
   await a2a.start();
@@ -211,6 +213,8 @@ export async function runGateway(): Promise<void> {
     requestHandler: a2a.requestHandler,
     statusTracker: a2a.statusTracker,
     trustProxy: config.security.trustProxy,
+    // Blocking A2A calls and MCP streams are silent while a task runs.
+    longRequestTimeoutMs: longRequestTimeoutFor(taskWait),
     readinessProbe,
     startupProbe,
     ...(mcpHandler ? { mcpHandler, mcpPath: config.mcp.path } : {}),
@@ -224,6 +228,7 @@ export async function runGateway(): Promise<void> {
     {
       validHitlDecisions: config.validHitlDecisions,
       hitlPublisher: redisHitlPub,
+      trustProxy: config.security.trustProxy,
       ...(emergencyStop ? { control: emergencyStop } : {}),
     },
   );
@@ -245,7 +250,14 @@ export async function runGateway(): Promise<void> {
     const result = await gracefulShutdown({
       deadlineMs: SHUTDOWN_DEADLINE_MS,
       steps: [
-        { name: "stop-http-intake", run: (): Promise<void> => closeServer(httpServer) },
+        {
+          name: "stop-http-intake",
+          run: (): Promise<void> =>
+            drainHttpServer(httpServer, {
+              disconnectClients: (): void => socketGateway.disconnectClients(),
+              graceMs: HTTP_DRAIN_GRACE_MS,
+            }),
+        },
         { name: "drain-sockets", run: (): Promise<void> => socketGateway.shutdown() },
         { name: "close-control-watch", run: async (): Promise<void> => { await controlWatch?.close(); } },
         ...(mcpHandler
