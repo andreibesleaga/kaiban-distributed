@@ -16,10 +16,10 @@
 | **Error handling & logging** | No sensitive data in logs; audit trail | SHA-256 hashed agent ids in logs; run-logger decision trail; OpenTelemetry spans; W3C traceparent across hops | ✅ |
 | **Data protection** | Minimize & protect sensitive data | PII denylist sanitization; size caps; secrets via env only (never logged) | ✅ |
 | **Communications security** | Encrypt in transit | mTLS (`REDIS_TLS_*`, `KAFKA_SSL_*`); HTTPS to LLM APIs; `TLS_REJECT_UNAUTHORIZED` default true | 🟡 |
-| **Malicious input / agentic** | Prompt-injection defense | `HeuristicFirewall` (10 patterns, opt-in) + optional LLM deep-analysis; firewall verdict routes to DLQ | ✅ |
+| **Malicious input / agentic** | Prompt-injection defense | `HeuristicFirewall` (10 patterns, opt-in; the optional LLM URL is reserved, not used); firewall verdict routes to DLQ | ✅ |
 | **Resilience / availability** | Prevent cascading failure / DoS | `SlidingWindowBreaker` (threshold 10 / 60 s window); per-task timeout (5 min); `MAX_TOKEN_BUDGET` | 🟡 |
 | **Configuration** | Secure defaults; fail-fast | `loadConfig` validates + `requireEnv("AGENT_IDS")`; security features default OFF (backward-compatible); non-root container | ✅ |
-| **API & web service** | Hardened HTTP surface | Helmet (CSP/HSTS), request timeout 30 s, 1 MB frame cap, CORS via `SOCKET_CORS_ORIGINS` (required in prod) | ✅ |
+| **API & web service** | Hardened HTTP surface | Helmet (CSP/HSTS), socket idle timeout (30 s on STOP ALL, 15 min on A2A/MCP), 1 MB frame cap, WebSocket origin check, CORS via `SOCKET_CORS_ORIGINS` (required in prod) | ✅ |
 | **Supply chain** | Dependency & build integrity | CI: `npm audit` (blocking HIGH+), OSV, gitleaks, CodeQL, CycloneDX SBOM; releases: SLSA provenance + Sigstore signing | ✅ |
 | **Self-protection** | Rate limiting / quotas | Per-IP rate limits; per-agent token budget; **global cross-agent rate/cost limiter** (`src/economics/*` — `RateCostLimiter`, pre-step `CostReservation`, `detectSpendAnomaly`; `ECONOMICS_*`, default-OFF) | ✅ (opt-in; turnkey fleet auto-wiring → v2.1) |
 | **OAuth / OIDC** | — | Not an OAuth provider/consumer | N/A |

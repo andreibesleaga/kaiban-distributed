@@ -15,7 +15,7 @@ deployments.
 regex patterns over the `instruction`/`context` fields, returning
 `{ allowed, reason }`. It is **opt-in** via `SEMANTIC_FIREWALL_ENABLED` (default off).
 Blocked payloads route straight to the DLQ (`kaiban-events-failed`) without retries.
-An optional LLM deep-analysis hook (`SEMANTIC_FIREWALL_LLM_URL`) can layer on top.
+`SEMANTIC_FIREWALL_LLM_URL` is reserved for an LLM deep-analysis layer; nothing reads it yet.
 
 ## Consequences
 - **+** Cheap, stateless, zero new runtime deps; backward-compatible (off by default).

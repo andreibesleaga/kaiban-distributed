@@ -881,7 +881,7 @@ The full list is [`.env.example`](.env.example); it also covers the variables no
 
 With `CONTROL_PLANE_ENABLED=true` on every process, one command kills every running model call, every task and every workflow at once:
 
-- **From the board:** the **STOP ALL** button in the header (shown only when the gateway has the control plane on), then confirm. The board needs `VITE_BOARD_TOKEN`, and the gateway `BOARD_JWT_SECRET`.
+- **From the board:** the **STOP ALL** button in the header (shown only when the gateway has the control plane on), then confirm. The board needs `VITE_BOARD_TOKEN` (local development only: a token built into a production bundle is public, and it can issue STOP ALL), and the gateway `BOARD_JWT_SECRET`.
 - **From the static HTML viewers (2.1.1):** the same **STOP ALL** button, confirmation and banner in `examples/blog-team/viewer/board.html` and `examples/global-research/viewer/board.html`. When the gateway sets `BOARD_JWT_SECRET`, open the viewer with the token in the address fragment, for example `board.html#token=<board token>` (or `board.html?gateway=http://localhost:3000#token=<board token>`), or set `window.BOARD_TOKEN`. The fragment is removed from the address bar after it is read, and the token is never logged or stored.
 - **Over HTTP:** `curl -X POST http://localhost:3000/control/stop-all -H "Authorization: Bearer <board token>" -H "content-type: application/json" -d '{"reason":"runaway loop"}'`
 - **From a shell:** `npm run build` once, then `npm run stop-all -- --reason "runaway loop"` (in the image: `node dist/src/main/stop-all.js`). It needs only `REDIS_URL` (and `CHANNEL_SIGNING_SECRET` when the deployment signs its channels).
@@ -902,7 +902,7 @@ There was no operator stop command before 2.1.0 (see Emergency STOP ALL above). 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VITE_GATEWAY_URL` | `http://localhost:3000` | Gateway WebSocket URL (build-time; overridable via `?gateway=` query param at runtime) |
-| `VITE_BOARD_TOKEN` | — | Board token sent in the socket handshake; needed when the gateway sets `BOARD_JWT_SECRET`, and for the STOP ALL button |
+| `VITE_BOARD_TOKEN` | — | Board token sent in the socket handshake; needed when the gateway sets `BOARD_JWT_SECRET`, and for the STOP ALL button. Local development only: the value is compiled into the bundle, so do not build a production bundle with a real token |
 
 #### Security (all opt-in, disabled by default)
 
@@ -912,7 +912,7 @@ There was no operator stop command before 2.1.0 (see Emergency STOP ALL above). 
 | `KAFKA_SSL_CA` / `KAFKA_SSL_CERT` / `KAFKA_SSL_KEY` | — | Paths to Kafka mTLS certificates |
 | `TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` for self-signed certs in staging |
 | `SEMANTIC_FIREWALL_ENABLED` | `false` | Enable heuristic prompt injection firewall |
-| `SEMANTIC_FIREWALL_LLM_URL` | — | Optional local LLM endpoint for deep analysis |
+| `SEMANTIC_FIREWALL_LLM_URL` | — | Reserved: read but not used yet (no LLM analysis runs) |
 | `JIT_TOKENS_ENABLED` | `false` | Enable JIT token provider for LLM API keys |
 | `CIRCUIT_BREAKER_ENABLED` | `false` | Enable sliding-window circuit breaker |
 | `CIRCUIT_BREAKER_THRESHOLD` | `10` | Failures before breaker trips |

@@ -10,13 +10,20 @@
 Security changes in 2.0.1: production boot refuses missing, short (< 32 bytes) or repeated signing
 secrets (`ALLOW_INSECURE_PRODUCTION=true` lets a missing one through, with a warning); HITL decisions
 validate the task id and are rate-limited per connection; probe routes have their own, higher limit.
-Not yet in 2.0.1 (planned for 2.1): an operator stop command, role checks on HITL decisions and on
-control routes, and per-run tokens for the board.
+Not in 2.0.1: an operator stop command (added in 2.1.0, below), role checks on HITL decisions and on
+control routes, and per-run tokens for the board (both planned for a later version).
 
 Security changes in 2.0.2: a board token is rejected on the A2A and MCP routes and an A2A token is
 rejected on the board socket, by the `role` claim the token helpers already issue (this matters when
 both secrets are equal; hand-signed tokens must carry `board-viewer` or `a2a-client`); each probe
 route (`/health`, `/ready`, `/startup`) has its own 120 per minute bucket per client.
+
+Security changes in 2.1.0: the emergency STOP ALL (`POST /control/stop-all` and the `control:stop-all`
+socket event, only with `CONTROL_PLANE_ENABLED=true`). It always needs a board token and is refused
+when `BOARD_JWT_SECRET` is unset. Every valid board token can stop everything: there are no roles
+yet. Limits: 5 commands per 10 s per token holder; refused attempts are counted separately, 30 per
+10 s per client address, so anonymous traffic cannot use up an operator's budget. See
+[SECURITY_FEATURES.md](docs/security/SECURITY_FEATURES.md#31-http-gateway-hardening).
 
 ## Reporting a vulnerability
 

@@ -1,10 +1,12 @@
 /** drainHttpServer — shutdown must not wait for connected boards (SEC-V-02). */
 import { describe, it, expect, vi } from "vitest";
-import { createServer, request } from "http";
+import { createServer, request, type Server } from "http";
 import type { AddressInfo } from "net";
 import { drainHttpServer } from "../../../src/resilience/http-drain";
 
-const listen = async (handler: Parameters<typeof createServer>[1]) => {
+const listen = async (
+  handler: Parameters<typeof createServer>[1],
+): Promise<{ server: Server; port: number }> => {
   const server = createServer(handler);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   return { server, port: (server.address() as AddressInfo).port };
