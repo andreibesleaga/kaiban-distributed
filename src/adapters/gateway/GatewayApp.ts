@@ -49,7 +49,21 @@ function clientIpOf(req: Request): string {
   return req.ip ?? req.socket.remoteAddress ?? "unknown";
 }
 
+/**
+ * Socket idle limit for short routes (`POST /control/stop-all`): a slow-read
+ * client cannot hold the connection open.
+ */
 const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * Socket idle limit for the routes that legitimately stay silent for as long
+ * as a task runs: blocking A2A `message/send`, `message/stream` and the MCP
+ * stream. Overridable with `longRequestTimeoutMs`.
+ */
+export const DEFAULT_LONG_REQUEST_TIMEOUT_MS = 900_000;
+/** Largest body the A2A and MCP routes parse. */
+const JSON_BODY_LIMIT = "1mb";
+/** The stop-all body is only an optional short reason. */
+const STOP_BODY_LIMIT = "16kb";
 
 export interface GatewayAppDeps {
   /** The SDK A2A request handler (e.g. DefaultRequestHandler) the JSON-RPC + card routes wrap. */
@@ -81,6 +95,12 @@ export interface GatewayAppDeps {
    * is mounted (board token always required); unset ⇒ 404 (default-off).
    */
   emergencyStop?: EmergencyStopIngress;
+  /**
+   * Socket idle limit (ms) for the long-running routes (`/a2a/rpc`, MCP). Must
+   * exceed the longest task wait, or a blocking `message/send` is cut mid-task.
+   * Defaults to 15 minutes. `POST /control/stop-all` keeps a 30 s limit.
+   */
+  longRequestTimeoutMs?: number;
 }
 
 const READY: ProbeResult = { ready: true, checks: [] };
@@ -111,6 +131,7 @@ export class GatewayApp {
   private readonly mcpHandler?: McpHttpHandler;
   private readonly mcpPath: string;
   private readonly emergencyStop?: EmergencyStopIngress;
+  private readonly longRequestTimeoutMs: number;
   private rateLimiter = new SlidingWindowRateLimiter(60_000, 100);
   // Probe routes: 120/min per route per client (keyed route|ip), so Kubernetes
   // liveness + readiness + startup from one kubelet address never share a bucket,
@@ -126,6 +147,8 @@ export class GatewayApp {
     this.mcpHandler = deps.mcpHandler;
     this.mcpPath = deps.mcpPath ?? "/mcp";
     this.emergencyStop = deps.emergencyStop;
+    this.longRequestTimeoutMs =
+      deps.longRequestTimeoutMs ?? DEFAULT_LONG_REQUEST_TIMEOUT_MS;
     this.app = express();
 
     // Trust proxy — enables correct req.ip behind reverse proxies (Railway, K8s, Nginx).
@@ -139,7 +162,8 @@ export class GatewayApp {
         referrerPolicy: { policy: "no-referrer" },
       }),
     );
-    this.app.use(express.json({ limit: "1mb" }));
+    // No global body parser: each route parses its own body after the rate
+    // limit (and auth), so unknown paths and anonymous callers cost no parsing.
     this.registerRoutes();
   }
 
@@ -183,7 +207,8 @@ export class GatewayApp {
       "/a2a/rpc",
       this.rateLimit.bind(this),
       this.requireA2AAuth.bind(this),
-      this.enforceRequestTimeout.bind(this),
+      this.enforceRequestTimeout(this.longRequestTimeoutMs),
+      express.json({ limit: JSON_BODY_LIMIT }),
       jsonRpcHandler({
         requestHandler: this.requestHandler,
         userBuilder: UserBuilder.noAuthentication,
@@ -193,18 +218,21 @@ export class GatewayApp {
     // MCP Streamable-HTTP surface (Phase M) — only when a handler is provided.
     if (this.mcpHandler) this.registerMcpRoutes(this.mcpHandler);
 
-    // Emergency STOP ALL (ADR-025) — only when the control plane is on.
+    // Emergency STOP ALL (ADR-025) — only when the control plane is on. It is
+    // not in the shared 100/min bucket: the ingress limits it itself, after
+    // authentication, so other traffic from the same address cannot starve it.
     const emergencyStop = this.emergencyStop;
     if (emergencyStop) {
       this.app.post(
         CONTROL_STOP_ALL_PATH,
-        this.rateLimit.bind(this),
-        this.enforceRequestTimeout.bind(this),
+        this.enforceRequestTimeout(REQUEST_TIMEOUT_MS),
+        express.json({ limit: STOP_BODY_LIMIT }),
         (req: Request, res: Response) => void this.handleStopAll(emergencyStop, req, res),
       );
     }
 
-    this.app.use(this.handleNotFound.bind(this));
+    this.app.use(this.rateLimit.bind(this), this.handleNotFound.bind(this));
+    this.app.use(this.handleError.bind(this));
   }
 
   /**
@@ -216,7 +244,8 @@ export class GatewayApp {
     const chain = [
       this.rateLimit.bind(this),
       this.requireA2AAuth.bind(this),
-      this.enforceRequestTimeout.bind(this),
+      this.enforceRequestTimeout(this.longRequestTimeoutMs),
+      express.json({ limit: JSON_BODY_LIMIT }),
     ];
     this.app.post(this.mcpPath, ...chain, (req: Request, res: Response) => {
       void handler.handlePost(req, res, req.body);
@@ -287,14 +316,16 @@ export class GatewayApp {
     }
   }
 
-  /** Request timeout — prevent slow-read attacks holding connections open. */
-  private enforceRequestTimeout(
-    req: Request,
-    _res: Response,
-    next: NextFunction,
-  ): void {
-    req.setTimeout(REQUEST_TIMEOUT_MS);
-    next();
+  /**
+   * Socket idle limit for one route — prevents slow-read attacks holding
+   * connections open. Node destroys the socket after `ms` without traffic, so
+   * routes that wait on a task need a limit longer than the task.
+   */
+  private enforceRequestTimeout(ms: number) {
+    return (req: Request, _res: Response, next: NextFunction): void => {
+      req.setTimeout(ms);
+      next();
+    };
   }
 
   private handleHealth(_req: Request, res: Response): void {
@@ -351,5 +382,26 @@ export class GatewayApp {
 
   private handleNotFound(_req: Request, res: Response): void {
     res.status(404).json(apiError("Not Found"));
+  }
+
+  /**
+   * Last resort: a malformed or oversized body (or any thrown error) gets a
+   * short JSON answer, never Express's HTML page with a stack trace.
+   */
+  private handleError(
+    err: unknown,
+    _req: Request,
+    res: Response,
+    _next: NextFunction,
+  ): void {
+    const status = (err as { status?: unknown } | null)?.status;
+    if (status === 413) {
+      res.status(413).json(apiError("Payload Too Large"));
+    } else if (status === 400) {
+      res.status(400).json(apiError("Bad Request"));
+    } else {
+      log.error({ err }, "Unhandled request error");
+      res.status(500).json(apiError("Internal Server Error"));
+    }
   }
 }

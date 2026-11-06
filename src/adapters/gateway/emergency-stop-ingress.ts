@@ -5,7 +5,10 @@
  *
  * A board token is always required: with BOARD_JWT_SECRET unset every command
  * is refused, even where the board's read-only view runs without auth (ES-6).
- * Rate-limited to 5 commands per 10 s per client (ES-10). The stop is saved and
+ * Rate-limited to 5 commands per 10 s per token holder (ES-10); refused
+ * attempts (no or bad token) are counted per client address in a separate,
+ * larger bucket, so anonymous traffic can never use up an operator's budget.
+ * The stop is saved and
  * published (`issueStopAll`), then announced on the state channel as an
  * `issued` ack so every connected board sees it at once (ES-9).
  */
@@ -24,9 +27,11 @@ import { SlidingWindowRateLimiter } from "./rate-limiter";
 
 const log = createStructuredLogger({ component: "EmergencyStopIngress" });
 
-/** Commands per client per window (ES-10). */
+/** Commands per token holder per window (ES-10). */
 const STOP_MAX_PER_WINDOW = 5;
 const STOP_WINDOW_MS = 10_000;
+/** Refused (unauthenticated) attempts per client address per window. */
+const REFUSED_MAX_PER_WINDOW = 30;
 const MAX_REASON_LEN = 500;
 
 /** The result of one STOP_ALL request; `status` is the HTTP status on refusal. */
@@ -52,6 +57,11 @@ export class EmergencyStopIngress {
     STOP_WINDOW_MS,
     STOP_MAX_PER_WINDOW,
   );
+  /** Counts only refused attempts, keyed by client address. */
+  private readonly refusedLimiter = new SlidingWindowRateLimiter(
+    STOP_WINDOW_MS,
+    REFUSED_MAX_PER_WINDOW,
+  );
   private readonly now: () => number;
 
   constructor(
@@ -63,16 +73,22 @@ export class EmergencyStopIngress {
 
   /**
    * Issue a STOP_ALL for the holder of `token` (a board token). `body` may
-   * carry `reason`; `clientKey` (IP or socket address) keys the rate limit.
+   * carry `reason`; `clientKey` (IP or socket address) keys the limit on
+   * refused attempts. Authentication runs first; the 5-per-10-s limit is then
+   * keyed by the token's subject.
    */
   async stopAll(
     token: string | undefined,
     body: unknown,
     clientKey: string,
   ): Promise<StopAllOutcome> {
-    if (!this.limiter.isAllowed(clientKey)) return refuse(429, "Too Many Requests");
     const subject = authenticate(token);
-    if (typeof subject !== "string") return subject;
+    if (typeof subject !== "string") {
+      return this.refusedLimiter.isAllowed(clientKey)
+        ? subject
+        : refuse(429, "Too Many Requests");
+    }
+    if (!this.limiter.isAllowed(subject)) return refuse(429, "Too Many Requests");
     const reason = reasonOf(body);
     if (reason === false) {
       return refuse(400, `reason must be a string of at most ${MAX_REASON_LEN} characters`);
