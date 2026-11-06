@@ -3,27 +3,30 @@ import { useBoardStore } from '../../store/boardStore';
 import { sendHitlDecision } from '../../socket/socketClient';
 import clsx from 'clsx';
 
-function HitlButtons({ taskId }: { taskId: string }) {
+function HitlButtons({ taskId, title }: { taskId: string; title: string }) {
   const send = (decision: 'PUBLISH' | 'REVISE' | 'REJECT') => {
     sendHitlDecision(taskId, decision);
   };
 
   return (
-    <div className="flex items-center gap-3 mt-3 sm:mt-0">
+    <div role="group" aria-label={`Decision for task: ${title}`} className="flex items-center gap-3 mt-3 sm:mt-0">
       <button
         onClick={() => send('PUBLISH')}
+        aria-label={`Approve: ${title}`}
         className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors"
       >
         Approve
       </button>
       <button
         onClick={() => send('REVISE')}
+        aria-label={`Revise: ${title}`}
         className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition-colors"
       >
         Revise
       </button>
       <button
         onClick={() => send('REJECT')}
+        aria-label={`Reject: ${title}`}
         className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
       >
         Reject
@@ -70,7 +73,7 @@ export default function WorkflowBanner() {
                 Task: {task.title || task.taskId}
               </p>
             </div>
-            <HitlButtons taskId={task.taskId} />
+            <HitlButtons taskId={task.taskId} title={task.title || task.taskId} />
           </div>
         ))}
       </div>

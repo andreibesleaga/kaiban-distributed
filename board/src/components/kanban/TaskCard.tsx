@@ -9,7 +9,7 @@ interface Props {
 }
 
 const STATUS_BADGE: Record<string, string> = {
-  TODO:                 'bg-slate-700 text-slate-400',
+  TODO:                 'bg-slate-700 text-slate-300',
   DOING:                'bg-cyan-900 text-cyan-300',
   DONE:                 'bg-emerald-900 text-emerald-300',
   BLOCKED:              'bg-red-900 text-red-300',
@@ -18,8 +18,9 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default function TaskCard({ task, agent, onClick }: Props) {
-  const badgeClass = STATUS_BADGE[task.status] ?? 'bg-slate-700 text-slate-400';
+  const badgeClass = STATUS_BADGE[task.status] ?? 'bg-slate-700 text-slate-300';
   const fullTitle = task.title || task.taskId;
+  const statusLabel = task.status.replace(/_/g, ' ').toLowerCase();
 
   return (
     <div
@@ -30,7 +31,8 @@ export default function TaskCard({ task, agent, onClick }: Props) {
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      aria-label={`View details for task: ${fullTitle}`}
+      // The label replaces the card's content for assistive technology, so it carries the status too.
+      aria-label={onClick ? `View details for task: ${fullTitle}, status ${statusLabel}` : undefined}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           onClick?.();
@@ -50,7 +52,7 @@ export default function TaskCard({ task, agent, onClick }: Props) {
 
       {/* Agent chip */}
       {agent && (
-        <p className="text-xs text-slate-500 truncate" title={agent.name || agent.agentId}>
+        <p className="text-xs text-slate-400 truncate" title={agent.name || agent.agentId}>
           ⬡ {agent.name || agent.agentId}
         </p>
       )}
@@ -67,7 +69,7 @@ export default function TaskCard({ task, agent, onClick }: Props) {
 
       {/* Token/cost badge (shown when task is DONE and data is available) */}
       {task.tokens != null && (
-        <p className="text-xs text-slate-500 tabular-nums">
+        <p className="text-xs text-slate-400 tabular-nums">
           {task.tokens.toLocaleString()} tok · ${(task.cost ?? 0).toFixed(4)}
         </p>
       )}

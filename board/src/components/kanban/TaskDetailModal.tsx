@@ -10,7 +10,7 @@ interface Props {
 }
 
 const STATUS_BADGE: Record<string, string> = {
-  TODO:                 'bg-slate-700 text-slate-400',
+  TODO:                 'bg-slate-700 text-slate-300',
   DOING:                'bg-cyan-900 text-cyan-300',
   DONE:                 'bg-emerald-900 text-emerald-300',
   BLOCKED:              'bg-red-900 text-red-300',
@@ -47,7 +47,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
     }
   }
 
-  const badgeClass = STATUS_BADGE[task.status] ?? 'bg-slate-700 text-slate-400';
+  const badgeClass = STATUS_BADGE[task.status] ?? 'bg-slate-700 text-slate-300';
 
   return (
     <dialog
@@ -61,7 +61,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-700">
         <div className="flex flex-col gap-1 min-w-0">
-          <span className="text-xs font-mono text-slate-500 break-all" id="task-modal-desc">
+          <span className="text-xs font-mono text-slate-400 break-all" id="task-modal-desc">
             {task.taskId}
           </span>
           <h2 id="task-modal-title" className="text-base font-semibold leading-snug break-words">
@@ -89,7 +89,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
               {AGENT_STATUS_ICON[agent.status] ?? '⬡'}{' '}
               <span className="font-medium text-slate-300">{agent.name || agent.agentId}</span>
               {agent.role && (
-                <span className="text-slate-500"> — {agent.role}</span>
+                <span className="text-slate-400"> — {agent.role}</span>
               )}
             </span>
           )}
@@ -98,7 +98,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
         {/* Cost / tokens */}
         {(task.tokens != null || task.cost != null) && (
           <section aria-label="Token and cost summary">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
               Cost
             </h3>
             <div className="flex gap-6 text-sm tabular-nums">
@@ -121,7 +121,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
         {/* Result */}
         {task.result && (
           <section aria-label="Task result">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
               Result
             </h3>
             <pre className="whitespace-pre-wrap break-words text-sm text-slate-300
@@ -134,7 +134,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
 
         {/* Empty state */}
         {!task.result && (
-          <p className="text-sm text-slate-600 italic">No result yet.</p>
+          <p className="text-sm text-slate-400 italic">No result yet.</p>
         )}
       </div>
     </dialog>

@@ -24,6 +24,15 @@ function entry(overrides: Partial<LogEntry> = {}): LogEntry {
   };
 }
 
+describe('EventLog — STOP ALL rows stand out', () => {
+  it('colours ERROR and CONTROL rows, not the grey of unknown types', () => {
+    mockLog([entry({ id: 1, type: 'ERROR', message: 'STOP ALL refused' }), entry({ id: 2, type: 'CONTROL', message: 'Sending' })]);
+    render(<EventLog />);
+    expect(screen.getByText('ERROR')).toHaveClass('text-red-400');
+    expect(screen.getByText('CONTROL')).toHaveClass('text-red-300');
+  });
+});
+
 describe('EventLog', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -11,6 +11,8 @@ function resetStore() {
     metadata: null,
     topic: '',
     connectionStatus: 'connecting',
+    connectionDetail: '',
+    controlError: null,
     log: [],
   });
 }
@@ -193,6 +195,37 @@ describe('boardStore', () => {
     });
   });
 
+  describe('applyDelta — a new run starts clean', () => {
+    it('drops the previous run metadata even when the RUNNING delta carries its own', () => {
+      useBoardStore.getState().applyDelta({
+        teamWorkflowStatus: 'FINISHED',
+        metadata: { startTime: 100, endTime: 200, totalTokens: 4321, estimatedCost: 0.05 },
+      });
+      useBoardStore.getState().applyDelta({ teamWorkflowStatus: 'RUNNING', metadata: { startTime: 900 } });
+      expect(useBoardStore.getState().metadata).toEqual({ startTime: 900 });
+    });
+  });
+
+  describe('applyDelta — agent heartbeats', () => {
+    it('logs an agent row only when its status or task changed', () => {
+      const agentRows = () => useBoardStore.getState().log.filter((e) => e.type === 'AGENT').length;
+      useBoardStore.getState().applyDelta({ agents: [ag({ status: 'IDLE' as const })] });
+      expect(agentRows()).toBe(1);
+      useBoardStore.getState().applyDelta({ agents: [ag({ status: 'IDLE' as const })] }); // heartbeat
+      expect(agentRows()).toBe(1);
+      useBoardStore.getState().applyDelta({ agents: [ag({ status: 'EXECUTING' as const, currentTaskId: 't1' })] });
+      expect(agentRows()).toBe(2);
+      useBoardStore.getState().applyDelta({ agents: [ag({ status: 'EXECUTING' as const, currentTaskId: 't2' })] });
+      expect(agentRows()).toBe(3);
+    });
+
+    it('still merges the agent when the heartbeat is not logged', () => {
+      useBoardStore.getState().applyDelta({ agents: [ag({ status: 'IDLE' as const })] });
+      useBoardStore.getState().applyDelta({ agents: [ag({ status: 'IDLE' as const, role: 'editor' })] });
+      expect(useBoardStore.getState().agents.get('a1')?.role).toBe('editor');
+    });
+  });
+
   // ─── setConnectionStatus ─────────────────────────────────────────────────
 
   describe('setConnectionStatus', () => {
@@ -217,6 +250,19 @@ describe('boardStore', () => {
       useBoardStore.getState().setConnectionStatus('disconnected');
       const log = useBoardStore.getState().log;
       expect(log.some((e) => e.type === 'DISCONNECT')).toBe(true);
+    });
+
+    it('keeps the refusal reason as detail and in the log, as an ERROR row', () => {
+      useBoardStore.getState().setConnectionStatus('error', 'Invalid or expired board token');
+      expect(useBoardStore.getState().connectionDetail).toBe('Invalid or expired board token');
+      const row = useBoardStore.getState().log.find((e) => e.type === 'ERROR');
+      expect(row?.message).toBe('error: Invalid or expired board token');
+    });
+
+    it('clears the detail on the next status without one', () => {
+      useBoardStore.getState().setConnectionStatus('error', 'x');
+      useBoardStore.getState().setConnectionStatus('live');
+      expect(useBoardStore.getState().connectionDetail).toBe('');
     });
 
     it('logs a STATUS entry for connecting status', () => {
@@ -298,6 +344,13 @@ describe('boardStore', () => {
       useBoardStore.getState().applyDelta({ metadata: { estimatedCost: 0.1, totalTokens: 500 } });
       useBoardStore.getState().resetState();
       expect(useBoardStore.getState().metadata).toBeNull();
+    });
+
+    it('clears a STOP ALL error', () => {
+      useBoardStore.getState().setControlError('refused');
+      expect(useBoardStore.getState().controlError).toBe('refused');
+      useBoardStore.getState().resetState();
+      expect(useBoardStore.getState().controlError).toBeNull();
     });
 
     it('preserves log entries after reset', () => {

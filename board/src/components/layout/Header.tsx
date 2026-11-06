@@ -3,6 +3,7 @@ import { useBoardStore } from '../../store/boardStore';
 import { getGatewayUrl } from '../../socket/socketClient';
 import ConnectionBadge from './ConnectionBadge';
 import StopAllButton from '../control/StopAllButton';
+import ControlErrorAlert from '../control/ControlErrorAlert';
 import clsx from 'clsx';
 
 const STATUS_PILL: Record<string, string> = {
@@ -41,7 +42,7 @@ export default function Header() {
 
         {/* Right: gateway chip + status pill + connection badge */}
         <div className="flex items-center gap-3 shrink-0">
-          <span className="hidden sm:block text-xs text-slate-600 font-mono truncate max-w-[200px]">
+          <span className="hidden sm:block text-xs text-slate-400 font-mono truncate max-w-[200px]">
             {getGatewayUrl()}
           </span>
 
@@ -53,6 +54,7 @@ export default function Header() {
           <StopAllButton />
         </div>
       </div>
+      <ControlErrorAlert />
     </header>
   );
 }

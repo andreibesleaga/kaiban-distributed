@@ -59,9 +59,16 @@ function controlMessage(ack: ControlAck): string {
   return `🛑 ${who}: ${ack.outcome}, ${ack.aborted} task(s) killed`;
 }
 
+/** One event-log line for a connection change; `detail` is the refusal or disconnect reason. */
+function connectionMessage(status: ConnectionStatus, detail: string): string {
+  const base = status === 'live' ? 'Connected to gateway' : status === 'disconnected' ? 'Disconnected' : status;
+  return detail ? `${base}: ${detail}` : base;
+}
+
 interface BoardActions {
   applyDelta: (delta: StateDelta) => void;
-  setConnectionStatus: (status: ConnectionStatus) => void;
+  setConnectionStatus: (status: ConnectionStatus, detail?: string) => void;
+  setControlError: (message: string | null) => void;
   addLog: (type: string, message: string, highlight?: boolean) => void;
   resetState: () => void;
 }
@@ -75,6 +82,8 @@ const initialState: BoardState = {
   connectionStatus: 'connecting',
   log: [],
   controlPlane: null,
+  controlError: null,
+  connectionDetail: '',
 };
 
 export const useBoardStore = create<BoardState & BoardActions>((set) => ({
@@ -124,7 +133,7 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
 
       // Metadata — deep merge
       if (delta.metadata) {
-        next.metadata = { ...(state.metadata ?? {}), ...delta.metadata } as Metadata;
+        next.metadata = { ...(next.metadata ?? {}), ...delta.metadata } as Metadata;
       }
 
       // Emergency STOP ALL: the snapshot's state, then live acks on top of it
@@ -147,6 +156,9 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
       }
 
       for (const a of delta.agents ?? []) {
+        // A worker heartbeat repeats an unchanged agent state every 15 s: not an event.
+        const before = state.agents.get(a.agentId);
+        if (before && before.status === a.status && before.currentTaskId === a.currentTaskId) continue;
         const icon = AGENT_ICONS[a.status] ?? '⬡';
         const taskRef = a.currentTaskId ? ` [${a.currentTaskId.slice(-8)}]` : '';
         if (a.status === 'THINKING') {
@@ -199,20 +211,25 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
     });
   },
 
-  setConnectionStatus(status: ConnectionStatus) {
+  setConnectionStatus(status: ConnectionStatus, detail = '') {
     set((state) => {
       const entry: LogEntry = {
         id: ++logIdCounter,
         time: nowTime(),
-        type: status === 'live' ? 'CONNECT' : status === 'disconnected' ? 'DISCONNECT' : 'STATUS',
-        message: status === 'live' ? 'Connected to gateway' : status === 'disconnected' ? 'Disconnected' : status,
+        type: status === 'live' ? 'CONNECT' : status === 'disconnected' ? 'DISCONNECT' : status === 'error' ? 'ERROR' : 'STATUS',
+        message: connectionMessage(status, detail),
         highlight: status === 'live',
       };
       return {
         connectionStatus: status,
+        connectionDetail: detail,
         log: [entry, ...state.log].slice(0, MAX_LOG_ENTRIES),
       };
     });
+  },
+
+  setControlError(message: string | null) {
+    set({ controlError: message });
   },
 
   addLog(type: string, message: string, highlight = false) {
@@ -234,6 +251,7 @@ export const useBoardStore = create<BoardState & BoardActions>((set) => ({
       log: state.log,
       // The gateway snapshot that follows a (re)connect restores it
       controlPlane: null,
+      controlError: null,
     }));
   },
 }));
