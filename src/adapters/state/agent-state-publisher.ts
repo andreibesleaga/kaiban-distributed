@@ -133,6 +133,8 @@ export class AgentStatePublisher {
   private readonly maxTaskTokenBudget: number | null;
   /** Tokens consumed so far per taskId (bounded to MAX_TRACKED_TASKS entries). */
   private readonly taskTokensUsed = new Map<string, number>();
+  /** Counts wrapped attempts; a late attempt (older number) must not overwrite the agent state. */
+  private attemptSeq = 0;
 
   constructor(
     redisUrl: string,
@@ -314,6 +316,7 @@ export class AgentStatePublisher {
       signal?: AbortSignal,
     ): Promise<unknown> => {
       const title = taskTitle(payload);
+      const attempt = ++this.attemptSeq;
 
       try {
         // Pre-flight (roadmap §7.2 item 2): a task that finds a cap already met
@@ -365,6 +368,13 @@ export class AgentStatePublisher {
           // its tokens were spent and count, but it never shows as DONE.
           this.countLateTokens(payload.taskId, result);
           throw stopped;
+        }
+
+        if (signal?.aborted) {
+          // The attempt was already ended (task timeout, node stop): the result is
+          // late, so it never shows as DONE and never resets the agent state.
+          this.countLateTokens(payload.taskId, result);
+          throw signal.reason;
         }
 
         // → DONE
@@ -430,6 +440,8 @@ export class AgentStatePublisher {
         // A failed attempt that already spent tokens counts against the caps
         // BEFORE the actor retries; reaching one ends the task non-retryably.
         const failure = this.accountFailedAttempt(payload.taskId, err);
+        // A newer attempt already took over this agent: report nothing for the old one.
+        if (attempt !== this.attemptSeq) throw failure;
         // → ERROR
         this.currentStatus = "ERROR";
         pub({

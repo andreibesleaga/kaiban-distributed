@@ -131,16 +131,17 @@ describe("AgentStatePublisher — emergency stop", () => {
     expect(taskStatuses("t-7")).not.toContain("BLOCKED");
   });
 
-  it("a late result after a timeout abort is still published as before (unchanged)", async () => {
+  it("a late result after a timeout abort is not published as DONE (ACT-06)", async () => {
     const controller = new AbortController();
+    const reason = new Error("timeout");
     const handler = vi.fn(async () => {
-      controller.abort(new Error("timeout"));
-      return "late";
+      controller.abort(reason);
+      return { text: "late", usage: { inputTokens: 2, outputTokens: 3 } };
     });
     const wrapped = publisher.wrapHandler(handler);
 
-    await expect(wrapped(payload("t-3"), controller.signal)).resolves.toBe("late");
-    expect(taskStatuses("t-3")).toEqual(["DOING", "DONE"]);
+    await expect(wrapped(payload("t-3"), controller.signal)).rejects.toBe(reason);
+    expect(taskStatuses("t-3")).not.toContain("DONE");
   });
 
   it("publishStopped() for the running task publishes task STOPPED and agent IDLE; the heartbeat says IDLE", async () => {
