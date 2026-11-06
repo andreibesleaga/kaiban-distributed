@@ -267,3 +267,55 @@ The spec was written first and failed for the right reason (no button) before th
 | blog-team, BullMQ, `CONTROL_PLANE_ENABLED=true` and `BOARD_JWT_SECRET` | viewer opened from disk with `#token=`, STOP ALL clicked, confirmed with a reason | button shown; address bar cleaned; model request aborted about 1 s later; banner "3 node acknowledgements"; the Researcher card in Blocked with "Stopped"; orchestrator exit 2 |
 | global-research, BullMQ, 4 searchers | same, from its viewer | 4 of 4 model requests aborted; banner "7 node acknowledgements"; four Stopped cards; exit 2 |
 | blog-team, control plane off | viewer connected (LIVE) | no STOP ALL button; `POST /control/stop-all` → 404; a normal run published, exit 0 |
+
+---
+
+# 2.1.2 verification record — audit fixes (2026-11-06)
+
+Scope: the fixes of the final audit (157 verified findings over seven areas: worker core, gateway
+and security, workflows and bridge, board and viewers, packaging and deployment, documentation and
+tests, the examples repository), then a whole-system review of the merged tree (19 items, none
+critical or high, all addressed or recorded). Every line below is from a command run on the final
+tree of branch `release/2.1.2`.
+
+## Gate
+
+| Check | Result |
+| --- | --- |
+| `npm run test:coverage` | 151 files, 1,778 tests; 100 % statements (2,922), branches (1,751), functions (684), lines (2,688) |
+| `npm run typecheck` · `npm run lint` · `npm run lint:arch` · `npm run api:check` · `npm run build` | clean · 0 warnings · no cycle · reports current · ok |
+| `cd board && npx tsc --noEmit && npx vitest run && npm run build` | 18 files, 207 tests · built |
+| `cd board && npx playwright test` (with `EXAMPLES_VIEWER_DIR`) | 61 passed, 1 skipped (`board-control` needs a live gateway); `board-visual` passed against the Vite dev server |
+| `npm run test:e2e` · `test:e2e:security` · `test:e2e:chaos` · `test:e2e:kafka` | 73 · 41 · 2 · 4 tests, all passing (Redis and Kafka started by the setup files) |
+| `scripts/check-deploy-manifests.sh` | `docker compose config` for the 5 stacks; `helm lint` + `helm template` (Redis on and off) for both charts |
+| `npm run lockfile:check` · `scripts/smoke-consumer.sh` · `node scripts/audit-gate.js` | ok · passed (tarball `LICENSE` Apache-2.0) · 0 high/critical outside the documented exception |
+| lychee (offline) on README, CHANGELOG, MIGRATION, EXAMPLES, AGENTS, SECURITY, CONTRIBUTING, `docs/`, example and board READMEs | 288 links, 197 unique, 0 errors |
+
+One test written by a fixer that could not run e2e (the fan-in scenario) had a design error — two
+consumers of the BullMQ completed queue — and was corrected; it then exposed nothing in the runtime.
+
+## Runs in Docker (mock OpenAI-compatible model; control plane on, board token and channel signing set)
+
+| Stack | Run | Result |
+| --- | --- | --- |
+| blog-team, BullMQ | normal run, review approved from a board socket client | published, exit 0; `POST /control/stop-all` without a token → 401 |
+| | STOP ALL from the board socket 2 s into the researcher's model call | request aborted 17 ms after the stop; 3 workers acknowledged (signed channel), researcher `aborted: 1`; workflow `STOPPED`; exit 2 |
+| | run after the stop | published, exit 0 |
+| global-research, BullMQ, 4 searchers (`--scale searcher=4`) | normal run | 4 of 4 searches, 7 model calls, published, exit 0 |
+| | STOP ALL 2 s into the fan-out | all 4 model requests aborted within 18 ms; 4 searchers `aborted: 1`; `STOPPED`; exit 2 |
+| blog-team, Kafka (`KAFKA_NUM_PARTITIONS=4`) | normal run (8 s model) | published, exit 0; auto-created topics have 4 partitions |
+| | STOP ALL 3 s into the researcher's call, orchestrator in Docker | request aborted 10 ms after the stop; `aborted: 1`; `STOPPED`; exit 2 |
+| | run after the stop on a fresh broker with a 2 s model | timed out before the Kafka fix below; published, exit 0 after it |
+| root `docker-compose.yml` with `REDIS_PASSWORD` set | gateway `/ready` and worker start; A2A `message/send` to `researcher` through the password-protected queue | `redis-cli ping` → NOAUTH; ready; task completed; an `agentId` not in `AGENT_IDS` → rejected |
+
+The Kafka run after the stop found a lost completion: the orchestrator's lazily started consumer
+group joined after the result was published, and the completed topic started at the latest offset
+on a partition the group had not consumed before (any of the 4 partitions the compose files now
+create, or a fresh broker). Every topic is now read from the beginning for a partition without a
+committed offset; the Kafka e2e suite and the Docker run pass after the change.
+
+On this WSL2 host the clock stepped backwards by about 2.5 s twice during the runs (visible as
+decreasing timestamps within one process). One STOP ALL issued from the host in that window was
+stamped earlier than tasks dispatched before it and was, correctly, applied to nothing; the same
+run with every node in Docker (one clock) behaved as specified. ADR-025 documents the clock
+dependency.

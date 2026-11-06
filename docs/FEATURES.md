@@ -407,7 +407,7 @@ custom A2A connector, an MCP *client*, env-gated security controls, and a full C
 > The published v2.0 surface was verified locally at **108 test files / 1155 unit tests / 100% coverage
 > of `src/**`** (see [`docs/VERIFICATION.md`](VERIFICATION.md)); the e2e (real-broker), mutation and
 > supply-chain gates run in CI (the Playwright visual tests run by hand). `v2.0.0` was tagged and
-> published on 2026-06-22; on 30 Oct 2026 the unit suite is 125 files / 1396 tests.
+> published on 2026-06-22; on 6 Nov 2026 the unit suite is 151 files / 1778 tests.
 
 ---
 
@@ -515,7 +515,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 34. Clean/hexagonal 4-layer architecture; `Result<T,E>` monad + typed `DomainError`s.
 35. Apache-2.0 CORE-ONLY publish; `.` + `./shared` exports; two-entry api-extractor with committed `etc/*.api.md`; staging-dir pack; `smoke-consumer.sh`.
 36. Strict TypeScript, ESLint zero-warnings (complexity ≤ 10, no `any`), madge no-cycles gate.
-37. **Test/quality posture:** 100% `src/**` coverage (125 files / 1396 unit tests on 30 Oct 2026), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
+37. **Test/quality posture:** 100% `src/**` coverage (151 files / 1778 unit tests on 6 Nov 2026), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
 38. **Supply chain / SLSA:** CycloneDX SBOM, SLSA provenance, cosign keyless signing, Trivy image scan, gitleaks, OSV-Scanner, CodeQL, OpenSSF Scorecard; `npm audit` blocking on HIGH+.
 39. 21 ADRs (`docs/decisions/ADR-001..021`) recording every significant decision; a `MIGRATION.md`, `COMPLIANCE.md`, `VERIFICATION.md`, and a `docs/roadmap/V2.1-ROADMAP.md`.
 
