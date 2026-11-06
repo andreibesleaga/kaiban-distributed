@@ -96,3 +96,31 @@ describe("AgentActor — a handler that throws synchronously", () => {
     });
   });
 });
+
+describe("AgentActor — a task without a numeric timestamp after a STOP ALL", () => {
+  it("is refused (fail closed) and dead-lettered as emergency_stop, handler not called", async () => {
+    const { driver, deliver, published } = makeDriver();
+    const handler = vi.fn(async () => "ran");
+    const actor = new AgentActor("agent-1", driver, "q", handler);
+    await actor.start();
+    actor.emergencyStop(1_000);
+    const bad = {
+      ...task("t-nots"),
+      timestamp: undefined as unknown as number,
+    };
+    await deliver(bad);
+    expect(handler).not.toHaveBeenCalled();
+    expect(published("kaiban-events-failed")[0]?.data).toMatchObject({
+      error: "emergency_stop",
+    });
+  });
+
+  it("still runs before any STOP ALL has been issued", async () => {
+    const { driver, deliver } = makeDriver();
+    const handler = vi.fn(async () => "ran");
+    const actor = new AgentActor("agent-1", driver, "q", handler);
+    await actor.start();
+    await deliver({ ...task("t-nots"), timestamp: Number.NaN });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});

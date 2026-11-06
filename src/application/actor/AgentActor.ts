@@ -397,6 +397,9 @@ export class AgentActor {
 
   /** True when the task was sent at or before the latest emergency stop. */
   private sentBeforeStop(payload: MessagePayload): boolean {
+    // A timestamp that is not a finite number cannot prove the task was sent after
+    // the stop, so it is treated as sent before it (fail closed).
+    if (!Number.isFinite(payload.timestamp)) return this.stoppedAt > Number.NEGATIVE_INFINITY;
     return payload.timestamp <= this.stoppedAt;
   }
 

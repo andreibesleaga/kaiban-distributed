@@ -9,6 +9,7 @@ import {
 } from "../telemetry/TraceContext";
 import type { TlsConfig } from "../../main/config";
 import { AGENT_MAILBOX_PREFIX } from "./channels";
+import { isMessagePayload } from "./payload-guard";
 import { createStructuredLogger } from "../../shared/structured-logger";
 
 const log = createStructuredLogger({ component: "KafkaDriver" });
@@ -163,7 +164,15 @@ export class KafkaDriver implements IMessagingDriver {
         if (!message.value) return;
         let parsed: MessagePayload;
         try {
-          parsed = JSON.parse(message.value.toString()) as MessagePayload;
+          const decoded: unknown = JSON.parse(message.value.toString());
+          if (!isMessagePayload(decoded)) {
+            log.warn(
+              { topic },
+              "Skipping a Kafka message that is not a task payload",
+            );
+            return;
+          }
+          parsed = decoded;
         } catch (err) {
           // Poison / non-JSON message: skip it so the offset advances instead of
           // crash-looping the consumer on the same unparseable record (HOL block).

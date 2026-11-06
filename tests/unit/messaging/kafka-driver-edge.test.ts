@@ -168,6 +168,25 @@ describe("KafkaDriver — eachMessage edge cases", () => {
     );
   });
 
+  it.each(["null", "42", "[]", '{"taskId":"x"}'])(
+    "eachMessage skips valid JSON that is not a task payload (%s) without throwing",
+    async (json) => {
+      const handler = vi.fn();
+      await driver.subscribe("t", handler);
+      const runCb = mockRun.mock.calls[0][0] as {
+        eachMessage: (m: { message: { value: Buffer } }) => Promise<void>;
+      };
+      await expect(
+        runCb.eachMessage({ message: { value: Buffer.from(json) } }),
+      ).resolves.toBeUndefined();
+      expect(handler).not.toHaveBeenCalled();
+      expect(mockLog.warn).toHaveBeenCalledWith(
+        { topic: "t" },
+        "Skipping a Kafka message that is not a task payload",
+      );
+    },
+  );
+
   it("eachMessage skips an empty-string message value (unparseable) without throwing", async () => {
     const handler = vi.fn();
     await driver.subscribe("t", handler);

@@ -120,6 +120,21 @@ describe("BullMQDriver", () => {
     expect(handler).toHaveBeenCalledWith(payload);
   });
 
+  it.each([null, "x", { taskId: "t" }])(
+    "Worker processor skips job data that is not a task payload (%j)",
+    async (data) => {
+      const handler = vi.fn().mockResolvedValue(undefined);
+      const driver = new BullMQDriver(cfg);
+      await driver.subscribe("q", handler);
+      const processor = vi.mocked(Worker).mock.calls[0][1] as (job: {
+        id: string;
+        data: unknown;
+      }) => Promise<void>;
+      await expect(processor({ id: "1", data })).resolves.toBeUndefined();
+      expect(handler).not.toHaveBeenCalled();
+    },
+  );
+
   it("unsubscribe() closes the worker (worker exists — true branch)", async () => {
     const driver = new BullMQDriver(cfg);
     await driver.subscribe("q", vi.fn());
