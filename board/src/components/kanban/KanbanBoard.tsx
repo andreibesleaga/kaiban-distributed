@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useBoardStore } from '../../store/boardStore';
 import KanbanColumn from './KanbanColumn';
 import TaskDetailModal from './TaskDetailModal';
@@ -49,6 +49,12 @@ export default function KanbanBoard() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const selectedTask = selectedTaskId ? tasks.get(selectedTaskId) : null;
+
+  // A reconnect (or a new run) empties the task map. Forget the selection with the task, or the
+  // detail modal would reopen by itself when the snapshot brings the task back.
+  useEffect(() => {
+    if (selectedTaskId && !tasks.has(selectedTaskId)) setSelectedTaskId(null);
+  }, [selectedTaskId, tasks]);
   const selectedAgent = selectedTask?.assignedToAgentId
     ? agents.get(selectedTask.assignedToAgentId)
     : undefined;
@@ -74,7 +80,7 @@ export default function KanbanBoard() {
         />
       )}
       <section>
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
           Tasks ({tasks.size})
         </h2>
         <div className="flex gap-3 overflow-x-auto pb-2">

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import type { TaskDelta, AgentDelta } from '../../types/board';
 import TaskCard from './TaskCard';
+import { useId } from 'react';
 import clsx from 'clsx';
 
 interface Props {
@@ -13,18 +14,19 @@ interface Props {
 }
 
 export default function KanbanColumn({ title, tasks, agents, accent, emptyText, onTaskClick }: Props) {
+  const headingId = useId();
   return (
-    <div className="flex flex-col min-w-0 flex-1">
+    <section aria-labelledby={headingId} className="flex flex-col min-w-0 flex-1">
       {/* Column header */}
       <div className={clsx('flex items-center justify-between px-3 py-2 rounded-t-lg border-b mb-2', accent)}>
-        <span className="text-xs font-semibold uppercase tracking-wider">{title}</span>
+        <h3 id={headingId} className="text-xs font-semibold uppercase tracking-wider">{title}</h3>
         <span className="text-xs font-bold tabular-nums opacity-80">{tasks.length}</span>
       </div>
 
       {/* Cards */}
       <div className="flex flex-col gap-2 overflow-y-auto max-h-[60vh] pr-0.5">
         {tasks.length === 0 && emptyText && (
-          <p className="text-xs text-slate-700 text-center py-4 italic">{emptyText}</p>
+          <p className="text-xs text-slate-400 text-center py-4 italic">{emptyText}</p>
         )}
         {tasks.map((task) => (
           <TaskCard
@@ -35,6 +37,6 @@ export default function KanbanColumn({ title, tasks, agents, accent, emptyText, 
           />
         ))}
       </div>
-    </div>
+    </section>
   );
 }

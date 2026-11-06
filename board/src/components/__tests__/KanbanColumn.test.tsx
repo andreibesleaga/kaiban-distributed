@@ -54,10 +54,15 @@ describe('KanbanColumn', () => {
     expect(onTaskClick).toHaveBeenCalledWith('t2');
   });
 
-  it('works without onTaskClick (no crash on card click)', () => {
-    const { getByText } = render(<KanbanColumn title="To Do" tasks={tasks} agents={agents} accent="" />);
-    // Without onTaskClick cards have no onClick → no role="button"; find by visible text
-    expect(() => fireEvent.click(getByText('Task Alpha'))).not.toThrow();
+  it('without onTaskClick the cards are inert: no button role', () => {
+    render(<KanbanColumn title="To Do" tasks={tasks} agents={agents} accent="" />);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByText('Task Alpha')).toBeInTheDocument();
+  });
+
+  it('is a labelled region named after its status', () => {
+    render(<KanbanColumn title="In Progress" tasks={tasks} agents={agents} accent="" />);
+    expect(screen.getByRole('region', { name: 'In Progress' })).toBeInTheDocument();
   });
 
   it('passes the correct agent to each TaskCard', () => {

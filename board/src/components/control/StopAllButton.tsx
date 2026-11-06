@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useBoardStore } from '../../store/boardStore';
 import { sendStopAll } from '../../socket/socketClient';
 import StopAllDialog from './StopAllDialog';
@@ -11,7 +11,15 @@ import StopAllDialog from './StopAllDialog';
 export default function StopAllButton() {
   const controlPlane = useBoardStore((s) => s.controlPlane);
   const [confirming, setConfirming] = useState(false);
-  if (!controlPlane?.enabled) return null;
+  const planeOn = Boolean(controlPlane?.enabled);
+
+  // A reconnect clears the control plane until the snapshot returns. The dialog goes with it,
+  // so forget that it was open: it must not pop up again by itself with the reason cleared.
+  useEffect(() => {
+    if (!planeOn) setConfirming(false);
+  }, [planeOn]);
+
+  if (!planeOn) return null;
 
   return (
     <>

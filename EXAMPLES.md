@@ -665,6 +665,8 @@ cd board && npm run build      # → board/dist/
 npx serve board/dist
 ```
 
+Set `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff` as response headers on the host; browsers ignore them in `<meta>` tags (see `board/README.md`, "Production hosting").
+
 Point to a remote gateway at runtime with `?gateway=`:
 ```
 https://your-cdn.example.com/board/?gateway=https://gateway.example.com:3000

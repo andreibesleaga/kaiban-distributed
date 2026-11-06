@@ -108,6 +108,10 @@ describe('WorkflowBanner', () => {
     expect(screen.getAllByText('Approve')).toHaveLength(2);
     expect(screen.getAllByText('Revise')).toHaveLength(2);
     expect(screen.getAllByText('Reject')).toHaveLength(2);
+    // Same visible words, but each button's name says which task it decides
+    expect(screen.getByRole('button', { name: 'Approve: Task One' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject: Task Two' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Decision for task: Task Two' })).toBeInTheDocument();
   });
 
   it('does not render HITL buttons when workflow is in a terminal state (FINISHED)', () => {

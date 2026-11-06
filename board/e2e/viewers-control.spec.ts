@@ -4,7 +4,10 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { Server } from 'socket.io';
+
+const require = createRequire(import.meta.url);
 
 /**
  * Emergency STOP ALL in the static HTML viewers (ADR-025, 2.1.1).
@@ -42,6 +45,8 @@ interface StubOptions {
 interface Stub {
   url: string;
   handshakes: unknown[];
+  /** How many times a client asked for a snapshot (state:request). The gateway already sends one. */
+  stateRequests: () => number;
   stopPayloads: unknown[];
   io: Server;
   close: () => Promise<void>;
@@ -66,6 +71,7 @@ async function startStub(viewerDir: string, opts: StubOptions): Promise<Stub> {
   const io = new Server(server);
   const handshakes: unknown[] = [];
   const stopPayloads: unknown[] = [];
+  let stateRequests = 0;
 
   io.use((socket, next) => {
     handshakes.push(socket.handshake.auth);
@@ -81,7 +87,10 @@ async function startStub(viewerDir: string, opts: StubOptions): Promise<Stub> {
         ...(opts.controlPlane ? { controlPlane: opts.controlPlane } : {}),
       });
     snapshot();
-    socket.on('state:request', snapshot);
+    socket.on('state:request', () => {
+      stateRequests++;
+      snapshot();
+    });
     socket.on('control:stop-all', (payload: unknown, ack?: (r: unknown) => void) => {
       stopPayloads.push(payload);
       if (opts.ack === 'none') return;
@@ -99,6 +108,7 @@ async function startStub(viewerDir: string, opts: StubOptions): Promise<Stub> {
   return {
     url: `http://127.0.0.1:${port}`,
     handshakes,
+    stateRequests: () => stateRequests,
     stopPayloads,
     io,
     close: () =>
@@ -188,12 +198,126 @@ for (const v of viewers) {
     });
 
     test('the token is read from window.BOARD_TOKEN too', async ({ page }) => {
-      await page.addInitScript((t) => {
-        (window as unknown as { BOARD_TOKEN: string }).BOARD_TOKEN = t;
-      }, TOKEN);
-      await open(page, { controlPlane: PLANE_ON, requireToken: true });
+      stub = await startStub(v.dir, { controlPlane: PLANE_ON, requireToken: true });
+      await page.addInitScript(
+        ([token, gateway]) => {
+          const w = window as unknown as { BOARD_TOKEN: string; GATEWAY_URL: string };
+          w.BOARD_TOKEN = token!;
+          w.GATEWAY_URL = gateway!;
+        },
+        [TOKEN, stub.url],
+      );
+      await page.goto(stub.url);
       await expect(page.locator('#conn-badge')).toContainText('LIVE');
-      expect(stub!.handshakes).toContainEqual({ token: TOKEN });
+      expect(stub.handshakes).toContainEqual({ token: TOKEN });
+    });
+
+    test('a ?gateway= link cannot send a window.BOARD_TOKEN to another server', async ({ page }) => {
+      stub = await startStub(v.dir, {});
+      const attacker = await startStub(v.dir, {});
+      try {
+        await page.addInitScript((t) => {
+          (window as unknown as { BOARD_TOKEN: string }).BOARD_TOKEN = t;
+        }, TOKEN);
+        await page.goto(`${stub.url}/?gateway=${encodeURIComponent(attacker.url)}`);
+        await expect(page.locator('#log-box')).toContainText('Ignoring ?gateway=');
+        await expect(page.locator('#gateway-url-display')).toHaveText('http://localhost:3000');
+        await page.waitForTimeout(1_500);
+        expect(attacker.handshakes).toEqual([]);
+      } finally {
+        await attacker.close();
+      }
+    });
+
+    test('the gateway sends the snapshot once per connect: no second state:request, no doubled log', async ({ page }) => {
+      await open(page, { controlPlane: PLANE_ON });
+      await expect(page.locator('#log-box')).toContainText('Status → RUNNING');
+      await page.waitForTimeout(500);
+      expect(stub!.stateRequests()).toBe(0);
+      await expect(page.locator('#log-box .log-entry', { hasText: 'Status → RUNNING' })).toHaveCount(1);
+    });
+
+    test('a worker heartbeat (unchanged agent) is not logged as an event; a change is', async ({ page }) => {
+      await open(page, {});
+      const agent = { agentId: 'a1', name: 'Heartbeat Writer', role: 'writer', status: 'IDLE', currentTaskId: null };
+      const rows = page.locator('#log-box .log-entry', { hasText: 'Heartbeat Writer' });
+      stub!.io.emit('state:update', { agents: [agent] });
+      await expect(rows).toHaveCount(1);
+      stub!.io.emit('state:update', { agents: [agent] });
+      stub!.io.emit('state:update', { agents: [agent] });
+      stub!.io.emit('state:update', { agents: [{ ...agent, status: 'EXECUTING', currentTaskId: 'task-12345678' }] });
+      await expect(rows).toHaveCount(2);
+    });
+
+    test('an expanded long result stays open when another update arrives', async ({ page }) => {
+      const longTask = { taskId: 't-long', title: 'Long report', status: 'DONE', result: 'x'.repeat(600) };
+      await open(page, { tasks: [longTask] });
+      const details = page.locator('details.task-result');
+      await expect(details).toHaveCount(1);
+      await details.locator('summary').click();
+      await expect(details).toHaveAttribute('open', '');
+      stub!.io.emit('state:update', { agents: [{ agentId: 'a1', name: 'Heartbeat', role: 'r', status: 'IDLE', currentTaskId: null }] });
+      await expect(page.locator('#agents-grid')).toContainText('Heartbeat');
+      await expect(details).toHaveAttribute('open', '');
+    });
+
+    test('a new run clears the economics panel and the finished highlight', async ({ page }) => {
+      await open(page, {});
+      const panel = page.locator('.swarm-meta');
+      stub!.io.emit('state:update', {
+        teamWorkflowStatus: 'FINISHED',
+        metadata: { startTime: Date.UTC(2026, 10, 4, 9, 0, 0), endTime: Date.UTC(2026, 10, 4, 9, 1, 0), totalTokens: 4321, estimatedCost: 0.05 },
+      });
+      await expect(page.locator('#meta-tokens')).toHaveText('4,321');
+      await expect(panel).toHaveClass(/economics-finished/);
+
+      stub!.io.emit('state:update', { teamWorkflowStatus: 'RUNNING', metadata: { startTime: Date.UTC(2026, 10, 4, 10, 0, 0) } });
+      await expect(page.locator('#meta-tokens')).toHaveText('—');
+      await expect(page.locator('#meta-cost')).toHaveText('—');
+      await expect(page.locator('#meta-end')).toHaveText('running…');
+      await expect(panel).not.toHaveClass(/economics-finished/);
+    });
+
+    test('the page CSP blocks nothing the page itself needs (no violations in the console)', async ({ page }) => {
+      const violations: string[] = [];
+      page.on('console', (m) => {
+        if (/Content Security Policy|violates/i.test(m.text())) violations.push(m.text());
+      });
+      await open(page, { controlPlane: PLANE_ON });
+      await page.waitForTimeout(300);
+      expect(violations).toEqual([]);
+    });
+
+    test('text contrast meets WCAG AA (axe color-contrast) with tasks in every column', async ({ browser }) => {
+      // axe is injected as an inline script, which the viewers' CSP rightly blocks: bypass it here only.
+      const context = await browser.newContext({ bypassCSP: true });
+      const page = await context.newPage();
+      const tasks = [
+        { taskId: 't1', title: 'Todo task', status: 'TODO', agent: { name: 'Writer' } },
+        { taskId: 't2', title: 'Doing task', status: 'DOING', agent: { name: 'Writer' }, result: 'working' },
+        { taskId: 't3', title: 'Review task', status: 'AWAITING_VALIDATION', result: 'needs a human' },
+        { taskId: 't4', title: 'Done task', status: 'DONE', result: 'ok', tokens: 12, cost: 0.001 },
+        { taskId: 't5', title: 'Stopped task', status: 'STOPPED' },
+      ];
+      await open(page, { controlPlane: PLANE_ON, tasks });
+      stub!.io.emit('state:update', {
+        agents: [{ agentId: 'a1', name: 'Writer', role: 'writer', status: 'EXECUTING', currentTaskId: 't2' }],
+        metadata: { startTime: Date.UTC(2026, 10, 4, 9, 0, 0), totalTokens: 10, estimatedCost: 0.01, activeNodes: ['node-1'] },
+      });
+      await expect(page.locator('#agents-grid')).toContainText('Writer');
+      await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') });
+      const failures = await page.evaluate(async () => {
+        const result = await (window as unknown as { axe: { run: (c: Document, o: object) => Promise<{ violations: { nodes: { html: string; any: { data: { contrastRatio: number; fgColor: string; bgColor: string } }[] }[] }[] }> } })
+          .axe.run(document, { runOnly: ['color-contrast'] });
+        return result.violations.flatMap((x) =>
+          x.nodes.map((n) => {
+            const d = n.any[0]?.data;
+            return `${n.html.slice(0, 90)} -> ${d?.contrastRatio}:1 (${d?.fgColor} on ${d?.bgColor})`;
+          }),
+        );
+      });
+      await context.close();
+      expect(failures).toEqual([]);
     });
 
     test('without a token a protected gateway refuses the connection; nothing is sent in the handshake', async ({ page }) => {

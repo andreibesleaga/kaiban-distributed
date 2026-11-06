@@ -417,7 +417,7 @@ npm ci
 npm run dev               # → http://localhost:5173
 ```
 
-**Production build** outputs static files to `board/dist/` — deploy anywhere (nginx, CDN, etc.).
+**Production build** outputs static files to `board/dist/` — deploy anywhere (nginx, CDN, etc.). Set `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff` as response headers on the host: browsers ignore them in `<meta>` tags (see `board/README.md`, "Production hosting").
 
 ![(React Board running example)](docs/images/ReactBoard2.png)
 
@@ -583,6 +583,8 @@ http://localhost:5173?gateway=http://my-gateway.example.com:3000
 1. `?gateway=<url>` query param (runtime, no rebuild needed)
 2. `VITE_GATEWAY_URL` build-time env var (`.env` file)
 3. `http://localhost:3000` fallback
+
+**A board token is never sent to a gateway chosen by a link.** When `VITE_BOARD_TOKEN` is built in, the React board honours `?gateway=` only for the origin of `VITE_GATEWAY_URL`; any other value is ignored and the configured gateway is used. The static viewers ignore `?gateway=` when the token comes from `window.BOARD_TOKEN`; a token given in the address fragment (`#token=`) is sent to the gateway named in that same address.
 
 **Layout** (top → bottom):
 - **Header** — logo, topic, gateway URL chip, workflow status pill, connection badge

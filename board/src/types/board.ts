@@ -107,4 +107,8 @@ export interface BoardState {
   log: LogEntry[];
   /** null until the gateway says the control plane is on. */
   controlPlane: ControlPlaneState | null;
+  /** Why the last STOP ALL failed (refused, unconfirmed, not connected); null when none. */
+  controlError: string | null;
+  /** Reason shown next to the connection badge (refusal message, session end); '' when none. */
+  connectionDetail: string;
 }

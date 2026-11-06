@@ -8,7 +8,7 @@ export default function AgentGrid() {
 
   if (agents.size === 0) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-[#1e293b]/50 px-5 py-8 text-center text-slate-600 text-sm">
+      <div className="rounded-xl border border-slate-800 bg-[#1e293b]/50 px-5 py-8 text-center text-slate-400 text-sm">
         Waiting for agents to connect…
       </div>
     );
@@ -16,7 +16,7 @@ export default function AgentGrid() {
 
   return (
     <section>
-      <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
         Agents ({agents.size})
       </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">

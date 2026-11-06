@@ -94,11 +94,23 @@ describe('TaskCard', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('does not throw when onClick is not provided and card is clicked', () => {
+  it('without onClick the card is plain content: no button role, not focusable, no label', () => {
+    // (React 19 reports handler errors instead of rethrowing them, so "does not throw"
+    // cannot fail; assert what makes the card inert instead.)
     const { container } = render(<TaskCard task={baseTask} />);
-    // No onClick → no role="button"; find via the aria-label attribute directly
     const card = container.firstChild as HTMLElement;
-    expect(() => fireEvent.click(card)).not.toThrow();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(card).not.toHaveAttribute('tabindex');
+    expect(card).not.toHaveAttribute('role');
+    expect(card).not.toHaveAttribute('aria-label');
+    expect(card.className).not.toContain('cursor-pointer');
+  });
+
+  it('names the status in the accessible name, readable ("awaiting validation", "stopped")', () => {
+    const { rerender } = render(<TaskCard task={{ ...baseTask, status: 'AWAITING_VALIDATION' }} onClick={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /status awaiting validation$/ })).toBeInTheDocument();
+    rerender(<TaskCard task={{ ...baseTask, status: 'STOPPED' }} onClick={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /status stopped$/ })).toBeInTheDocument();
   });
 
   it('has cursor-pointer class when onClick is provided', () => {
@@ -115,7 +127,7 @@ describe('TaskCard', () => {
   it('has proper aria-label', () => {
     const onClick = vi.fn();
     render(<TaskCard task={baseTask} onClick={onClick} />);
-    expect(screen.getByRole('button')).toHaveAttribute('aria-label', 'View details for task: Research AI trends');
+    expect(screen.getByRole('button')).toHaveAttribute('aria-label', 'View details for task: Research AI trends, status todo');
   });
 
   it('is keyboard focusable (tabIndex=0) when onClick is provided', () => {
