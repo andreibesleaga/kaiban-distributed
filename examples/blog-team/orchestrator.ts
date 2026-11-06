@@ -93,6 +93,7 @@ async function endFailedRun(
   if (err instanceof BudgetExceededError) {
     // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
     pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, totalTokens, totalCost);
+    pub.reviewStopped('Budget guard stopped the run: no decision was taken');
     runLog.finish('STOPPED');
     await orch.clear();
     log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
@@ -102,6 +103,7 @@ async function endFailedRun(
   // hanging on RUNNING forever, then surface the error to the CLI.
   const msg = err instanceof Error ? err.message : String(err);
   pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, totalTokens, totalCost);
+  pub.reviewStopped('Workflow failed: no decision was taken');
   runLog.finish('FAILED');
   throw err;
 }

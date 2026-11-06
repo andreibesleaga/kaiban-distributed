@@ -231,38 +231,22 @@ describe("runSearchPhase()", () => {
 
     const dispatched = dispatchesTo(publish, "searcher"); // dispatch order
     expect(dispatched).toHaveLength(3);
-    // The result carrying dispatched[i]'s taskId must be logged as searcher-i —
+    // The result carrying dispatched[i]'s taskId must be logged as search-(i+1) (its sub-topic) —
     // regardless of the reversed completion order (would fail on the old code).
     for (let i = 0; i < dispatched.length; i++) {
       expect(mockRunLog.logTask).toHaveBeenCalledWith(
         "search",
         dispatched[i]!.taskId,
-        `searcher-${i}`,
+        `search-${i + 1}`,
         expect.anything(),
       );
     }
     expect(ctx.rawSearchData).toHaveLength(3);
 
-    // C1-residual: the board publication must receive a dispatch-order
-    // indexByTaskId map so out-of-order results still get the right searcher card
-    // (board mis-attribution was caused by using the result-array position).
+    // WF-V-05: the board publication carries status only; the replica that ran
+    // each task published itself as the assignee, so no node is guessed here.
     expect(mockPub.searchPhaseComplete).toHaveBeenCalledTimes(1);
-    const [resultsArg, indexByTaskId] = mockPub.searchPhaseComplete.mock
-      .calls[0] as [
-      Array<{ taskId: string }>,
-      Map<string, number>,
-    ];
-    expect(indexByTaskId).toBeInstanceOf(Map);
-    for (let i = 0; i < dispatched.length; i++) {
-      expect(indexByTaskId.get(dispatched[i]!.taskId)).toBe(i);
-    }
-    // Every completion-order result resolves back to its dispatch-order index.
-    for (const r of resultsArg) {
-      const dispatchIdx = dispatched.findIndex(
-        (d) => d.taskId === r.taskId,
-      );
-      expect(indexByTaskId.get(r.taskId)).toBe(dispatchIdx);
-    }
+    expect(mockPub.searchPhaseComplete.mock.calls[0]).toHaveLength(1);
   });
 
   it("uses '' fallback for taskIds[i] and subTopics[i] when results exceed numSearchers (lines 91,93,95 branches)", async () => {
@@ -739,6 +723,18 @@ describe("runRevisionPhase()", () => {
     expect(mockWaitForHITL).not.toHaveBeenCalled();
     expect(mockPub.workflowFinished).toHaveBeenCalled();
     expect(mockRunLog.finish).toHaveBeenCalledWith("REVISED");
+  });
+
+  it("a failed revision wait closes the revision card as BLOCKED, then rethrows; a stop does not (WF-11)", async () => {
+    const { deps, mockRouter, mockPub } = makeRevDeps({ autoPub: true });
+    mockRouter.wait.mockRejectedValue(new Error("Timeout waiting for revision"));
+    await expect(runRevisionPhase(deps as never)).rejects.toThrow("Timeout");
+    expect(mockPub.taskFailed).toHaveBeenCalledWith(expect.any(String), "writer", "Revision", expect.stringContaining("Timeout"));
+
+    mockPub.taskFailed.mockClear();
+    mockRouter.wait.mockRejectedValue(new EmergencyStopError());
+    await expect(runRevisionPhase(deps as never)).rejects.toBeInstanceOf(EmergencyStopError);
+    expect(mockPub.taskFailed).not.toHaveBeenCalled();
   });
 
   it("with autoPub=false and PUBLISH decision calls workflowFinished", async () => {

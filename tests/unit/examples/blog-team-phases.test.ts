@@ -327,6 +327,20 @@ describe("runBlogRevision()", () => {
     expect(payload.data["inputs"]).toEqual({ topic: "topic" });
   });
 
+  it("a failed revision wait closes the revision card as BLOCKED, then rethrows (WF-11)", async () => {
+    const { deps, mockRouter, mockPub } = baseRevDeps();
+    mockRouter.wait.mockRejectedValue(new Error("Timeout waiting for revision"));
+    await expect(runBlogRevision(deps)).rejects.toThrow("Timeout");
+    expect(mockPub.taskFailed).toHaveBeenCalledWith(expect.any(String), "writer", "Revision task", expect.stringContaining("Timeout"));
+  });
+
+  it("a stop during the revision wait does not publish taskFailed", async () => {
+    const { deps, mockRouter, mockPub } = baseRevDeps();
+    mockRouter.wait.mockRejectedValue(new EmergencyStopError());
+    await expect(runBlogRevision(deps)).rejects.toBeInstanceOf(EmergencyStopError);
+    expect(mockPub.taskFailed).not.toHaveBeenCalled();
+  });
+
   it("returns STOPPED when HITL decision is not PUBLISH", async () => {
     const { deps, mockRouter, mockPub } = baseRevDeps();
     mockRouter.wait.mockResolvedValue(parsedResult("Revised draft"));

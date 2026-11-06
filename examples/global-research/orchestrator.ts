@@ -224,6 +224,7 @@ async function endFailedRun(
   if (err instanceof BudgetExceededError) {
     // Budget guard tripped → stop gracefully (STOPPED), not the generic FAILED path.
     pub.workflowStopped(randomUUID(), `Budget guard: ${err.reason}`, ctx);
+    pub.reviewStopped('Budget guard stopped the run: no decision was taken');
     runLog.finish('STOPPED');
     await orch.clear();
     log.info(`\nBudget guard tripped — ${err.reason}. Workflow stopped.\n`);
@@ -233,6 +234,7 @@ async function endFailedRun(
   // hanging on RUNNING forever, then surface the error to the CLI.
   const msg = err instanceof Error ? err.message : String(err);
   pub.workflowStopped(randomUUID(), `Workflow error: ${msg}`, ctx);
+  pub.reviewStopped('Workflow failed: no decision was taken');
   runLog.finish('FAILED');
   throw err;
 }
@@ -252,8 +254,10 @@ async function main(): Promise<number> {
   const runLog = new RunLogger(QUERY, GATEWAY_URL, getDriverType(), NUM_SEARCHERS, ctx.id);
 
   // Phase R — crash-safe single-active orchestrator: Redis checkpoint→resume.
-  // WORKFLOW_ID namespaces the checkpoint; default to the context id (override to
-  // resume a specific run). A restart resumes from the last completed phase.
+  // WORKFLOW_ID namespaces the checkpoint. The default is `research-<context id>`,
+  // a fresh id per process, so a plain restart starts a NEW run; to resume, set
+  // WORKFLOW_ID to the Workflow id printed in the header of the run to continue —
+  // it then resumes from the last completed phase.
   const workflowId     = process.env['WORKFLOW_ID'] ?? `research-${ctx.id}`;
   const store          = new RedisCheckpointStore(REDIS_URL);
   // Emergency STOP ALL (ADR-025): only with CONTROL_PLANE_ENABLED=true.
@@ -277,7 +281,7 @@ async function main(): Promise<number> {
 
   try {
     log.header('KAIBAN DISTRIBUTED — GLOBAL RESEARCH SWARM ORCHESTRATOR');
-    log.info(`Query: "${QUERY}"  |  Searchers: ${NUM_SEARCHERS}  |  Context: ${ctx.id}\n`);
+    log.info(`Query: "${QUERY}"  |  Searchers: ${NUM_SEARCHERS}  |  Context: ${ctx.id}  |  Workflow: ${workflowId}\n`);
 
     const health = await fetch(`${GATEWAY_URL}/health`).then((r) => r.json()) as { data: { status: string } };
     log.info(`Gateway: ${health.data.status.toUpperCase()} at ${GATEWAY_URL}`);

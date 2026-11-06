@@ -99,9 +99,10 @@ export async function runSearchPhase(
   pub.searchingPhase(taskIds);
 
   // waitAll returns results in COMPLETION order, not dispatch order — resolve each
-  // result's real dispatch index via its taskId so the sub-topic, node label and
-  // logged taskId always match the searcher that produced it (fixes a fan-out
-  // result↔index mismatch when searchers finish out of order).
+  // result's dispatch index via its taskId so the sub-topic, its label and the
+  // logged taskId always belong together. The label names the SUB-TOPIC
+  // ("search-1"), not a node: replicas compete for tasks, so which node ran a
+  // sub-topic is only known to the replica itself (it publishes it).
   const indexByTaskId = new Map(taskIds.map((id, i) => [id, i]));
   const results = await router.waitAll(taskIds, searchWaitMs, 'search', signal);
 
@@ -111,18 +112,18 @@ export async function runSearchPhase(
       const parsed = parseHandlerResult(sr.result);
       ctx.metadata.totalTokens   += parsed.inputTokens + parsed.outputTokens;
       ctx.metadata.estimatedCost += parsed.estimatedCost;
-      ctx.rawSearchData.push(extractSearchResults(parsed.answer || sr.result, `searcher-${idx}`, subTopics[idx] ?? ''));
-      ctx.metadata.activeNodes.push(`searcher-${idx}`);
-      runLog.logTask('search', sr.taskId, `searcher-${idx}`, { ...parsed, answer: parsed.answer });
+      ctx.rawSearchData.push(extractSearchResults(parsed.answer || sr.result, `search-${idx + 1}`, subTopics[idx] ?? ''));
+      ctx.metadata.activeNodes.push(`search-${idx + 1}`);
+      runLog.logTask('search', sr.taskId, `search-${idx + 1}`, { ...parsed, answer: parsed.answer });
     } else if (sr.error) {
-      runLog.logError('search', sr.taskId, `searcher-${idx}`, sr.error);
+      runLog.logError('search', sr.taskId, `search-${idx + 1}`, sr.error);
     }
   }
 
   if (ctx.rawSearchData.length === 0) throw new Error('All searcher tasks failed — no data to synthesise');
 
   publishTotals(pub, ctx);
-  pub.searchPhaseComplete(results, indexByTaskId);
+  pub.searchPhaseComplete(results);
 }
 
 // ── Step 2 — Fan-In synthesis ─────────────────────────────────────────────────
@@ -275,7 +276,8 @@ export async function runRevisionPhase(deps: RevisionDeps): Promise<void> {
     inputs: { topic: query, contextId: ctx.id },
     context: `--- EDITORIAL FEEDBACK ---\n${edit.text}\n\n--- GOVERNANCE NOTES ---\n${gov.text}\n\n--- ORIGINAL REPORT ---\n${ctx.consolidatedDraft}`,
   });
-  const raw    = await router.wait(taskId, writeWaitMs, 'revision', signal);
+  const raw    = await router.wait(taskId, writeWaitMs, 'revision', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(taskId, 'writer', 'Revision', err.message)));
   const parsed = parseHandlerResult(raw);
   ctx.metadata.totalTokens   += parsed.inputTokens + parsed.outputTokens;
   ctx.metadata.estimatedCost += parsed.estimatedCost;

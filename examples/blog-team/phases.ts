@@ -169,7 +169,8 @@ export async function runBlogRevision(deps: RevisionDeps): Promise<'PUBLISHED' |
   });
   pub.taskQueued(revTaskId, `Revision: ${topic}`, 'writer');
 
-  const revRaw    = await router.wait(revTaskId, WRITE_WAIT_MS, 'revision', signal);
+  const revRaw    = await router.wait(revTaskId, WRITE_WAIT_MS, 'revision', signal)
+    .catch((err: Error) => failUnlessStopped(err, signal, () => pub.taskFailed(revTaskId, 'writer', 'Revision task', err.message)));
   const revParsed = parseHandlerResult(revRaw);
   runLog.logTask('revision', revTaskId, 'writer', { ...revParsed, answer: revParsed.answer });
   pub.publishMetadata({ totalTokens: runLog.totals.totalTokens, estimatedCost: runLog.totals.totalCost });

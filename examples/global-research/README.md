@@ -65,7 +65,7 @@ Open `examples/global-research/viewer/board.html` in your browser to watch the s
 | `LLM_MODEL` | `gpt-4o-mini` | LLM model identifier |
 | `CHAOS_MODE` | `false` | Enable 20% crash rate on searchers |
 | `AUTO_PUBLISH` | unset | Set to `1` or `true` to skip the human decision and publish automatically (CI / unattended runs). Never implied by a missing terminal: without it the decision comes from the terminal or the board |
-| `SEARCHER_ID` | `searcher` | Identity for multi-instance searcher nodes |
+| `SEARCHER_ID` | auto: `searcher-<n>` | Identity of a searcher node. Unset, each replica claims the next free index from Redis (`searcher-0`, `searcher-1`, …) and keeps it across an in-place restart; set it to pin one (single-process dev). With a long-lived Redis, delete the keys `kaiban:searcher:reg` and `kaiban:searcher:hosts` when you recreate the searchers |
 
 ## NODE_TYPE — Single Entry Point
 
@@ -149,7 +149,7 @@ Sub-topic angles:
 
 ### Stage 2 — Fan-In: Writer Aggregation
 
-Atlas (Writer) receives all successful search results in a single task and synthesises them into a comprehensive Markdown research report (800-1200 words). Partial failures are tolerated — if 3/4 searchers succeed, the writer proceeds with the available data.
+Atlas (Writer) receives all successful search results in a single task (each searcher's whole answer, up to 20 000 characters) and synthesises them into a comprehensive Markdown research report (800-1200 words). Partial failures are tolerated — if 3/4 searchers succeed, the writer proceeds with the available data.
 
 ### Stage 3 — Governance Review
 
