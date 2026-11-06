@@ -1372,10 +1372,13 @@ const ctx = extractTraceContext(
 // ctx is a Context that can be used as parent for new spans
 ```
 
-**Configure OTEL exporter** (e.g., Jaeger, Grafana Tempo, Honeycomb):
+**Configure OTEL exporter** (e.g., Jaeger, Grafana Tempo, Honeycomb). The value is the OTLP/HTTP
+base URL: traces are sent to `<base>/v1/traces` and the metrics (`kaiban.message.processed`,
+`kaiban.message.latency`) to `<base>/v1/metrics`. A value that still ends in `/v1/traces` is
+reduced to its base, so older configurations keep working.
 
 ```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
 SERVICE_NAME=kaiban-researcher \
 node dist/examples/blog-team/researcher-node.js
 ```

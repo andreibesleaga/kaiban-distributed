@@ -51,9 +51,10 @@ vi.mock("@opentelemetry/api", () => ({
 
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { ConsoleSpanExporter } from "@opentelemetry/sdk-trace-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { initTelemetry } from "../../../src/infrastructure/telemetry/telemetry";
+import { initTelemetry, otlpSignalUrls } from "../../../src/infrastructure/telemetry/telemetry";
 import {
   deferTelemetryShutdown,
   resetTelemetryShutdown,
@@ -103,6 +104,20 @@ describe("initTelemetry — exporter selection", () => {
       url: "http://otel:4318/v1/traces",
     });
     expect(ConsoleSpanExporter).not.toHaveBeenCalled();
+  });
+
+  it("sends metrics to /v1/metrics, a different URL from traces (WF-V-01)", () => {
+    initTelemetry({ serviceName: "svc", exporterEndpoint: "http://otel:4318" });
+    expect(OTLPTraceExporter).toHaveBeenCalledWith({ url: "http://otel:4318/v1/traces" });
+    expect(OTLPMetricExporter).toHaveBeenCalledWith({ url: "http://otel:4318/v1/metrics" });
+  });
+
+  it("otlpSignalUrls: base, trailing slash and legacy signal-path forms give the same two URLs", () => {
+    const want = { traces: "http://c:4318/v1/traces", metrics: "http://c:4318/v1/metrics" };
+    for (const e of ["http://c:4318", "http://c:4318/", "http://c:4318/v1/traces", "http://c:4318/v1/metrics", "http://c:4318/v1/traces/"]) {
+      expect(otlpSignalUrls(e)).toEqual(want);
+    }
+    expect(otlpSignalUrls("https://api.honeycomb.io/v1/traces").metrics).toBe("https://api.honeycomb.io/v1/metrics");
   });
 
   it("does NOT log a warning when OTLP endpoint is provided", () => {

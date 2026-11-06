@@ -216,7 +216,7 @@ Set these in Railway **Project → Variables** (shared across all services) or p
 
 | Variable | Value | Notes |
 |----------|-------|-------|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://api.honeycomb.io/v1/traces` | Any OTLP endpoint |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://api.honeycomb.io` | Any OTLP/HTTP base URL (traces go to `/v1/traces`, metrics to `/v1/metrics`) |
 
 ---
 
