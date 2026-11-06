@@ -431,8 +431,7 @@ export class AgentStatePublisher {
         // A failed attempt that already spent tokens counts against the caps
         // BEFORE the actor retries; reaching one ends the task non-retryably.
         const failure = this.accountFailedAttempt(payload.taskId, err);
-        // → ERROR
-        this.currentStatus = "ERROR";
+        // → ERROR (published once; the failure stays visible on the task card)
         pub({
           agents: [
             {
@@ -452,6 +451,10 @@ export class AgentStatePublisher {
             },
           ],
         });
+        // The agent is free again: the heartbeat must report IDLE, not keep
+        // re-announcing ERROR on this finished task (or override the next run's reset).
+        this.currentStatus = "IDLE";
+        this.currentTaskId = null;
         throw failure;
       }
     };
