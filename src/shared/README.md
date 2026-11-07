@@ -20,6 +20,8 @@ import {
   createRpcClient,
   waitForHITLDecision,
   OrchestratorStatePublisher,
+  WorkflowOrchestrator,
+  dispatchToAgent,
   startAgentNode,
 } from "../../src/shared";
 ```
@@ -41,14 +43,14 @@ log.header("Phase 1"); // \n=== Phase 1 ===\n═══…
 
 ---
 
-### `driver-factory.ts` — BullMQ / Kafka driver
+### `driver-factory.ts` — BullMQ / Kafka / AMQP driver
 
 ```typescript
-const driverType = getDriverType(); // 'bullmq' | 'kafka' (reads MESSAGING_DRIVER)
+const driverType = getDriverType(); // 'bullmq' | 'kafka' | 'amqp' (amqp is an unimplemented seam)
 const driver = createDriver("-suffix"); // IMessagingDriver
 ```
 
-Creates a BullMQ or Kafka `IMessagingDriver` depending on `MESSAGING_DRIVER` env var.
+Creates a BullMQ or Kafka `IMessagingDriver` depending on `MESSAGING_DRIVER` env var (`amqp` is accepted by the configuration but is an unimplemented seam, ADR-016).
 Pass a group-ID suffix to isolate consumer groups across orchestrator instances.
 
 ---
@@ -96,12 +98,12 @@ const md = normaliseEditorialText(raw); // JSON editor output → Markdown
 const router = new CompletionRouter(completedDriver, failedDriver?);
 
 const result   = await router.wait(taskId, 120_000, 'writing');
-const results  = await router.waitAll(taskIds, 120_000, 'search-fan-in');
+const results  = await router.waitAll(taskIds, 120_000, 'search-fan-in', signal?);
 // results: Array<{ taskId, result?: string, error?: string }>
 ```
 
 Subscribes to `kaiban-events-completed` and `kaiban-events-failed`.
-`waitAll` aggregates a fan-out (never throws — failed tasks get `.error`).
+`waitAll` aggregates a fan-out: a failed task gets `.error` and the call does not throw. If you pass a fourth argument, an `AbortSignal`, aborting it rejects the call (STOP ALL uses this).
 
 ---
 
@@ -133,13 +135,14 @@ const decision = await waitForHITLDecision({
   rl,          // readline.Interface | null  (null → board-only)
   redisUrl,
   onView?: () => { /* show draft when user types [4] */ },
+  signal?: AbortSignal,  // STOP ALL ends the wait: the promise rejects with the signal's reason
 });
 // decision: 'PUBLISH' | 'REVISE' | 'REJECT'
 ```
 
 Listens in parallel on:
 
-- **Terminal** via `readline` — `[1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW`
+- **Terminal** via `readline` — `[1] PUBLISH  [2] REVISE  [3] REJECT  [4] VIEW` (VIEW is terminal-only; the board cannot send it)
 - **Board** via Redis `kaiban-hitl-decisions` channel (SocketGateway publishes here)
 
 First source to deliver a valid decision wins; the other is cleaned up.
@@ -195,6 +198,22 @@ Internally: `createDriver` → `buildSecurityDeps` → `AgentStatePublisher` →
 
 ---
 
+### `emergency-stop.ts` — STOP ALL for nodes and orchestrators
+
+Off unless `CONTROL_PLANE_ENABLED=true` (ADR-025). An orchestrator gets an abort signal that fires on the first STOP ALL issued after it started, and passes it to `WorkflowOrchestrator` (`stopSignal`), `waitForHITLDecision` (`signal`) and `CompletionRouter.waitAll` (`signal`):
+
+```typescript
+const stop = controlPlaneEnabled() ? await createEmergencyStopSignal(REDIS_URL) : null;
+const orch = new WorkflowOrchestrator({
+  workflowId, router, store, ...(stop ? { stopSignal: stop.signal } : {}),
+});
+// the abort reason is an EmergencyStopError; call stop?.close() on exit
+```
+
+Worker nodes use `attachEmergencyStop` (done for you by `startAgentNode`). `createStopAllCommand` builds a command; issuing one from code is `issueStopAll` in the root `kaiban-distributed` entry, and `npm run stop-all` is the command line. The working example is `examples/blog-team/orchestrator.ts`.
+
+---
+
 ### Other modules
 
 Each file's header comment has the details.
@@ -202,8 +221,11 @@ Each file's header comment has the details.
 | Module | What it does | Exported from the barrel |
 | --- | --- | --- |
 | `orchestrator.ts` | `WorkflowOrchestrator`: single-active workflow runner over `CompletionRouter`, with Redis checkpoint and resume and `taskId` dedup (ADR-018); not highly available | yes |
+| `emergency-stop.ts` | attach a node or orchestrator to the `kaiban-control` channel (ADR-025); off unless `CONTROL_PLANE_ENABLED=true`; exports `controlPlaneEnabled`, `createStopAllCommand`, `attachEmergencyStop`, `createEmergencyStopSignal`, `EmergencyStopError` | yes |
 | `dispatch.ts` | `dispatchToAgent(driver, agentId, { instruction, expectedOutput?, context?, inputs? })`: publishes to `kaiban-agents-{id}` and returns the `taskId` to await | yes |
 | `budget.ts` | Parses the four spend caps (`MAX_WORKFLOW_COST_USD`, `MAX_WORKFLOW_TOKENS`, `MAX_TOKEN_BUDGET`, `MAX_TASK_TOKEN_BUDGET`); `BudgetExceededError` | yes |
 | `admission-gate.ts` | `buildAdmissionGate` / `buildWorkerAdmissionGate`: the governance Action Gate as the actor's pre-execution check (ADR-021) | no (root `kaiban-distributed` entry) |
 | `structured-logger.ts` | JSON logger (pino) for workers and infrastructure; `LOG_LEVEL`, `LOG_PRETTY=true` | no |
 | `process-drain.ts` | One drain per worker process: the first SIGTERM or SIGINT drains every agent node, flushes telemetry, then exits once | no (internal) |
+| `redis-connection.ts` | the helper behind every Redis client (URL with user, password, database and `rediss://`; `REDIS_TLS_*`) | no (internal) |
+| `timeout-env.ts` | parses the timeout environment variables | no (internal) |
