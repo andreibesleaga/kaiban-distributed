@@ -44,3 +44,5 @@ The active driver is selected at runtime via the `MESSAGING_DRIVER` environment 
 - `IMessagingDriver` is more generic than domain-specific (e.g., SPEC.md originally specified `publishTask`/`subscribeToTasks`). SPEC.md updated to reflect the generalized interface.
 
 **Note:** SPEC.md interface names (`publishTask`, `subscribeToTasks`, `publishStateDelta`, `subscribeToState`) were superseded by this generalized pattern. SPEC.md updated accordingly (see ADR-001 rationale).
+
+> **Update (2.1.2, November 2026).** `MESSAGING_DRIVER` accepts `bullmq` (default), `kafka` and `amqp`; `amqp` is an unimplemented seam (ADR-016). The Kafka driver reads every topic from the beginning on a partition where the consumer group has no committed offset, so tasks published before an agent joined, and results published before an orchestrator's consumer joined, are not skipped. `CompletionRouter` ignores results it is not waiting for, so old events cost only log lines. The compose files create topics with `KAFKA_NUM_PARTITIONS=4`.

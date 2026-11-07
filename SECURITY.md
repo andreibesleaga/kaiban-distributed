@@ -7,7 +7,7 @@
 | 2.x | ✅ |
 | < 2.0 | ❌ |
 
-Security changes in 2.0.1: production boot refuses missing, short (< 32 bytes) or repeated signing
+Security changes in 2.0.1 (the full list for every release is in [CHANGELOG.md](CHANGELOG.md)): production boot refuses missing, short (< 32 bytes) or repeated signing
 secrets (`ALLOW_INSECURE_PRODUCTION=true` lets a missing one through, with a warning); HITL decisions
 validate the task id and are rate-limited per connection; probe routes have their own, higher limit.
 Not in 2.0.1: an operator stop command (shipped in 2.1.0, below), role checks on HITL decisions and on
@@ -21,12 +21,18 @@ route (`/health`, `/ready`, `/startup`) has its own 120 per minute bucket per cl
 Security changes in 2.1.0: the emergency STOP ALL (`POST /control/stop-all` and the `control:stop-all`
 socket event, only with `CONTROL_PLANE_ENABLED=true`). It always needs a board token and is refused
 when `BOARD_JWT_SECRET` is unset. Every valid board token can stop everything: there are no roles
-yet. Limits: 5 commands per 10 s per token holder; refused attempts are counted separately, 30 per
-10 s per client address, so anonymous traffic cannot use up an operator's budget. See
+yet. Limit: 5 commands per 10 s per token holder. See
 [SECURITY_FEATURES.md](docs/security/SECURITY_FEATURES.md#31-http-gateway-hardening).
-The saved stop marker (`kaiban-control:stopped-at`) and the control channel are signed when
-`CHANNEL_SIGNING_SECRET` is set; with `NODE_ENV=production` the control plane refuses to start
-without it. Role checks on HITL decisions and per-run board tokens are not part of 2.1.
+Role checks on HITL decisions and per-run board tokens are not part of 2.1.
+
+Security changes in 2.1.2: refused STOP ALL attempts are counted separately, 30 per 10 s per client
+address, so anonymous traffic cannot use up an operator's budget. The saved stop marker
+(`kaiban-control:stopped-at`) and the control channel are signed when `CHANNEL_SIGNING_SECRET` is
+set; with `NODE_ENV=production` the control plane refuses to start without it. The full lists are in
+[CHANGELOG.md](CHANGELOG.md) and [MIGRATION.md](MIGRATION.md#211--212-audit-fixes).
+
+Operator guidance for STOP ALL (who may stop, how to mint and keep a board token, the clock caveat):
+see the README, [Emergency STOP ALL](README.md#emergency-stop-all-210).
 
 ## Reporting a vulnerability
 
@@ -81,10 +87,10 @@ what the dependents declare. `js-yaml` is deliberately capped below `5` because
 
 ### Residual advisories
 
-**As of 2026-10-29**, after the dependency branch `deps/security-2026-10-24`
+**As of 2026-11-07**, after the dependency branch `deps/security-2026-10-24`
 (`body-parser` >=2.4.0, board `undici` >=7.30.1 and `happy-dom` 21) and pull request #167
 (`@opentelemetry/auto-instrumentations-node` 0.79), `npm audit` reports
-**0 critical** and one **high** advisory with no fix in the version line that uses it (accepted
+**0 critical** and one **high** advisory (reported as 9 package entries, below) with no fix in the version line that uses it (accepted
 until 2026-12-31, below); the board lockfile has none. Accepted HIGH advisories are listed, with an
 `exp:` date, in `.trivyignore`, which both the Trivy image scan and `scripts/audit-gate.js` read; an
 expired entry fails CI again.

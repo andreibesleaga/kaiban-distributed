@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-18
 - **Deciders:** Andrei Besleaga (maintainer)
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B0 (License), §B7, §B8 BETA.1 Phase 0; `LICENSING.md`
+- **Refs:** the v2.0 planning notes (private; not in this repository); `LICENSING.md`
 
 ## Context
 v2.0 publishes the core as a public npm library. The repo is currently GPL-3.0. A GPL-3.0 *library*

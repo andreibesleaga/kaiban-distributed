@@ -2,6 +2,8 @@
 
 Deploy kaiban-distributed to Amazon Web Services using EKS (Kubernetes), ECS (Fargate), or Elastic Beanstalk.
 
+> The Helm chart in `examples/blog-team/infra/helm/` covers the blog-team demo only. It does not set the production secrets or `NODE_ENV`: for an internet-facing gateway also set `config.NODE_ENV=production`, `config.SOCKET_CORS_ORIGINS`, `config.TRUST_PROXY` and the `secrets.*` signing secrets described in [HELM.md](HELM.md), and see [SECURITY_FEATURES §10](../security/SECURITY_FEATURES.md#10-production-deployment-checklist).
+
 ---
 
 ## Option A — Amazon EKS (Kubernetes)
@@ -47,7 +49,7 @@ eksctl create cluster \
 
 ### Step 3 — Store Secrets in AWS Secrets Manager
 
-Never store API keys in ConfigMaps or Git. Use AWS Secrets Manager + the Secrets Store CSI driver instead:
+Never store API keys in ConfigMaps or Git. Keep them in AWS Secrets Manager:
 
 ```bash
 # Store the secret
@@ -56,15 +58,9 @@ aws secretsmanager create-secret \
   --secret-string '{"OPENAI_API_KEY":"sk-...","OPENROUTER_API_KEY":"sk-or-..."}' \
   --region $REGION
 
-# Install the CSI driver
-helm repo add secrets-store-csi-driver https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts
-helm install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver --namespace kube-system
-
-# Install the AWS provider
-kubectl apply -f https://raw.githubusercontent.com/aws/secrets-store-csi-driver-provider-aws/main/deployment/aws-provider-installer.yaml
 ```
 
-Then reference the CSI volume in your Deployment spec instead of `secretRef`.
+The chart cannot mount a CSI volume: its Deployments read one Kubernetes Secret through `envFrom`. Either pass the key with `--set secrets.OPENAI_API_KEY=...` in Step 4, or create a Kubernetes Secret named `<release>-kaiban-blog-team-secrets` from Secrets Manager (External Secrets Operator) and install with `--set secrets.create=false`; see [HELM.md, Secrets Management](HELM.md#secrets-management).
 
 ### Step 4 — Deploy with Helm
 
@@ -74,8 +70,11 @@ helm install kaiban-blog-team ./examples/blog-team/infra/helm \
   --set image.repository=${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/kaiban-distributed \
   --set image.tag=latest \
   --set gateway.service.type=LoadBalancer \
+  --set secrets.OPENAI_API_KEY="$OPENAI_API_KEY" \
   --namespace kaiban --create-namespace
 ```
+
+If you keep the key in the secret manager only, install with `--set secrets.create=false` and create a Kubernetes Secret named `kaiban-blog-team-secrets` (the release name above already contains the chart name; the rule is in HELM.md) from it with the External Secrets Operator; see [HELM.md, Secrets Management](HELM.md#secrets-management).
 
 ### Step 5 — Access the Gateway
 
@@ -138,7 +137,7 @@ copilot secret init --name OPENROUTER_API_KEY
 
 ## Option C — AWS Elastic Beanstalk (single-instance, quick start)
 
-> Best for evaluation and low-traffic demos. Not recommended for production multi-agent workloads.
+> Best for evaluation and low-traffic demos. Not recommended for production multi-agent workloads. Elastic Beanstalk runs this one container as the gateway only (`ROLE` unset): no agent runs, so no task completes. Run the workers on EKS or Fargate (Option A or B) against the same Redis.
 
 ```bash
 # Install the EB CLI
@@ -157,6 +156,10 @@ eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... AGENT_IDS=researcher,write
 
 ---
 
+## Emergency STOP ALL (optional)
+
+Set `CONTROL_PLANE_ENABLED=true` on every service (gateway, workers and orchestrator), and put `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` in the Secret next to the model keys. See [Emergency STOP ALL](../../README.md#emergency-stop-all-210) in the README and [HELM.md](HELM.md).
+
 ## Redis on AWS
 
 Use **Amazon ElastiCache for Redis** (cluster mode disabled, single node for dev):
@@ -171,11 +174,11 @@ aws elasticache create-cache-cluster \
   --region $REGION
 ```
 
-Set `REDIS_URL` to the cluster endpoint (port 6379).
+Set `REDIS_URL` to the cluster endpoint (port 6379). To use in-transit encryption and an auth token, enable them on the cluster and use `rediss://:<token>@<endpoint>:6379`; since 2.1.2 the password, user and `rediss://` in `REDIS_URL` apply to every client, the task queues included.
 
 ---
 
-## Costs (approximate, us-east-1, 2024)
+## Costs (illustrative only, check [AWS pricing](https://aws.amazon.com/pricing/))
 
 | Resource            | Spec           | $/month  |
 |---------------------|----------------|----------|

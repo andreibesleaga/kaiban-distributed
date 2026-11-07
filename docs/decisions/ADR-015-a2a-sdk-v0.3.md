@@ -12,7 +12,7 @@ could not interoperate with conformant A2A clients, and stubbed two methods
 (`tasks.get` always returned `{ status: "TODO" }`; `agent.status` always returned
 `IDLE`).
 
-The master plan (Phase 2 / §B0 A1–A4 / §B2) mandates building on the **official
+The v2.0 planning notes (private) mandate building on the **official
 `@a2a-js/sdk`**, targeting **stable A2A v0.3** (SDK `0.3.x`) now — *not* the v1.0
 alpha — while keeping a clean seam to v1.0. The installed SDK is `@a2a-js/sdk@0.3.13`
 (verified against its own type defs, not from memory, per §B11.2).
@@ -102,3 +102,5 @@ idempotency, abort-on-cancel, no internal-error leak),
 `a2a-input-validation.test.ts` (caps + `-32602`), `a2a-gateway-factory.test.ts`,
 `GatewayApp*.test.ts` (security middleware + SDK routes + real agent.status),
 and the conformance e2e `a2a-protocol.test.ts` (official SDK client ↔ our server).
+
+> **Update (2.0.3 and 2.1.2, November 2026).** The agent card advertises only the JSON-RPC interface (`/a2a/rpc`); HTTP+JSON and gRPC are not served and are not listed, so the lines above about advertising them describe the first 2.0 design. On `/a2a/rpc` the order is: rate limit, JWT check, request timeout (at least 15 minutes), 1 MB JSON body parse; `message/send` refuses an `agentId` that is not in `AGENT_IDS`.

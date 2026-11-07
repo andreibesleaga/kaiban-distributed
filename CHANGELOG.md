@@ -6,6 +6,43 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.3] — 2026-11-07
+
+A documentation and configuration release from a documentation, diagram and screenshot audit (110 findings in 3 areas, plus 7 image findings), with three small runtime fixes found while recapturing the screenshots. No new dependency. No code change on upgrade; check your `.env` once, since the new Compose and Helm settings apply when you set them (see [MIGRATION.md](MIGRATION.md#212--213-documentation-and-configuration)).
+
+### Fixed
+
+- Board: the STOP ALL dialog and the task detail dialog open in the centre of the window. Tailwind 4's reset sets `margin: 0`, which removed the native centring of `<dialog>`, so both opened in the top-left corner. A Playwright test (`board/e2e/board-dialogs.spec.ts`) checks the position in a real browser.
+- A task stopped by STOP ALL is reported as STOPPED once. The handler wrapper and the actor both published it, so the board and the log showed it twice. A task sent again with the same id (DLQ replay) reports its own stop.
+- An empty `A2A_PUBLIC_URL` (for example `A2A_PUBLIC_URL=` in `.env`) is treated as unset: the agent card URL falls back to `http://localhost:<port>` instead of an empty base URL.
+- Docker Compose now passes the production and tuning settings the documentation tells you to put in `.env` to the containers: `NODE_ENV`, `A2A_JWT_SECRET`, `TRUST_PROXY`, `LOG_LEVEL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED`, `MCP_DISPATCH_CONSENT` (and `SOCKET_CORS_ORIGINS`, `A2A_PUBLIC_URL`, `MCP_SERVER_PATH`, `MCP_ALLOWED_*`, `OTEL_EXPORTER_OTLP_ENDPOINT` when set). The root stack also passes the firewall, circuit breaker, JIT token and `VALID_HITL_DECISIONS` settings, and its worker gets the board and A2A secrets. Unset keeps the previous behaviour.
+- The global-research Kafka stack now passes the firewall, circuit breaker and JIT token settings to its workers, like the other stacks.
+- The global-research Helm chart's gateway now reads the chart Secret, so a board token secret reaches it.
+- The blog-team raw Kubernetes gateway now reads the Secret (`BOARD_JWT_SECRET`, `CHANNEL_SIGNING_SECRET`); the raw manifests carry commented keys for STOP ALL and production.
+- Documentation snippets no longer build the BullMQ connection from host and port alone (that dropped the Redis password and TLS); they use `createDriver()`.
+- Fixed the board-token recipe in the security guide (it signed with a throw-away secret) and the Redis password example for `.env` files (dotenv does not expand `${...}`).
+- `scripts/blog-team.sh` prints `npm ci` (not `npm install`) in its board hint.
+- A property test of the actor's outbound cap uses a fixed seed and a longer timeout, so it no longer fails under coverage load.
+
+### Changed
+
+- Helm charts (blog-team, global-research): optional `config.*` settings (`NODE_ENV`, `TRUST_PROXY`, `SOCKET_CORS_ORIGINS`, `A2A_PUBLIC_URL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `LOG_LEVEL`, `MCP_SERVER_ENABLED`, firewall, breaker, JIT), `secrets.A2A_JWT_SECRET`, and `secrets.create=false` to bring your own Secret (External Secrets, Sealed Secrets). Defaults render the same objects as before.
+- The static viewers' human-decision hint now says to decide in the orchestrator's terminal or on the React board.
+- `board/.env.example` documents `VITE_BOARD_TOKEN` (local development only).
+
+### Documentation
+
+- Screenshots recaptured from the 2.1.x board (running workflow, STOP ALL dialog, stopped workflow) with a local mock model; the old animated board capture is removed; `docs/architecture/system-architecture.png` is redrawn from its drawio source with the control channel, the Pub/Sub channels and AMQP marked as a seam, and is now linked from `docs/architecture/DIAGRAMS.md`.
+- New `docs/README.md` (index by reader), `docs/architecture/DIAGRAMS.md` and `docs/decisions/README.md` (ADR index).
+- README: one container diagram with the control channel, a "Use as a library" section, the two quick starts relabelled, current test counts, new configuration rows, token minting, Kafka offset rules, current troubleshooting rows.
+- Architecture decision records: each ADR whose facts changed has a dated "Update (2.1.2)" note (production secret checks, STOP ALL signing and route limits, Kafka reading from the beginning, MCP and A2A request chain, dependency policy, deprecated team bridge, and more); references to the private planning file are gone.
+- Deployment guides: which variables reach the containers (Docker), STOP ALL and production settings (Kubernetes, Helm, AWS, Azure, GCP, Vercel), Helm steps with the LLM key (AWS, Azure, GCP), Cloud Run timeout and VPC, Vercel `config.js`, Railway build path and `REDIS_URL` reference.
+- Roadmap: current status banner, shipped items marked, historical banner on the 4 Oct 2026 audit, status tables renumbered 7.8 to 7.10, ES-6 and ES-10 now match the code, STOP ALL scenarios link to their tests.
+- Acceptance criteria and the blog-team test guide point to real tests; the untested process-crash scenario is marked as not covered; the guide uses the project's own React board and has pass criteria, STOP ALL, resume and teardown sections.
+- Contributor docs: `CONTRIBUTING.md` lists the gates CI enforces; `AGENTS.md` has the full layout and commands; `board/README.md` documents `VITE_GATEWAY_URL` and `VITE_BOARD_TOKEN`; `src/shared/README.md` documents the emergency-stop API and the `waitAll` abort behaviour; new `examples/blog-team/README.md`; the global-research README covers STOP ALL.
+- Script usage headers corrected (`run-example.sh`, `blog-team.sh`, `global-research.sh`, `smoke-consumer.sh`).
+- Corrections in SECURITY.md, MIGRATION (index), FEATURES, SPEC, ACTOR_MODEL, MCP, economics, governance, RELEASE, VERIFICATION, the KaibanJS guide and the site.
+
 ## [2.1.2] — 2026-11-06
 
 A correctness and security release from a full audit of the runtime, gateway, board, viewers, examples, packaging and documentation (157 findings, 7 areas). No new feature and no new dependency. Every code fix has a test that failed before it; documentation, chart, compose and workflow fixes are checked by CI (`deploy-manifests`, lychee, api report). Four changes need a word from operators, listed under **Migration** in [MIGRATION.md](MIGRATION.md#211--212-audit-fixes).
@@ -70,7 +107,7 @@ A correctness and security release from a full audit of the runtime, gateway, bo
 
 - global-research: the writer receives each searcher's whole answer (bounded at 20 000 characters) instead of the first 500; invented `research://` URLs and random relevance scores are gone; results are labelled by sub-topic; a searcher restarted in place keeps its id; the searcher honours `AGENT_TIMEOUT_MS` / `RETRY_ON_TIMEOUT` and drains like other nodes; `AUTO_PUBLISH` is opt-in only; running totals are published after each phase.
 - global-research and blog-team: the review card is closed on the budget-stop and failure paths too; a failed revision wait marks the revision task BLOCKED.
-- `scripts/run-example.sh` starts the orchestrator in the foreground so the human-decision prompt works.
+- `scripts/run-example.sh` runs the orchestrator as a waited child with the terminal's stdin, so the human-decision prompt works and a stop signal reaches it at once.
 
 **Packaging, compose, Helm and workflows**
 

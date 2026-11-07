@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase R + §B1.2/§B3 (invariants); §B8 BETA.2
+- **Refs:** the v2.0 planning notes (private; not in this repository)
 
 ## Context
 v2.0 must make the **core components** (gateway, orchestrator, workflows) resilient and self-healing —
@@ -38,4 +38,4 @@ single-active by design).
 
 ## Deferred (documented, not silently skipped)
 Supervision/auto-revival (backoff+jitter reconnect), bulkhead, backpressure, retry budgets, and
-loop-termination guards — tracked as a Phase-R follow-up (see the master plan §B5.1).
+loop-termination guards — tracked as a Phase-R follow-up (see the v2.0 planning notes, which are private).

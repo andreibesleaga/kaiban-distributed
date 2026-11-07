@@ -1,7 +1,9 @@
 # Blog Team — Complete End-to-End Test Guide
 
 > Tests the full distributed pipeline: **Ava (Researcher) → Kai (Writer) → Morgan (Editor) → Human (HITL)**
-> Includes visual verification via the live board UI and the kaiban-board component.
+> Includes visual verification via the live board UI and the React board in `board/`.
+>
+> For starting and stopping the example, and for its environment variables, [EXAMPLES.md](../../EXAMPLES.md) (Example 1) is the single home. This guide keeps the stage-by-stage expectations and the pass criteria.
 
 ---
 
@@ -37,10 +39,11 @@ docker compose build     # build Docker image
 ## 2. Start All Services
 
 ```bash
-# Start the three-agent blog pipeline
-cd examples/blog-team
-OPENAI_API_KEY=sk-... docker compose up
+# Start the three-agent blog pipeline (from the repo root, so that Compose reads the key from .env)
+docker compose -f examples/blog-team/docker-compose.yml --env-file .env up
 ```
+
+**Pass criteria:** the five services below are up and the gateway answers `/health`.
 
 **Expected startup output:**
 
@@ -108,7 +111,7 @@ xdg-open examples/blog-team/viewer/board.html
 
 You should see the **Live Board** page with:
 - `● LIVE` badge (green) — Socket.io connected
-- Empty Kanban columns (TODO / DOING / DONE)
+- Empty Kanban columns (TODO / DOING / AWAITING / DONE / BLOCKED)
 - "Waiting for agent state..." in the Agents section
 
 **Note:** If you're running Docker on a remote host, open with the gateway URL:
@@ -118,7 +121,7 @@ file:///path/to/board.html?gateway=http://YOUR_SERVER_IP:3000
 
 **Option B — kaiban-board (React component, full UI):**
 
-See [Section 7 — kaiban-board Integration](#7-kaiban-board-integration) for instructions.
+See [Section 7 — The React board](#7-the-react-board) for instructions.
 
 ---
 
@@ -146,7 +149,7 @@ TOPIC="Large Language Models in 2025: Capabilities and Limitations" \
   ./scripts/blog-team.sh start --docker
 ```
 
-**Expected console flow:**
+**Expected console flow.** The text below is a sketch; wording and decoration differ from the real output. What to check is the order of the four steps (the real output starts with `KAIBAN DISTRIBUTED — BLOG TEAM ORCHESTRATOR`, then `Gateway: OK at <url>`, `Agent: ...`, `Topic: ... | Workflow: <id>`, then `STEP 1` to `STEP 3`).
 
 ```
 ════════════════════════════════════════════════════════════
@@ -164,6 +167,8 @@ STEP 1 — Ava (Researcher) is gathering information...
   ↳ Task queued: task-1710000001000
   ↳ Waiting up to 120s for research...
 ```
+
+**Pass criteria:** the console prints `STEP 1` and the Live Board shows Ava working.
 
 **On the Live Board, you should see:**
 - Ava's agent status change: `IDLE → THINKING → EXECUTING`
@@ -187,6 +192,8 @@ STEP 1 — Ava (Researcher) is gathering information...
 
 **Live Board:** Research task moves from `DOING → DONE`. Ava's status returns to `IDLE`.
 
+**Pass criteria:** a research summary is printed and the research card is in DONE.
+
 ---
 
 ### Stage 2 — Writing Complete
@@ -208,6 +215,8 @@ STEP 2 — Kai (Writer) is drafting the blog post...
 
 **Live Board:** Writer task in DOING → DONE. Kai returns to IDLE.
 
+**Pass criteria:** a Markdown draft is printed and the writer card is in DONE.
+
 ---
 
 ### Stage 3 — Editorial Review (Morgan)
@@ -221,6 +230,8 @@ STEP 3 — Morgan (Editor) is reviewing for accuracy...
 ```
 
 **Live Board:** Editor task in DOING, Morgan's status shows THINKING/EXECUTING.
+
+**Pass criteria:** the console prints an `Accuracy Score:` and a `Recommendation:` of PUBLISH, REVISE or REJECT.
 
 After Morgan finishes, the review appears in a formatted box:
 
@@ -268,6 +279,10 @@ Options:
 Your decision [1/2/3/4]:
 ```
 
+The decision can also be given on the React board (PUBLISH / REVISE / REJECT buttons, section 7); the first valid decision wins.
+
+**Pass criteria:** each path below ends the run as described, and the board shows the matching final state (REJECT shows the task as stopped in the Blocked column).
+
 **Test each decision path:**
 
 #### Path A — PUBLISH (type `1`)
@@ -313,100 +328,17 @@ Your decision [1/2/3/4]: 1
 
 ---
 
-## 7. kaiban-board Integration
+## 7. The React board
 
-[kaiban-board](https://github.com/kaiban-ai/kaiban-board) is a React component that shows a full Kanban UI. To use it with the distributed backend:
-
-### 7a. Run kaiban-board locally
+This repository ships its own React board in `board/` (it is not the external kaiban-board project).
 
 ```bash
-cd /path/to/kaiban-board
-
-# Install dependencies
-npm install
-
-# Copy env file
-cp .env.example .env.local
-# Add: VITE_OPENAI_API_KEY=sk-...
-
-# Start dev server (port 5173)
-npm run dev
+cd board && npm ci && VITE_BOARD_TOKEN=<token, if the gateway sets BOARD_JWT_SECRET> npm run dev
 ```
 
-Open `http://localhost:5173` in your browser — the kaiban-board UI appears.
+Open http://localhost:5173. The task cards, the HITL buttons (PUBLISH / REVISE / REJECT) and, with `CONTROL_PLANE_ENABLED=true`, the STOP ALL button appear. See [EXAMPLES.md](../../EXAMPLES.md), Example 7, and [board/README.md](../../board/README.md).
 
-### 7b. Use KaibanTeamBridge for distributed state in kaiban-board
-
-Create a new kaiban-board team definition that uses the distributed workers:
-
-```javascript
-// In kaiban-board's code editor, paste this team definition:
-const { Agent, Task, Team } = require('kaibanjs');
-
-// These must match your running worker nodes
-const ava = new Agent({
-  name: 'Ava',
-  role: 'News Researcher',
-  goal: 'Research and summarize information on given topics',
-  background: 'Expert researcher with deep knowledge of AI topics',
-});
-
-const kai = new Agent({
-  name: 'Kai',
-  role: 'Content Creator',
-  goal: 'Create engaging blog posts based on research',
-  background: 'Skilled technical writer',
-});
-
-const morgan = new Agent({
-  name: 'Morgan',
-  role: 'Editorial Fact-Checker',
-  goal: 'Verify accuracy and recommend PUBLISH/REVISE/REJECT',
-  background: 'Senior editor with 15 years of experience',
-});
-
-const researchTask = new Task({
-  title: 'Research Phase',
-  description: 'Research the latest developments on: {topic}',
-  expectedOutput: 'Detailed research summary with key facts',
-  agent: ava,
-});
-
-const writeTask = new Task({
-  title: 'Writing Phase',
-  description: 'Write a blog post about: {topic}',
-  expectedOutput: 'Markdown blog post 500-800 words',
-  agent: kai,
-  dependencies: [researchTask],
-});
-
-const editTask = new Task({
-  title: 'Editorial Review',
-  description: 'Review the blog post for accuracy',
-  expectedOutput: 'Structured editorial review with PUBLISH/REVISE/REJECT recommendation',
-  agent: morgan,
-  dependencies: [writeTask],
-});
-
-const blogTeam = new Team({
-  name: 'Distributed Blog Team',
-  agents: [ava, kai, morgan],
-  tasks: [researchTask, writeTask, editTask],
-  env: { OPENAI_API_KEY: 'your-key-here' },
-});
-
-// Start the workflow
-blogTeam.start({ topic: 'AI agents in 2025' });
-```
-
-This runs a **local** KaibanJS team. For connecting it to the distributed workers:
-
-### 7c. Live board captures all state
-
-Once the bridge is running:
-1. The Live Board (`board.html`) shows real-time Kanban updates via Socket.io
-2. kaiban-board shows the team structure and task definitions
-3. Both UIs update in real-time as distributed workers process tasks
+**Pass criteria:** the board connects to the gateway and shows the same task cards as the standalone viewer.
 
 ---
 
@@ -479,3 +411,21 @@ export const researcherConfig: KaibanAgentConfig = {
   llmConfig: { provider: 'openai', model: 'gpt-4o-mini' },
 };
 ```
+
+---
+
+## 11. STOP ALL (control plane)
+
+Start the stack with `CONTROL_PLANE_ENABLED=true` and `BOARD_JWT_SECRET` set (and `CHANNEL_SIGNING_SECRET` in production), as described in [EXAMPLES.md](../../EXAMPLES.md), section 1H. Start a run, then press STOP ALL on the React board or the viewer while Ava or Kai is working.
+
+**Pass criteria:** the running model call ends at once, the board shows a stop banner with the node acknowledgements and the tasks as stopped, and the orchestrator publishes `STOPPED` and exits with code 2. A new run afterwards completes.
+
+## 12. Resume after a restart
+
+`WORKFLOW_ID` defaults to a value derived from the topic, so a restart with the same topic resumes from the last finished stage instead of paying for it again (`.env.example`, `examples/blog-team/orchestrator.ts`). Set `WORKFLOW_ID` to a new value to force a fresh run.
+
+**Pass criteria:** stop the orchestrator after stage 1, start it again with the same `TOPIC`; stage 1 is not run again.
+
+## 13. Teardown
+
+`./scripts/blog-team.sh start` stops the stack when the orchestrator exits. A stack started by hand with `docker compose ... up` stays up until `docker compose -f examples/blog-team/docker-compose.yml down`.

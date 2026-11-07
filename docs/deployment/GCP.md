@@ -2,6 +2,8 @@
 
 Deploy kaiban-distributed to Google Cloud Platform using GKE (Kubernetes), Cloud Run, or Google Compute Engine.
 
+> The Helm chart in `examples/blog-team/infra/helm/` covers the blog-team demo only. It does not set the production secrets or `NODE_ENV`: for an internet-facing gateway also set `config.NODE_ENV=production`, `config.SOCKET_CORS_ORIGINS`, `config.TRUST_PROXY` and the `secrets.*` signing secrets described in [HELM.md](HELM.md), and see [SECURITY_FEATURES §10](../security/SECURITY_FEATURES.md#10-production-deployment-checklist).
+
 ---
 
 ## Option A — Google Kubernetes Engine (GKE)
@@ -64,14 +66,18 @@ gcloud services enable secretmanager.googleapis.com
 printf "sk-..." | gcloud secrets create openai-api-key     --data-file=- --project=$PROJECT
 printf "sk-or-..." | gcloud secrets create openrouter-api-key --data-file=- --project=$PROJECT
 
-# Grant GKE Workload Identity access
+# Create the namespace and the Kubernetes service account that your secret-sync tool runs as
+kubectl create namespace kaiban
+kubectl create serviceaccount kaiban-sa -n kaiban
+
+# Grant GKE Workload Identity access (use the name of the service account your tool really runs as)
 gcloud secrets add-iam-policy-binding openai-api-key \
   --member="serviceAccount:${PROJECT}.svc.id.goog[kaiban/kaiban-sa]" \
   --role="roles/secretmanager.secretAccessor" \
   --project=$PROJECT
 ```
 
-Use the [External Secrets Operator](https://external-secrets.io/) or the GKE Secret Manager CSI driver to mount secrets as environment variables.
+The chart cannot mount a CSI volume: its Deployments read one Kubernetes Secret through `envFrom`. Either pass the key with `--set secrets.OPENAI_API_KEY=...` in Step 4, or use the [External Secrets Operator](https://external-secrets.io/) to create a Kubernetes Secret named `<release>-kaiban-blog-team-secrets` from Secret Manager and install with `--set secrets.create=false`; see [HELM.md, Secrets Management](HELM.md#secrets-management).
 
 ### Step 4 — Deploy with Helm
 
@@ -80,8 +86,11 @@ helm install kaiban-blog-team ./examples/blog-team/infra/helm \
   --set image.repository=${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/kaiban-distributed \
   --set image.tag=latest \
   --set gateway.service.type=LoadBalancer \
+  --set secrets.OPENAI_API_KEY="$OPENAI_API_KEY" \
   --namespace kaiban --create-namespace
 ```
+
+If you keep the key in the secret manager only, install with `--set secrets.create=false` and create a Kubernetes Secret named `kaiban-blog-team-secrets` (the release name above already contains the chart name; the rule is in HELM.md) from it with the External Secrets Operator; see [HELM.md, Secrets Management](HELM.md#secrets-management).
 
 ### Step 5 — Access the Gateway
 
@@ -104,10 +113,13 @@ gcloud run deploy kaiban-gateway \
   --region=$REGION \
   --port=3000 \
   --allow-unauthenticated \
+  --timeout=3600 \
   --set-env-vars="^@^AGENT_IDS=researcher,writer,editor@REDIS_URL=redis://..." \
   --set-secrets="OPENAI_API_KEY=openai-api-key:latest" \
   --project=$PROJECT
 ```
+
+`--timeout=3600` is the longest request time Cloud Run allows (the default is 300 s): a blocking `message/send` can wait `AGENT_TIMEOUT_MS` (300 s by default) or longer. Memorystore is reachable only through the VPC, so add Direct VPC egress (`--network`, `--subnet`) or a Serverless VPC Access connector (`--vpc-connector`) to the command.
 
 Cloud Run sets `PORT` itself from `--port` and rejects it in `--set-env-vars`. The value of `AGENT_IDS` contains commas, so the list uses the `^@^` custom delimiter (see `gcloud topic escaping`).
 
@@ -117,7 +129,7 @@ Cloud Run sets `PORT` itself from `--port` and rejects it in `--set-env-vars`. T
 
 ## Option C — Google Compute Engine (single VM, quick start)
 
-> Suitable for development and low-traffic demos only.
+> Suitable for development and low-traffic demos only. This VM runs the gateway only (the image's default command) with no LLM key: no agent runs, so no task completes. Run the workers on GKE (Option A) or start them on a second VM with `ROLE=worker`, `AGENT_IDS`, `REDIS_URL` and an LLM key.
 
 ```bash
 gcloud compute instances create-with-container kaiban-vm \
@@ -136,6 +148,10 @@ gcloud compute firewall-rules create allow-kaiban \
 
 ---
 
+## Emergency STOP ALL (optional)
+
+Set `CONTROL_PLANE_ENABLED=true` on every service (gateway, workers and orchestrator), and put `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` in the Secret next to the model keys. See [Emergency STOP ALL](../../README.md#emergency-stop-all-210) in the README and [HELM.md](HELM.md).
+
 ## Redis on GCP
 
 Use **Memorystore for Redis** (Basic tier for dev, Standard for production):
@@ -153,17 +169,17 @@ gcloud redis instances describe kaiban-redis --region=$REGION --project=$PROJECT
   | grep host
 ```
 
-Memorystore is VPC-only — your GKE nodes or Cloud Run services must be in the same VPC.
+Memorystore is VPC-only — your GKE nodes or Cloud Run services must be in the same VPC. For in-transit encryption and AUTH, enable them on the instance and use `rediss://:<auth>@<host>:6378`; since 2.1.2 the password and `rediss://` in `REDIS_URL` apply to every client, the task queues included (the instance's CA certificate goes into `REDIS_TLS_CA`).
 
 ---
 
-## Costs (approximate, us-central1, 2024)
+## Costs (illustrative only, check [Google Cloud pricing](https://cloud.google.com/pricing))
 
 | Resource                     | Spec                 | $/month |
 |------------------------------|----------------------|---------|
 | GKE Autopilot (3 workloads)  | 0.25 vCPU/0.5 GB ea  | ~$40    |
 | GKE Standard                 | e2-medium ×3         | ~$90    |
-| Cloud Run (4 services, idle) | min-instances=0      | ~$0–20  |
+| Cloud Run (gateway, idle)    | min-instances=0      | ~$0–20  |
 | Memorystore Redis (1 GB)     | Basic                | ~$35    |
 | Artifact Registry (1 GB)     | —                    | ~$0.10  |
 

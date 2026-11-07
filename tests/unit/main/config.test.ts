@@ -179,6 +179,11 @@ describe("loadConfig", () => {
     });
   });
 
+  it("uses the default MCP path when MCP_SERVER_PATH is blank (an empty .env line)", () => {
+    process.env["MCP_SERVER_PATH"] = "";
+    expect(loadConfig().mcp.path).toBe("/mcp");
+  });
+
   it("falls back to the default agentTimeoutMs when AGENT_TIMEOUT_MS is non-numeric", () => {
     // Guards against NaN → setTimeout(fn, NaN) firing instantly (every task times out).
     process.env["AGENT_TIMEOUT_MS"] = "abc";

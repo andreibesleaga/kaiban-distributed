@@ -1,4 +1,4 @@
-# Release runbook — v2.0 (BETA.3 release-track)
+# Release runbook
 
 > Status of the non-engineering BETA.3 phases (V/7eq/4b/8eq/Z). The substantive feature phases
 > (M, R, E, G) are committed on `feat/v2.0`. Tagging/publishing `v2.0.0` is a **maintainer** action.
@@ -18,7 +18,7 @@ laptop: the npm trusted publisher and the build provenance need the workflow's O
    agent-card example in `README.md`, `appVersion` in `examples/*/infra/helm/Chart.yaml` (the default image tag of the Helm charts); `site/index.html` also names the current release (two
    places). The agent card and the MCP server read their version from `package.json`
    (`src/infrastructure/federation/package-version.ts`), so no source file needs an edit. Move the
-   `CHANGELOG.md` `[Unreleased]` entries under `## [X.Y.Z] — <date>`.
+   `CHANGELOG.md` `[Unreleased]` entries under `## [X.Y.Z] — <date>`. The release workflows fail unless the tag equals `v` plus the `package.json` version (`scripts/check-tag-version.sh`), so bump the version before you tag. If the public API changed, regenerate the reports in `etc/*.api.md` (`npm run api:update`, then `npm run api:check`).
 2. Run `npm run lockfile:check` (CONTRIBUTING asks for it before every release), then the checks CI
    runs: `npm run lint`, `npm run typecheck`, `npm run lint:arch`, `npm run api:check`,
    `npm run test:coverage`, and `cd board && npm test`.

@@ -213,7 +213,7 @@ export function loadConfig(): AppConfig {
     maxTaskTokenBudget: caps.maxTaskTokenBudget,
     mcp: {
       enabled: getBoolEnv("MCP_SERVER_ENABLED", false),
-      path: getEnv("MCP_SERVER_PATH", "/mcp"),
+      path: process.env["MCP_SERVER_PATH"] || "/mcp", // blank = default
       requireDispatchConsent: getBoolEnv("MCP_DISPATCH_CONSENT", true),
       ...(mcpAllowedTools ? { allowedTools: mcpAllowedTools } : {}),
       ...(mcpAllowedResources ? { allowedResources: mcpAllowedResources } : {}),

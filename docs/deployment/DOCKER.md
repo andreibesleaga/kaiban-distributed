@@ -2,12 +2,17 @@
 
 > Run the full kaiban-distributed blog team pipeline locally using Docker Compose — no cloud account needed.
 
-Two compose files are provided under `examples/blog-team/`:
+Five compose stacks ship in the repository:
 
-| File | Messaging | Use case |
-|------|-----------|----------|
-| `docker-compose.yml` | BullMQ (Redis) | Default, fastest local setup |
-| `docker-compose.kafka.yml` | Kafka | Kafka driver end-to-end testing |
+| File | Messaging | What it starts |
+|------|-----------|----------------|
+| `docker-compose.yml` (repo root) | Redis; Kafka and Zookeeper also start | One gateway and one generic worker (`ROLE=worker`, agents `researcher,writer`); the stack the Gateway and Worker tables below describe |
+| `examples/blog-team/docker-compose.yml` | BullMQ (Redis) | Gateway and the three blog-team workers; default, fastest local setup |
+| `examples/blog-team/docker-compose.kafka.yml` | Kafka | The same with Zookeeper and Kafka, for Kafka end-to-end testing |
+| `examples/global-research/docker-compose.yml` | BullMQ (Redis) | Gateway, searcher replicas, writer, reviewer, editor |
+| `examples/global-research/docker-compose.kafka.yml` | Kafka | The same over Kafka |
+
+The sections below use the blog-team stacks; the global-research stacks are started with `scripts/global-research.sh` (see [EXAMPLES.md](../../EXAMPLES.md)) and take the same variables.
 
 ---
 
@@ -40,6 +45,8 @@ RESEARCH_WAIT_MS=120000
 WRITE_WAIT_MS=240000
 EDIT_WAIT_MS=300000
 ```
+
+Compose does not pass the whole file to the containers: see [Which variables reach the containers](#which-variables-reach-the-containers).
 
 ---
 
@@ -168,12 +175,15 @@ localhost:3000  ──►  gateway   (HTTP + Socket.io)
 | `KAFKA_BROKERS` | `localhost:9092` (host) / `kafka:29092` (Docker Compose) | Kafka only |
 | `KAFKA_CLIENT_ID` | per-service name | Kafka only |
 | `KAFKA_GROUP_ID` | `kaiban-group` | Kafka only |
-| `SEMANTIC_FIREWALL_ENABLED` | `false` | Both BullMQ and Kafka stacks |
-| `CIRCUIT_BREAKER_ENABLED` | `false` | Both BullMQ and Kafka stacks |
-| `JIT_TOKENS_ENABLED` | `false` | Both BullMQ and Kafka stacks |
-| `CIRCUIT_BREAKER_THRESHOLD` | `10` | Both BullMQ and Kafka stacks |
-| `CIRCUIT_BREAKER_WINDOW_MS` | `60000` | Both BullMQ and Kafka stacks |
+| `SEMANTIC_FIREWALL_ENABLED` | `false` | All five stacks |
+| `CIRCUIT_BREAKER_ENABLED` | `false` | All five stacks |
+| `JIT_TOKENS_ENABLED` | `false` | All five stacks |
+| `CIRCUIT_BREAKER_THRESHOLD` | `10` | All five stacks |
+| `CIRCUIT_BREAKER_WINDOW_MS` | `60000` | All five stacks |
 | `CONTROL_PLANE_ENABLED` | unset (off) | Emergency STOP ALL (2.1.0): set `true` on the gateway, every worker and the orchestrator; the gateway also needs `BOARD_JWT_SECRET` for board/HTTP stops. All compose files pass both through |
+| `CHANNEL_SIGNING_SECRET`, `BOARD_JWT_SECRET` | unset | Passed through by every stack (the board secret to the gateway; the root stack's worker gets it too) |
+| `MAX_TOKEN_BUDGET`, `MAX_TASK_TOKEN_BUDGET` | `200000`, `50000` | Token caps per agent and per task; every worker service passes them |
+| `REDIS_PASSWORD` | unset | Root `docker-compose.yml` only: starts Redis with `--requirepass` and puts the password into the containers' `REDIS_URL`. The example stacks do not read it |
 
 The Gateway and Worker tables below describe the root `docker-compose.yml` (`kaiban-gateway`,
 `kaiban-worker`). In `examples/blog-team/docker-compose.yml` the gateway sets no `ROLE` (default
@@ -199,6 +209,27 @@ The Gateway and Worker tables below describe the root `docker-compose.yml` (`kai
 
 > **Role selection (ADR-013).** One image, role chosen at runtime via `ROLE`. The compose stack runs
 > a `kaiban-gateway` (HTTP/`/health`) and a `kaiban-worker` (no HTTP, healthcheck disabled).
+
+---
+
+## Which variables reach the containers
+
+`docker compose --env-file .env` only fills the `${...}` references written inside the compose file. A variable that is in `.env` but not referenced there never reaches a container. The stacks pass these:
+
+| Variable | Gateway | Workers | Notes |
+|----------|---------|---------|-------|
+| `CONTROL_PLANE_ENABLED`, `CHANNEL_SIGNING_SECRET` | yes | yes | Also the orchestrator service |
+| `BOARD_JWT_SECRET` | yes | root stack only | |
+| `A2A_JWT_SECRET` | yes | root stack only | |
+| `NODE_ENV` | yes | root stack only | Only the gateway and a `ROLE=worker` process check the production rules (three secrets of 32+ bytes, all different; on the gateway also `SOCKET_CORS_ORIGINS`) |
+| `TRUST_PROXY`, `MCP_SERVER_ENABLED`, `MCP_DISPATCH_CONSENT` | yes | no | |
+| `SOCKET_CORS_ORIGINS`, `A2A_PUBLIC_URL`, `MCP_SERVER_PATH`, `MCP_ALLOWED_TOOLS`, `MCP_ALLOWED_RESOURCES`, `MCP_ALLOWED_PROMPTS`, `OTEL_EXPORTER_OTLP_ENDPOINT` | yes, only when set | no | Passed only when the variable exists in `.env` or the shell. A blank line (`MCP_ALLOWED_TOOLS=`) counts as set: for the allow-lists it means none, so delete the line instead; a blank `SOCKET_CORS_ORIGINS` or `MCP_SERVER_PATH` is treated as unset |
+| `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `LOG_LEVEL` | yes | yes | Set the timeouts identically on the gateway and every worker |
+| `SEMANTIC_FIREWALL_ENABLED`, `CIRCUIT_BREAKER_*`, `JIT_TOKENS_ENABLED` | no | yes | |
+| `VALID_HITL_DECISIONS` | yes | no | |
+| `MAX_TOKEN_BUDGET`, `MAX_TASK_TOKEN_BUDGET`, model and key variables | no | yes | |
+
+Unset or empty keeps the code default. Any variable not in this table (`ECONOMICS_*`, `GOVERNANCE_*`, `LOG_PRETTY`, the TLS paths and so on) must be added under `environment:` of the service, or give the service `env_file: .env`. The Kubernetes and Helm files have their own settings: see [KUBERNETES.md](KUBERNETES.md) and [HELM.md](HELM.md).
 
 ---
 
@@ -228,7 +259,7 @@ docker compose -f examples/blog-team/docker-compose.yml ps
 
 ### Kafka health check takes too long
 
-The Kafka healthcheck has a 30 s start period and 15 retries (up to ~3.5 min total). This is normal for `cp-kafka:7.6.0`. Wait for:
+The Kafka healthcheck has a 30 s start period and 15 retries (up to about 4 min in total). This is normal for `cp-kafka:7.6.0`. Wait for:
 
 ```
 kaiban-distributed-kafka-1  healthy

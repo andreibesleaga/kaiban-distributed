@@ -61,7 +61,7 @@
 
 **Configuration:**
 ```bash
-BOARD_JWT_SECRET=<random 32+ bytes, base64>   # activates auth (token lifetime is 3600 s, set in code)
+BOARD_JWT_SECRET=<random 32+ bytes, base64>   # activates auth (default token lifetime 3600 s; the second argument of `issueBoardToken` changes it)
 ```
 
 **Board app:** Set `VITE_BOARD_TOKEN=<token>` in `board/.env` before running `npm run dev`. The token is injected at build time (Vite `import.meta.env`).
@@ -75,14 +75,15 @@ process.env.BOARD_JWT_SECRET = 'your-secret';
 const token = issueBoardToken('alice', 3600); // 1 hour
 ```
 
-Or from a shell:
+Or from a shell, in a clone after `npm run build`:
 ```bash
-node -e "
-  process.env.BOARD_JWT_SECRET='$(openssl rand -base64 32)';
-  const { issueBoardToken } = require('./dist/src/infrastructure/security/board-auth');
-  console.log(issueBoardToken('ops-team'));
-"
+export BOARD_JWT_SECRET=<the same value the gateway runs with>
+node -e "console.log(require('./dist/src/infrastructure/security/board-auth').issueBoardToken('ops-team', 3600))"
 ```
+
+With the installed package, the function is exported from the root: `node -e "console.log(require('kaiban-distributed').issueBoardToken('ops-team', 3600))"`.
+
+The secret must be the one the gateway uses: a token signed with any other value is rejected (401). The token is a credential: do not paste it into shared channels. It lasts one hour by default, so mint it before you need it (for example before an emergency STOP ALL); `npm run stop-all` needs no token.
 
 **Tests:** `tests/unit/security/board-auth.test.ts`, `tests/unit/gateway/SocketGateway-auth.test.ts`, `tests/e2e/security-integration.test.ts`
 
@@ -428,7 +429,7 @@ redis:
 
 - When `REDIS_PASSWORD` is set, Redis starts with `requirepass`.
 - Port is bound to `127.0.0.1` only — not externally reachable on a single-host deployment.
-- The compose file puts the password into the gateway's and worker's `REDIS_URL` (`redis://:${REDIS_PASSWORD}@redis:6379`) for you. For processes on the host use `localhost:6379` in that URL.
+- The compose file puts the password into the gateway's and worker's `REDIS_URL` (`redis://:${REDIS_PASSWORD}@redis:6379`) for you. For processes on the host use `localhost:6379` in that URL and write the real password into it: `.env` files are read by dotenv, which does not expand `${REDIS_PASSWORD}`.
 - Use a URL-safe password (`openssl rand -hex 24`): base64 output can contain `/`, `+` and `=`, which break the URL.
 - The username, password, database and a `rediss://` scheme in `REDIS_URL` are applied to every Redis client: the BullMQ queues and workers as well as the state, HITL, control and readiness clients.
 
@@ -495,7 +496,7 @@ All services in `docker-compose.yml` declare CPU and memory limits to prevent on
 | **Request logging** | UUID per HTTP request; method, path, status logged on response finish |
 | **HITL decision logging** | Decision + truncated task ID logged on receipt and Redis publish |
 | **Channel signing warnings** | `console.warn` when an unsigned/invalid Redis message is rejected |
-| **OTLP auth** | Pass `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <token>` for authenticated collectors |
+| **OTLP auth** | Set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <token>` for authenticated collectors; the OpenTelemetry SDK itself reads it, it is not parsed by kaiban-distributed |
 
 **Compliance:** SOC2 (non-repudiation), ISO 27001 (audit logs), STRIDE (Repudiation mitigation)
 
@@ -570,9 +571,11 @@ Run through this before deploying to any internet-facing or multi-tenant environ
 - [ ] `SOCKET_CORS_ORIGINS=https://board.example.com` — prevents wildcard CORS
 - [ ] `A2A_JWT_SECRET=<openssl rand -base64 32>` — enables RPC auth
 - [ ] `CHANNEL_SIGNING_SECRET=<openssl rand -base64 32>` — enables Redis signing
-- [ ] `REDIS_PASSWORD=<openssl rand -hex 24>` and `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379`
+- [ ] `REDIS_PASSWORD=<openssl rand -hex 24>`; `REDIS_URL` carries the same password (a literal value in `.env` files: dotenv does not expand `${...}`; Docker Compose and shell exports do)
 - [ ] `TRUST_PROXY=true` if behind Nginx / Railway / Kubernetes ingress
-- [ ] Board token supplied at run time, **not** `VITE_BOARD_TOKEN` in the production bundle (a bundled token is public and can issue STOP ALL and HITL decisions)
+- [ ] Production boards: serve the static viewer with `#token=`, or keep the React board off the internet (local development only) until run-time tokens exist. Never put the token in `VITE_BOARD_TOKEN` of a production bundle (it is public and can issue STOP ALL and HITL decisions)
+- [ ] `CONTROL_PLANE_ENABLED=true` on every process if you want the emergency STOP ALL (it needs `CHANNEL_SIGNING_SECRET` in production); keep the hosts' clocks synchronised (NTP)
+- [ ] With Docker Compose, check that the variables above reach the containers: [which variables reach the containers](../deployment/DOCKER.md#which-variables-reach-the-containers)
 
 ### Strongly Recommended
 

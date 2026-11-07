@@ -1,3 +1,5 @@
+Current record: 2.1.3 (section "2.1.3 verification record", line 275); 2.1.2 is at line 307. Earlier sections are history.
+
 # v2.0 Verification Record (Phase Z — local)
 
 > **Historical record** of the June 2026 v2.0 verification, kept as written; its numbers and
@@ -270,6 +272,40 @@ The spec was written first and failed for the right reason (no button) before th
 
 ---
 
+# 2.1.3 verification record — documentation and configuration (2026-11-07)
+
+Scope: the fixes of the documentation, diagram and screenshot audit (110 findings in three areas,
+plus 7 image findings), the Compose, Helm and Kubernetes forwarding of the documented settings, three
+small runtime fixes found on the way (dialog centring, STOPPED reported once, blank
+`A2A_PUBLIC_URL`/`SOCKET_CORS_ORIGINS`/`MCP_SERVER_PATH` treated as unset), then a read-only
+whole-diff review (no blocker, 2 medium and 7 low items, all applied) and one Copilot review round (5 items,
+all applied: a replayed task reports its own stop, Helm Secret naming in the cloud guides, viewer token on Vercel,
+board proxy wording, kill-versus-stop wording). Every line below is from a
+command run on the final tree of branch `release/2.1.3`.
+
+## Gate
+
+| Check | Result |
+| --- | --- |
+| `npm run test:coverage` | 151 files, 1,789 tests; 100 % statements (2,945), branches (1,763), functions (686), lines (2,708) |
+| `npm run typecheck` · `npm run lint` · `npm run lint:arch` · `npm run api:check` · `npm run build` | clean · 0 warnings · no cycle · reports current · ok |
+| `cd board && npx tsc --noEmit && npx vitest run && npm run build` | 18 files, 207 tests · built |
+| `cd board && npx playwright test board-contrast board-dialogs viewers-control viewers-visual` (with `EXAMPLES_VIEWER_DIR`) | 62 passed (one teardown timed out while the e2e suites loaded the machine; the spec alone passed again). `board-visual` and `board-control` need a live gateway and were run for the 2.1.2 record |
+| `npm run test:e2e` · `test:e2e:security` · `test:e2e:chaos` · `test:e2e:kafka` | 73 · 41 · 2 · 4 tests, all passing (Redis and Kafka started by the setup files) |
+| `scripts/check-deploy-manifests.sh` | `docker compose config` for the 5 stacks; `helm lint` + `helm template` (Redis on and off) for both charts; a values file with `AGENT_TIMEOUT_MS: 1800000` renders `"1800000"` |
+| `npm run lockfile:check` · `scripts/smoke-consumer.sh` · `node scripts/audit-gate.js` | ok (lockfile rewritten with npm 10) · passed (both entry points import) · 0 high/critical outside the documented exception |
+| lychee (offline) on README, CHANGELOG, MIGRATION, EXAMPLES, AGENTS, SECURITY, CONTRIBUTING, LICENSING, `docs/`, example, board and `src/shared` READMEs | 442 links, 242 unique, 0 errors |
+
+## Run in Docker (blog-team stack, `NODE_ENV=production`, mock OpenAI-compatible model)
+
+A throw-away `.env` with `NODE_ENV=production`, the three secrets, `SOCKET_CORS_ORIGINS`,
+`TRUST_PROXY`, `LOG_LEVEL=debug`, `AGENT_TIMEOUT_MS=120000` and `CONTROL_PLANE_ENABLED=true`:
+`docker compose config` showed each variable on the right service; `exec … env` confirmed them inside
+the gateway and a worker (`NODE_ENV` empty on the workers, as intended); the gateway started in
+production mode and answered `/health`; the orchestrator ran against the mock model;
+`POST /control/stop-all` with a board token returned 202; the task in progress reported STOPPED once
+(the two finished or unstarted agents none); the orchestrator printed the stop and saved its run log.
+
 # 2.1.2 verification record — audit fixes (2026-11-06)
 
 Scope: the fixes of the final audit (157 verified findings over seven areas: worker core, gateway
@@ -282,7 +318,7 @@ tree of branch `release/2.1.2`.
 
 | Check | Result |
 | --- | --- |
-| `npm run test:coverage` | 151 files, 1,778 tests; 100 % statements (2,922), branches (1,751), functions (684), lines (2,688) |
+| `npm run test:coverage` | 151 files, 1,780 tests; 100 % statements (2,922), branches (1,751), functions (684), lines (2,688) |
 | `npm run typecheck` · `npm run lint` · `npm run lint:arch` · `npm run api:check` · `npm run build` | clean · 0 warnings · no cycle · reports current · ok |
 | `cd board && npx tsc --noEmit && npx vitest run && npm run build` | 18 files, 207 tests · built |
 | `cd board && npx playwright test` (with `EXAMPLES_VIEWER_DIR`) | 61 passed, 1 skipped (`board-control` needs a live gateway); `board-visual` passed against the Vite dev server |

@@ -27,6 +27,8 @@ spec:
         envFrom:
         - configMapRef:
             name: {{ include "kaiban-global-research.fullname" . }}-config
+        - secretRef:
+            name: {{ include "kaiban-global-research.fullname" . }}-secrets
         env:
         - name: AGENT_IDS
           value: "searcher,writer,reviewer,editor"

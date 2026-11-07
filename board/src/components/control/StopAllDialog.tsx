@@ -35,7 +35,7 @@ export default function StopAllDialog({ onConfirm, onClose }: Props) {
   return (
     <dialog
       ref={dialogRef}
-      className="rounded-xl border border-red-700 bg-slate-900 text-slate-200 p-0 max-w-lg w-full shadow-2xl backdrop:bg-black/70"
+      className="m-auto rounded-xl border border-red-700 bg-slate-900 text-slate-200 p-0 max-w-lg w-full shadow-2xl backdrop:bg-black/70"
       aria-labelledby="stop-all-title"
       aria-describedby="stop-all-desc"
     >

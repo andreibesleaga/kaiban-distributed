@@ -79,6 +79,16 @@ describe("AgentStatePublisher — emergency stop", () => {
     expect(lastAgentStatus()).toBe("IDLE");
   });
 
+  it("a replayed task (same id, new send) reports its own stop", async () => {
+    // DLQ replay keeps the task id: a task that starts again on this worker must not inherit
+    // the earlier stop's "already reported" mark.
+    const stop = new EmergencyStopError();
+    const wrapped = publisher.wrapHandler(vi.fn().mockRejectedValue(stop));
+    await expect(wrapped(payload("t-replay"))).rejects.toBe(stop);
+    await expect(wrapped(payload("t-replay"))).rejects.toBe(stop);
+    expect(taskStatuses("t-replay")).toEqual(["DOING", "STOPPED", "DOING", "STOPPED"]);
+  });
+
   it("a late result after an emergency abort never shows as DONE (ES-12)", async () => {
     const controller = new AbortController();
     const handler = vi.fn(async () => {
@@ -174,6 +184,32 @@ describe("AgentStatePublisher — emergency stop", () => {
       expect.objectContaining({ taskId: "t-5", status: "STOPPED", title: "t-5" }),
     ]);
     expect(last.agents).toBeUndefined();
+  });
+
+  it("publishStopped() publishes a task once, although the handler wrapper and the actor both report it", async () => {
+    const reason = new EmergencyStopError();
+    const controller = new AbortController();
+    const wrapped = publisher.wrapHandler(
+      (_p, signal) =>
+        new Promise<string>((_r, reject) =>
+          signal!.addEventListener("abort", () => reject(signal!.reason)),
+        ),
+    );
+    const running = wrapped(payload("t-6"), controller.signal);
+    controller.abort(reason);
+    await expect(running).rejects.toBe(reason); // the wrapper published STOPPED
+    publisher.publishStopped(payload("t-6")); // the actor's onEmergencyStop for the same task
+    expect(taskStatuses("t-6").filter((s) => s === "STOPPED")).toHaveLength(1);
+  });
+
+  it("publishStopped() remembers a bounded number of tasks: the oldest is forgotten first", () => {
+    publisher.publishStopped({ ...payload("old"), data: {} });
+    for (let i = 0; i < 1_000; i++) publisher.publishStopped({ ...payload(`t-${i}`), data: {} });
+    mockPublish.mockClear();
+    publisher.publishStopped({ ...payload("old"), data: {} }); // evicted: reported again
+    publisher.publishStopped({ ...payload("t-999"), data: {} }); // still remembered: skipped
+    expect(taskStatuses("old")).toEqual(["STOPPED"]);
+    expect(taskStatuses("t-999")).toEqual([]);
   });
 
   it("publishControlAck() publishes the ack as a `control` delta (ES-9)", () => {

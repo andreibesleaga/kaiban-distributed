@@ -52,7 +52,7 @@ export default function TaskDetailModal({ task, agent, onClose }: Props) {
   return (
     <dialog
       ref={dialogRef}
-      className="rounded-xl border border-slate-700 bg-slate-900 text-slate-200 p-0
+      className="m-auto rounded-xl border border-slate-700 bg-slate-900 text-slate-200 p-0
                  max-w-2xl w-full shadow-2xl backdrop:bg-black/60"
       onClick={handleBackdropClick}
       aria-labelledby="task-modal-title"

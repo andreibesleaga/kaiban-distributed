@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-18
 - **Deciders:** Andrei Besleaga (maintainer)
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B7 / §B8 Phase 7eq; maintainer directive 2026-06-18
+- **Refs:** the v2.0 planning notes (private; not in this repository); maintainer directive 2026-06-18
 
 ## Decision
 Use the **best latest STABLE, security-fixed** version of every dependency where we can. Fall back only
@@ -11,7 +11,7 @@ on a *complete* breaking change — and even then, attempt the upgrade and **fix
 before holding. **Every upgrade is verified against the full gate** (typecheck · lint · build · 100%-cov
 test · `npm audit --audit-level=high`) before it lands; majors get a fix-forward pass + diff-review.
 Keep `engines.node: ">=22"` (Node 22 = maintenance LTS; Node 24 = active LTS; wider consumer compat).
-This supersedes the master plan's narrower "pin conservative known-good" framing for KaibanJS (§B0).
+This supersedes the earlier, narrower "pin conservative known-good" framing for KaibanJS.
 
 ## Adoption (verified online 2026-06-18 — versions/dates confirmed vs registry.npmjs.org)
 **DONE:** `kaibanjs` 0.23.1 → **0.24.2** (full gate green, no bridge drift, 0 high/critical).
@@ -35,3 +35,5 @@ No HOLDs on security grounds (no open CVEs in any current line).
 ## Consequences
 - (+) Latest security fixes + modern stack (React 19 / Tailwind 4 / TS 6) before the v2.0 feature work.
 - (−) Several majors to fix-forward; do them incrementally with the gate as the guard, not in one big bang.
+
+> **Update (2.0.2 onward, November 2026).** The policy above applied to the 2.0 migration; its version numbers are a record, not the current versions. Today only same-major updates are taken automatically: Dependabot ignores major versions, and a major update is a separate, reasoned change recorded in the pull request. Every update still passes the full gate.

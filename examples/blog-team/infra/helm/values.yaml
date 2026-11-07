@@ -35,8 +35,27 @@ config:
   # Redis URL for the pods. Empty = the in-cluster Redis this chart creates.
   # With redis.enabled=false set it, e.g. --set config.REDIS_URL=rediss://:password@host:6380
   REDIS_URL: ""
+  # Optional settings, rendered into the ConfigMap only when non-empty (empty = the code default).
+  # Numbers (AGENT_TIMEOUT_MS) are rendered as integers; quoted strings also work.
+  # Production: NODE_ENV=production makes the gateway refuse to start unless BOARD_JWT_SECRET, A2A_JWT_SECRET and
+  # CHANNEL_SIGNING_SECRET (32+ bytes each, all different) are set under secrets and SOCKET_CORS_ORIGINS is set;
+  # the agent pods refuse to start without CHANNEL_SIGNING_SECRET when CONTROL_PLANE_ENABLED=true.
+  NODE_ENV: ""
+  TRUST_PROXY: ""
+  SOCKET_CORS_ORIGINS: ""
+  A2A_PUBLIC_URL: ""
+  AGENT_TIMEOUT_MS: ""
+  RETRY_ON_TIMEOUT: ""
+  LOG_LEVEL: ""
+  MCP_SERVER_ENABLED: ""
+  SEMANTIC_FIREWALL_ENABLED: ""
+  CIRCUIT_BREAKER_ENABLED: ""
+  JIT_TOKENS_ENABLED: ""
 
 secrets:
+  # false = the chart renders no Secret; create one named <release>-kaiban-blog-team-secrets yourself
+  # (External Secrets Operator, Sealed Secrets) with the same keys. The pods read it by that name.
+  create: true
   # Plain-text values: the chart base64-encodes them into the Secret. Pass them with --set
   # or use an external secret manager; do not commit real keys.
   OPENAI_API_KEY: ""
@@ -45,3 +64,5 @@ secrets:
   BOARD_JWT_SECRET: ""
   # Optional: signs stored control commands. Rendered only when non-empty.
   CHANNEL_SIGNING_SECRET: ""
+  # Optional: A2A bearer-token auth on /a2a/rpc. Rendered only when non-empty.
+  A2A_JWT_SECRET: ""

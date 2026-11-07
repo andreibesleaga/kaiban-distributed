@@ -21,3 +21,5 @@ dependency. Maps to OWASP ASI08 (Cascading Failures) / LLM10 (Unbounded Consumpt
 - **+** Composes with retry/DLQ and the per-task timeout.
 - **−** A tripped breaker fast-fails tasks to the DLQ — operators must monitor DLQ
   depth and tune the threshold for their workload.
+
+> **Update (2.1.2, November 2026).** "Retries 3x" means up to 3 attempts in all (two retries), with linear back-off (`RETRY_ATTEMPTS = 3`). The breaker settings are validated since 2.1.2: whole numbers of at least 1, otherwise the default is used and a warning is logged.

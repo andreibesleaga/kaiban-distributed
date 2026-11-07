@@ -17,6 +17,8 @@ npm run build          # tsc -> dist/
 cd board && npm ci     # board UI deps (separate lockfile)
 ```
 
+To run an example, see [EXAMPLES.md](EXAMPLES.md); to see the board, `cd board && npm run dev`.
+
 ## Lockfiles
 
 Dependabot writes `package-lock.json` with npm 11, which can leave out optional nested
@@ -41,7 +43,9 @@ npm run lockfile:fix     # rewrites both lockfiles with npm 10.9.8 (accepted by 
 | `npm run lint:arch` | madge circular-import check (`--extensions ts`) |
 | `npm run test:coverage` | unit tests; coverage is **enforced at 100% of `src/**`** |
 | `cd board && npm test` | board UI component tests |
-| `npm run test:e2e` / `:kafka` / `:security` | integration suites (need Docker) |
+| `npm run test:e2e` / `:kafka` / `:security` / `:chaos` | integration suites (need Docker; not part of the pull-request gate) |
+| `cd board && npm run build` | board type-check and build (the "board" CI job) |
+| `scripts/check-deploy-manifests.sh` | after changing a compose file or a Helm chart (needs `docker` and `helm`; the "deploy-manifests" CI job) |
 
 ## CI workflows
 
@@ -80,9 +84,10 @@ from `etc/*.api.md` (`npm run api:update` rewrites the reports for review).
 - [ ] **New behavior ships with new tests** covering golden-path **+ edge + error** cases.
 - [ ] Coverage stays at 100% of `src/**` (the gate fails otherwise).
 - [ ] **No breaking change to public behavior** unless intentional and documented.
-      The 6 verification gates: public API surface (`api:check`), CLI
-      `--help`, config schema (env vars additive with safe defaults), on-wire
-      message shapes, ≤5% perf delta, and a non-positive CVE delta.
+      The gates CI enforces: the public API surface (`api:check`), the config
+      schema (new environment variables are additive with safe defaults and
+      documented in `.env.example`), on-wire message shapes, `npm run stop-all -- --help`,
+      and no new HIGH or CRITICAL advisory (`scripts/audit-gate.js`).
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`.
 - [ ] Docs updated for any user-visible change (and kept in sync with the code —
       this repo is the companion code for the book *Agentic AI Architectures*; accuracy matters).
@@ -93,7 +98,7 @@ Work on a feature branch; keep commits focused. Conventional-commit prefixes
 (`fix:`, `feat:`, `docs:`, `chore:`) are appreciated.
 
 Some docs and code comments cite `KAIBAN-v2.0-MASTER-PLAN.md` ("the master plan"): it is a private
-planning file, not in this repository, and the ADRs in [`docs/decisions/`](docs/decisions/) are the public record.
+planning file, not in this repository, and the ADRs in [`docs/decisions/`](docs/decisions/) (index: [`docs/decisions/README.md`](docs/decisions/README.md)) are the public record.
 
 ## Security
 

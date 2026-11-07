@@ -24,6 +24,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: kaiban-blog-team-config
+            - secretRef:
+                name: kaiban-blog-team-secrets
           env:
             - name: AGENT_IDS
               value: "researcher,writer,editor"

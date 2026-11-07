@@ -5,7 +5,7 @@
 # =============================================================================
 #
 # This script manages the complete lifecycle of the "Blog Team" example.
-# It handles starting Docker Compose, launching the board preview in browser,
+# It handles starting Docker Compose, printing how to open the boards,
 # running the orchestrator, and starting the real-time terminal monitor —
 # all correctly mapped to either Redis (BullMQ) or Kafka, and either local
 # or fully containerised orchestrator mode.
@@ -20,6 +20,9 @@
 #             The orchestrator container attaches to your terminal for HITL
 #             decisions [1/2/3/4]. Without this flag the orchestrator runs
 #             locally via npx ts-node (default, requires Node.js + deps).
+#
+# Usage note: run it from the repo root with a .env file. The script stops the
+# stack when the orchestrator exits.
 # =============================================================================
 
 set -e
@@ -98,7 +101,7 @@ case "$COMMAND" in
     echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
     echo ""
     echo -e "  \033[1;36mA) React Board\033[0m (interactive HITL, modern UI):"
-    echo -e "     \033[0;32mcd board && npm install && npm run dev\033[0m"
+    echo -e "     \033[0;32mcd board && npm ci && npm run dev\033[0m"
     echo -e "     Open: \033[4mhttp://localhost:5173\033[0m"
     echo ""
     echo -e "  \033[1;36mB) Static HTML viewer\033[0m (zero setup):"
