@@ -3,6 +3,8 @@
 > All runnable examples collected in one place. Each is self-contained.
 >
 > For detailed information on Distributed Global Research Team implementation - see [examples/global-research/README.md](examples/global-research/README.md)
+>
+> See also the examples repository [kaiban-distributed-examples](https://github.com/andreibesleaga/kaiban-distributed-examples) (KaibanJS examples ported to the distributed runtime).
 
 > **Important:** Run only **one example at a time** on the same Redis instance.
 > Both examples share the same Redis pub/sub channels (`kaiban-state-events`,
@@ -267,7 +269,7 @@ OPENROUTER_API_KEY=sk-or-v1-... \
 LLM_MODEL=meta-llama/llama-3.1-8b-instruct:free \
   npx ts-node examples/blog-team/editor-node.ts
 
-# Terminal 4 — Gateway
+# Terminal 4 — Gateway (build once first: npm run build)
 REDIS_URL=redis://localhost:6379 \
 AGENT_IDS=researcher,writer,editor PORT=3000 \
   node dist/src/main/index.js
@@ -389,7 +391,7 @@ BOARD_JWT_SECRET=<random 32+ bytes>   # board and HTTP stops need a board token
 Start the stack and a run as above, then stop everything that is running, from any of:
 
 ```bash
-# the board: the STOP ALL button in the header (start the board with VITE_BOARD_TOKEN=<board token>)
+# the board: the STOP ALL button in the header (start the board with VITE_BOARD_TOKEN=<board token>, local development only)
 # a static viewer (2.1.1): the same button; open examples/blog-team/viewer/board.html#token=<board token>
 # HTTP (a board token from issueBoardToken):
 curl -X POST http://localhost:3000/control/stop-all \
@@ -398,6 +400,8 @@ curl -X POST http://localhost:3000/control/stop-all \
 # a shell (Redis access only):
 npm run build && npm run stop-all -- --reason "runaway loop"
 ```
+
+A board token is a JWT signed with the gateway's `BOARD_JWT_SECRET`; mint one with the command in [SECURITY_FEATURES §1.1](docs/security/SECURITY_FEATURES.md#11-board-viewer-jwt-socketio). It lasts one hour by default, so keep a fresh one ready; `npm run stop-all` needs no token. On Kubernetes or Helm, enable the control plane as described in [KUBERNETES.md](docs/deployment/KUBERNETES.md) and [HELM.md](docs/deployment/HELM.md).
 
 Every running model call is cancelled, the run's tasks show `STOPPED`, and the orchestrator prints
 `Emergency stop: … — workflow stopped.` and exits with code 2. A new run started afterwards works
@@ -418,7 +422,7 @@ docker compose \
   up --build --scale writer=5
 ```
 
-All 5 instances subscribe to `kaiban-agents-writer`. Each job is processed exactly once (BullMQ competing consumers).
+All 5 instances subscribe to `kaiban-agents-writer`. Each job goes to one worker at a time (BullMQ competing consumers; delivery is at-least-once, so a stalled job can be delivered again).
 
 ---
 
@@ -429,6 +433,9 @@ but runs no agent, so a task needs a second container with `ROLE=worker`.
 
 ```bash
 docker build -t kaiban-distributed:latest .
+
+# On Linux, host.docker.internal does not resolve by default and the compose Redis listens on 127.0.0.1 only:
+# add --network host to both commands (then use redis://localhost:6379, and drop -p), or start both through compose.
 
 # Gateway (default ROLE=gateway): HTTP + A2A on :3000
 docker run -p 3000:3000 \
@@ -463,15 +470,15 @@ curl -X POST http://localhost:3000/a2a/rpc \
 ```bash
 # Unit tests (no Docker, all mocked)
 npm test
-# → 151 unit-test files / 1778 tests (6 Nov 2026), 100% coverage of src (board tests run separately via `cd board && npm test`)
+# → 151 unit-test files, 100% coverage of src; the count of the last recorded run is in docs/VERIFICATION.md (board tests run separately via `cd board && npm test`)
 
 # BullMQ E2E (Docker auto-starts Redis)
 npm run test:e2e
-# → 69 tests: task execution, fault tolerance, state sync, A2A protocol, completion routing
+# → 73 tests: task execution, fault tolerance, state sync, A2A protocol, completion routing
 
 # Kafka E2E (requires Kafka — starts automatically)
 npm run test:e2e:kafka
-# → 3 tests: publish-subscribe round-trip, unsubscribe
+# → 4 tests: publish-subscribe round-trip, unsubscribe, consumer-group scaling, STOP ALL
 
 # Playwright visual baselines of the board + example viewers (needs the board dev server + gateway)
 cd board && npm run test:visual   # add :update to regenerate baselines
@@ -539,16 +546,16 @@ Orchestrator
 ### Minimal implementation sketch
 
 ```typescript
-import { BullMQDriver } from 'kaiban-distributed';
 import { AgentActor } from 'kaiban-distributed';
+import { createDriver } from 'kaiban-distributed/shared';
 
-const REDIS = { connection: { host: 'localhost', port: 6379 } };
+// createDriver() applies REDIS_URL (password, user, db, rediss://) and REDIS_TLS_*; a connection built from host and port would drop them.
 const QUEUE  = 'research-fan-out';
 const AGENT  = 'researcher';
 
 // 1. Fan-out: spawn N workers — all share the same queue (competing consumers)
 for (let i = 0; i < 4; i++) {
-  const driver = new BullMQDriver(REDIS);
+  const driver = createDriver(AGENT);
   const actor  = new AgentActor(AGENT, driver, QUEUE, async (payload) => {
     const result = await myLLM.call(payload.data.instruction);
     return result;  // published to kaiban-events-completed automatically
@@ -558,7 +565,7 @@ for (let i = 0; i < 4; i++) {
 
 // 2. Fan-in: collect completions
 const completions = new Set<string>();
-const collector = new BullMQDriver(REDIS);
+const collector = createDriver('collector');
 await collector.subscribe('kaiban-events-completed', async (p) => {
   completions.add(p.taskId);
 });
@@ -653,7 +660,8 @@ The terminal prompt (`[1] PUBLISH [2] REVISE [3] REJECT`) remains active simulta
 | **Header** | Logo · topic · gateway URL · workflow status pill · connection badge (LIVE / CONNECTING / OFFLINE) |
 | **WorkflowBanner** | HITL buttons when `AWAITING_VALIDATION`; FINISHED / STOPPED / ERRORED banners otherwise |
 | **AgentGrid** | One card per agent: name, role, status badge with pulse animation, current task chip |
-| **KanbanBoard** | 5 columns: TODO · DOING · REVIEW · DONE · BLOCKED; tasks move in real-time |
+| **KanbanBoard** | 5 columns: To Do · In Progress · Review · Done · Blocked; tasks move in real-time; a task stopped by STOP ALL sits in Blocked with a `Stopped` badge |
+| **STOP ALL** | Header button (only when the gateway has the control plane on); confirmation dialog; afterwards a banner with the last stop and its node acknowledgements, and an alert line saying why the last STOP ALL did not go through (refused, not confirmed, not connected) |
 | **EconomicsPanel** | Total tokens · estimated cost · start/end time · elapsed duration |
 | **EventLog** | Reverse-chronological event stream (WORKFLOW / AGENT / TASK / HITL / CONNECT), capped at 200 |
 
