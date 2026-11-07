@@ -87,7 +87,7 @@ what the dependents declare. `js-yaml` is deliberately capped below `5` because
 
 ### Residual advisories
 
-**As of 2026-10-29**, after the dependency branch `deps/security-2026-10-24`
+**As of 2026-11-07**, after the dependency branch `deps/security-2026-10-24`
 (`body-parser` >=2.4.0, board `undici` >=7.30.1 and `happy-dom` 21) and pull request #167
 (`@opentelemetry/auto-instrumentations-node` 0.79), `npm audit` reports
 **0 critical** and one **high** advisory (reported as 9 package entries, below) with no fix in the version line that uses it (accepted

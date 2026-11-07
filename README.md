@@ -906,7 +906,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 1778 unit tests (no external deps)
+npm run test           # 1788 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -921,7 +921,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 1778 tests, 151 files | None (all mocked) |
+| Unit | `npm test` | 1788 tests, 151 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 73 tests, 12 files | Docker Redis (auto-managed by globalSetup) |
 | Security E2E | `npm run test:e2e:security` | 41 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 4 tests, 3 files | Docker Kafka + Zookeeper |
@@ -929,7 +929,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 | Board | `cd board && npm test` | 207 tests, 18 files: React component + Zustand store + a11y tests | happy-dom |
 | Visual (Playwright) | `cd board && npm run test:visual` | board screenshot baseline + structural checks of the two example viewers | board dev server + gateway + chromium |
 
-Counts as of 6 Nov 2026 (release 2.1.2); the recorded run is in [docs/VERIFICATION.md](docs/VERIFICATION.md), the single home for these numbers. CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
+Counts as of 7 Nov 2026 (release 2.1.3); the recorded run is in [docs/VERIFICATION.md](docs/VERIFICATION.md), the single home for these numbers. CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
 
 ### Coverage
 
@@ -1014,7 +1014,7 @@ kaiban-distributed/
 │       ├── runtime.ts  # Messaging driver + telemetry setup shared by both roles
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 1778 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 1788 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
