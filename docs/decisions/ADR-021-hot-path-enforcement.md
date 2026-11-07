@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-19
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase G + §B1.2 invariant #8; ADR-019/ADR-020
+- **Refs:** the v2.0 planning notes (private; not in this repository); ADR-019/ADR-020
 
 ## Context
 Phase E (economics) and Phase G (governance) shipped `CostReservation.admit()` and

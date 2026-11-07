@@ -7,7 +7,8 @@
 # npm 10 still requires, so a lockfile written by npm 11 makes `npm ci` on npm 10 fail
 # with "Missing: <pkg>@<version> from lock file". CI and the Dockerfile use npm 11.17.0
 # for that reason; a lockfile written by npm 10 is accepted by both, so this script
-# writes with npm 10 and lets a contributor on Node 22's bundled npm run `npm ci` too. This script always uses one pinned npm 10 through npx, whatever npm
+# writes with npm 10 and lets a contributor on Node 22's bundled npm run `npm ci` too.
+# This script always uses one pinned npm 10 through npx, whatever npm
 # is installed locally, installs nothing into node_modules and runs no install scripts.
 #
 # Usage:   sh scripts/fix-lockfile.sh            # rewrite, then prove npm ci on 10 and 11

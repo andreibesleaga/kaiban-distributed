@@ -15,14 +15,20 @@ Instructions for coding agents working in this repository. People start with
 | `src/main/` | `index.ts` picks the role from `ROLE`; `gateway.ts` and `worker.ts` are the two roles |
 | `src/index.ts` | the public library API (tracked in `etc/*.api.md`) |
 | `tests/unit/` | Vitest unit tests (100 % coverage gate); `tests/e2e/` needs Docker |
+| `src/economics/`, `src/governance/`, `src/memory/` | opt-in cost limits, Action Gate and audit chain, memory store (ADR-019, 020) |
+| `src/resilience/` | readiness and startup probes, graceful shutdown, DLQ replay (ADR-018) |
 | `board/` | the React Kanban board, a separate package with its own lockfile |
 | `examples/` | blog-team and global-research |
+| `etc/` | api-extractor reports (`npm run api:update`) |
+| `scripts/` | release, lockfile and example scripts |
+| `site/` | the static project page |
+| `bench/` | benchmarks (`npm run bench`) |
 | `docs/` | architecture, API spec, security, deployment guides, ADRs (`docs/decisions/`) |
 
 ## Commands
 
 ```bash
-npm ci                    # install; never npm install (it rewrites the lockfile)
+npm ci                    # install
 npm run build             # tsc -> dist/
 npm run lint              # ESLint, zero warnings, complexity <= 10
 npm run typecheck         # tsc --noEmit
@@ -30,6 +36,9 @@ npm run lint:arch         # madge: no circular imports
 npm run api:check         # public API must match etc/*.api.md
 npm run test:coverage     # unit tests; fails below 100 % of src/**
 cd board && npm ci && npm test
+cd board && npm run build         # board type-check + build (CI "board" job)
+scripts/check-deploy-manifests.sh # after changing a compose file or a Helm chart (needs docker, helm)
+npm run test:e2e                  # also :kafka :security :chaos; need Docker, not part of the PR gate
 npm run lockfile:check    # after any lockfile change
 ```
 
@@ -37,7 +46,7 @@ One test file: `npx vitest run --config vitest.config.mts tests/unit/<path>.test
 
 ## Rules
 
-- Install with `npm ci`. Change lockfiles only with `npm run lockfile:fix` (it writes them with npm 10.9.8, which npm 10 and 11 both accept; a lockfile written by npm 11 fails `npm ci` on npm 10), then run `npm run lockfile:check`.
+- Install with `npm ci`, never `npm install` (it rewrites the lockfile). Change lockfiles only with `npm run lockfile:fix` (it writes them with npm 10.9.8, which npm 10 and 11 both accept; a lockfile written by npm 11 fails `npm ci` on npm 10), then run `npm run lockfile:check`.
 - Keep coverage of `src/**` at 100 % (lines, branches, functions, statements). Add the test with the change.
 - Never publish from a local machine. Releases go through the tag-triggered workflows
   ([docs/RELEASE.md](docs/RELEASE.md)).
@@ -47,4 +56,6 @@ One test file: `npx vitest run --config vitest.config.mts tests/unit/<path>.test
 - Security controls stay opt-in and default-off. Configuration comes from environment variables;
   document a new one in `.env.example`.
 - A public API change needs `npm run api:update` and the updated `etc/*.api.md` in the same pull request.
-- Architecture decisions are recorded as ADRs in `docs/decisions/`.
+- Architecture decisions are recorded as ADRs in `docs/decisions/` (index: [docs/decisions/README.md](docs/decisions/README.md)).
+- Record every user-visible change in `CHANGELOG.md` under `[Unreleased]`.
+- Public docs hold no owner-addressed files and no references to private planning files.

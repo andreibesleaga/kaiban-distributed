@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-18
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B8 Phase 3 + §B2 A8; `docs/messaging/AMQP.md`
+- **Refs:** the v2.0 planning notes (private; not in this repository); `docs/messaging/AMQP.md`
 
 ## Context
 The original v2.0 plan included a full RabbitMQ/AMQP driver. It was descoped (maintainer decision):
@@ -23,3 +23,5 @@ RabbitMQ-specific work. Also, `amqplib` 2.x is not verified-compatible with `amq
 - (+) The AMQP slot + public `AmqpDriver` export exist for a future release with no breaking change.
 - (−) Selecting `amqp` fails fast on first use (intended). A real impl is roadmap — see
   `docs/messaging/AMQP.md`.
+
+> **Update (2.1.2, November 2026).** The gateway now refuses to boot with `MESSAGING_DRIVER=amqp`; the stub's methods still throw on use.

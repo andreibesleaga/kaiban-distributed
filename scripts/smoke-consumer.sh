@@ -6,6 +6,7 @@
 # (`kaiban-distributed` and `kaiban-distributed/shared`). Catches exports/files
 # regressions that the in-repo tests can't (they import from src/, not the
 # published package). Run before tagging a release.
+# Leaves the tarball in the repo root and logs in /tmp/smoke-*.log; the tarball is git-ignored.
 # =============================================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -15,7 +15,11 @@
 # Behavior:
 #   - Uses <example>/docker-compose.yml only
 #   - Starts root/board with `npm run dev` on port 5173 first
-#   - Runs the local orchestrator from <example>/orchestrator.ts
+#   - Needs an LLM key in .env or the environment (checked, and probed for OpenRouter)
+#   - Runs the local orchestrator from <example>/orchestrator.ts as a child process on
+#     this terminal (the human decision is typed here); SIGINT/SIGTERM, or `stop`, is
+#     forwarded to it
+#   - When the orchestrator ends, stops the board and runs `docker compose down` for the example
 #   - Assumes default Redis/BullMQ mode (no Kafka, no monitor)
 # =============================================================================
 

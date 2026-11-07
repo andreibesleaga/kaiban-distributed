@@ -47,6 +47,8 @@ emergency stop of everything.
    `noop`, node id, number of aborted tasks). The gateway also subscribes to the control channel, so
    the snapshot it gives boards carries the latest stop from any source, the CLI included.
 
+> **Update (2.1.2, November 2026).** Signing is required only in production. With `CHANNEL_SIGNING_SECRET` set, a control message is obeyed only when its signature verifies (no freshness limit). Without it, outside production, the subscriber logs a warning and obeys unsigned messages: any client with Redis PUBLISH access can then stop every node. With `NODE_ENV=production` the control channel refuses to start without the secret, unless `ALLOW_INSECURE_PRODUCTION=true`. `POST /control/stop-all` and the socket event allow 5 commands per 10 seconds per token subject; failed authentication is counted separately (30 per 10 seconds per client address) and is not in the shared 100-per-minute bucket; the request body is limited to 16 kB.
+
 ## Consequences
 - One press kills every running model call, task and workflow, including tasks still queued.
 - Every running model call is killed: the owned model instance cancels the provider request

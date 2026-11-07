@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-19
-- **Refs:** `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase E + §B1.3 (COST NFR guard); §B8 BETA.3
+- **Refs:** the v2.0 planning notes (private; not in this repository)
 
 ## Context
 The runtime already does **per-task** token accounting (`AgentStatePublisher.maxTokenBudget`) and shows
@@ -62,3 +62,5 @@ gates everything; when false, admission is always `allow` and no limiter is cons
 - Operators get a fleet budget/rate ceiling + admission control + cache accounting + right-sizing,
   all opt-in. One new dep (`rate-limiter-flexible`). The four modules are 100%-covered with no broker
   (real `RateLimiterMemory`). Built by four parallel subagents against the shared `types.ts` contract.
+
+> **Update (2026-06-19).** The actor hot-path wiring was done in ADR-021. Still open: federation-egress enforcement, a default fleet cost limiter (roadmap sections 1 and 2) and a durable or signed audit chain.

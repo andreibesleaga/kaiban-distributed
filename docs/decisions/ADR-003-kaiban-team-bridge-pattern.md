@@ -41,3 +41,5 @@ Wraps a KaibanJS `Team` and attaches `DistributedStateMiddleware` to `team.getSt
 - `createKaibanTaskHandler` returns `Promise<unknown>` (not `void`) to carry LLM results through completion events
 - `WorkflowResult.stats.llmUsageStats` provides real token counts; cost is estimated via a built-in `MODEL_PRICING` table (covers OpenAI, Anthropic, OpenRouter models)
 - kaiban-board receives real distributed state via the bridge's `DistributedStateMiddleware` attachment
+
+> **Update (2.1.2, November 2026).** `createKaibanTaskHandler` takes an optional third argument, an `ITokenProvider`. `KaibanTeamBridge` is deprecated for single-task execution; the board is fed by `AgentStatePublisher` on the worker path. Both are covered by the abort and STOP ALL rules in ADR-014 and ADR-025.

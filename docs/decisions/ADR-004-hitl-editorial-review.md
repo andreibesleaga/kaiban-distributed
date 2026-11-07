@@ -36,3 +36,5 @@ Add a mandatory HITL gate after Morgan's editorial review in the orchestrator (`
 - The REVISE path re-uses existing writer queue infrastructure
 - Constitution Article VI ("HITL for high-stakes decisions") is satisfied
 - The editor's `background` field enforces strict output format (Markdown with `Recommendation:` line) for reliable parsing by `parseRecommendation()`
+
+> **Update (2.1.2, November 2026).** The decision can come from the terminal prompt or from the board (channel `kaiban-hitl-decisions`); the first valid one wins, and the terminal is optional. A signal (STOP ALL) ends the wait (ADR-025).
