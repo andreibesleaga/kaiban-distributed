@@ -1,6 +1,6 @@
 # Economics / FinOps — Phase E
 
-> Authoritative spec: `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase E · decision: `docs/decisions/ADR-019`.
+> Decision: `docs/decisions/ADR-019`.
 
 A **fleet-wide** cost-control layer on top of the existing **per-agent and per-task** token accounting
 (`AgentStatePublisher` `maxTokenBudget` / `maxTaskTokenBudget`, board economics panel) — which it does **not** change
@@ -90,7 +90,10 @@ const { modelId } = routeModel(
 - **COST guard** (§B1.3): per-task accounting + the board economics panel are unchanged.
 - Unit-tested to 100% with **no broker** (real `RateLimiterMemory`).
 
+## Spend caps and these limits
+Spend caps (`MAX_TOKEN_BUDGET` and the others) are always on; the `ECONOMICS_*` limits here are an additional, off-by-default fleet layer.
+
 ## Deferred (roadmap)
-Wiring `admit()` into the bundled `AgentActor` hot path (deployed-worker enforcement), provider-specific
-cache-rate tables, and latency-aware routing. The governance **Action Gate** (Phase G) consumes
+A default fleet limiter for the deployed worker (the hot path exists: `AgentActor` consults an `admissionGate`, ADR-021; what is missing is a limiter wired by default), provider-specific
+cache-rate tables, and latency-aware routing. `ECONOMICS_ENABLED=true` alone enforces nothing on the deployed worker (a start-up warning says so): inject a limiter with `buildWorkerAdmissionGate()`. The governance **Action Gate** (Phase G) consumes
 `CostReservation` as a validator. See ADR-019.

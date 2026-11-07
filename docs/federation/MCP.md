@@ -1,6 +1,6 @@
 # MCP server (Model Context Protocol) — Phase M
 
-> Authoritative spec: `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase M · decision: `docs/decisions/ADR-017`.
+> Decision: `docs/decisions/ADR-017`.
 
 kaiban-distributed speaks MCP in **both** directions:
 
@@ -92,7 +92,6 @@ MCP **Roots**, **OAuth 2.1 / PKCE** (gateway JWT is v2.0 auth), `resource_link` 
 tool outputs, and server→client **sampling** are not exposed yet. See ADR-017.
 
 ## Library API
-Exported from both `kaiban-distributed` and `kaiban-distributed/shared` is not applicable — these ship
-from the main entry point (`kaiban-distributed`):
+These ship from the main entry point `kaiban-distributed` (not from `/shared`):
 `buildMcpServer`, `createMcpHttpHandler`, `McpServerDeps`, `McpHttpHandler`, `McpAllowList`, the
 `MCP_*` capability-name constants, and the `McpDispatch*` / `McpAgent*` types.

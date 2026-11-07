@@ -1,6 +1,6 @@
 # Governance & enforcement — Phase G
 
-> Authoritative spec: `KAIBAN-v2.0-MASTER-PLAN.md` §B5.1 Phase G · decision: `docs/decisions/ADR-020`.
+> Decision: `docs/decisions/ADR-020`.
 
 An external, **non-bypassable** enforcement spine — **default-OFF**. With `GOVERNANCE_ENABLED` unset the
 Action Gate is a no-op (`allow`, no validators consulted, nothing audited). When enabled it is
@@ -18,8 +18,9 @@ severe** verdict: `allow < degrade < escalate < block < terminate`. Each decisio
 tamper-evident `AuditSink`.
 
 ```ts
+import { readFileSync } from "node:fs";
 import {
-  ActionGate, AuditLog, PolicyEngine, AgentRegistry,
+  ActionGate, AuditLog, PolicyEngine, AgentRegistry, loadPolicySet,
   firewallValidator, breakerValidator, costValidator,
 } from "kaiban-distributed";
 

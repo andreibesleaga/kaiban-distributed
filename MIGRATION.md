@@ -1,9 +1,17 @@
-# MIGRATION — v1.x → v2.0
+# Migration guide
+
+Where to start: upgrading from 2.1.1, read [2.1.1 → 2.1.2](#211--212-audit-fixes); from 2.0.x, read
+[2.0.x → 2.1.0](#20x--210-emergency-stop-all-additive), then 2.1.0 → 2.1.1, then 2.1.1 → 2.1.2; from 1.x, read the v2.0
+section below (v1.x → v2.0), then the 2.1 sections. The 2.1 sections run newest first. For
+2.0.1 and 2.0.2 operator changes see [CHANGELOG.md](CHANGELOG.md): production boot refuses missing, short or repeated
+signing secrets, tokens carry a `role` claim, `RETRY_ON_TIMEOUT` is new (default off) and Kafka workers send heartbeats.
+
+## v1.x → v2.0
 
 > v2.0 is a **major** release with breaking changes. This guide covers every breaking change.
 > **Status:** `v2.0.0` was released on 2026-06-22. This guide was written during development on
 > `feat/v2.0`, one entry per §B8 phase; changes after 2.0.0 are in `CHANGELOG.md`.
-> Authoritative plan: `KAIBAN-v2.0-MASTER-PLAN.md`.
+>
 
 ## Licensing (Phase 0)
 - The **published npm library** is now **Apache-2.0** (was GPL-3.0). The full application / board /
@@ -108,7 +116,6 @@
       new exports `IAdmissionGate`/`AdmissionVerdict` + `buildAdmissionGate`/`buildWorkerAdmissionGate`.
       Cost-reservation enforcement is added when a fleet `CostLimiterPort` is injected. See
       `docs/decisions/ADR-021`.
-- [ ] … (one entry per breaking change; cross-referenced to its ADR.)
 
 ## 2.1.1 → 2.1.2 (audit fixes)
 

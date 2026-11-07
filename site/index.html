@@ -88,7 +88,7 @@ footer p{font-size:.85rem}
 </header>
 <main>
 <figure>
-<img src="board.png" width="2542" height="1507" alt="The React board showing agent tasks moving through Kanban columns" decoding="async">
+<img src="board.png" width="2542" height="1507" alt="The React board showing agent tasks moving through Kanban columns, with the STOP ALL button in the header" decoding="async">
 <figcaption>The React board (<code>board/</code> in the repository).</figcaption>
 </figure>
 
@@ -106,7 +106,9 @@ footer p{font-size:.85rem}
 
 <section aria-labelledby="start">
 <h2 id="start">Quick start</h2>
-<p>Needs Node.js 22 or later, Docker with Docker Compose, and an LLM API key (OpenAI, OpenRouter or another compatible API). Commands from the README:</p>
+<p>Needs Node.js 22 or later, Docker with Docker Compose, and an LLM API key (OpenAI, OpenRouter or another compatible API). Commands from the README. The full demo (gateway, workers and orchestrator) starts with one script:</p>
+<pre><code>./scripts/blog-team.sh start</code></pre>
+<p>To run the gateway alone:</p>
 <pre><code>git clone https://github.com/andreibesleaga/kaiban-distributed
 cd kaiban-distributed
 npm ci
@@ -116,7 +118,7 @@ cp .env.example .env
 docker compose up -d redis
 npm run build
 AGENT_IDS=researcher,writer,editor PORT=3000 node dist/src/main/index.js</code></pre>
-<p>Then check the gateway:</p>
+<p>This starts the gateway only; to run tasks start a worker too (<code>ROLE=worker AGENT_IDS=researcher,writer,editor node dist/src/main/index.js</code>) or use the demo script above. Then check the gateway:</p>
 <pre><code>curl http://localhost:3000/health
 curl http://localhost:3000/.well-known/agent-card.json</code></pre>
 <p>The README also covers the full multi-node demo (<code>./scripts/blog-team.sh start</code>), configuration and the HTTP API.</p>
@@ -126,11 +128,11 @@ curl http://localhost:3000/.well-known/agent-card.json</code></pre>
 <h2 id="concepts">Key concepts</h2>
 <dl>
 <dt>Actor isolation</dt>
-<dd>Each agent runs in its own space and communicates only by messages. Workers are stateless and scale horizontally.</dd>
+<dd>Each agent is an actor with its own process and mailbox, and communicates only by messages. A worker keeps no task state between tasks, so you scale by adding processes.</dd>
 <dt>Messaging layer</dt>
 <dd>One interface with BullMQ/Redis and Kafka drivers. Task and result channels are durable; board state travels on Redis Pub/Sub.</dd>
 <dt>Task lifecycle</dt>
-<dd>TODO, DOING, DONE or BLOCKED, plus AWAITING_VALIDATION when a human must approve, revise or reject.</dd>
+<dd>TODO, DOING, DONE or BLOCKED, plus AWAITING_VALIDATION when a human must approve, revise or reject, or STOPPED after an emergency stop.</dd>
 <dt>Federation</dt>
 <dd>An edge gateway serves an A2A v0.3 agent card and JSON-RPC (<code>message/send</code>, <code>message/stream</code>, <code>tasks/get</code>, <code>tasks/cancel</code>).</dd>
 </dl>
@@ -138,7 +140,7 @@ curl http://localhost:3000/.well-known/agent-card.json</code></pre>
 
 <section aria-labelledby="examples">
 <h2 id="examples">Examples</h2>
-<p>Four examples live in the <a href="https://github.com/andreibesleaga/kaiban-distributed-examples">kaiban-distributed-examples</a> repository:</p>
+<p>Four examples live in the <a href="https://github.com/andreibesleaga/kaiban-distributed-examples">kaiban-distributed-examples</a> repository (two more, blog-team and global-research, ship in this repository's <code>examples/</code>):</p>
 <ul>
 <li><a href="https://github.com/andreibesleaga/kaiban-distributed-examples/tree/main/trip-planning">trip-planning</a>: sequential three-agent pipeline with human approval.</li>
 <li><a href="https://github.com/andreibesleaga/kaiban-distributed-examples/tree/main/social-media-team">social-media-team</a>: fan-out and fan-in of parallel composers.</li>
