@@ -23,6 +23,22 @@ System based on [KaibanJS](https://kaibanjs.com). Complete reference for integra
 15. [Environment Reference](#15-environment-reference)
 16. [Troubleshooting](#16-troubleshooting)
 
+### Which section do I need?
+
+| You want to | Read |
+|---|---|
+| Run one KaibanJS agent as a distributed worker (Mode A) or a whole Team (Mode B) | 4 |
+| See a complete working team | 5 and 6 |
+| Chain, fan out or branch agents | 8 and 9 |
+| Show state on a board | 10 |
+| Ask a human to approve | 11 |
+| Call agents from other systems | 12 (A2A) and 13 (MCP) |
+| Harden and configure | 14 and 15 |
+| Stop everything in an emergency | the README, Emergency STOP ALL (not covered in this guide) |
+| Fix a problem | 16 |
+
+The samples build drivers with `createDriver()` (`kaiban-distributed/shared`, or `../src/shared` in a clone). It applies the user, password, database and `rediss://` of `REDIS_URL` and the `REDIS_TLS_*` files, which a connection built from host and port alone would drop.
+
 ---
 
 ## 1. Overview
@@ -174,7 +190,8 @@ Each worker node = one KaibanJS Agent + one AgentActor + one messaging driver
 ```
 
 ```typescript
-import { AgentActor, BullMQDriver, createKaibanTaskHandler } from 'kaiban-distributed';
+import { AgentActor, createKaibanTaskHandler } from 'kaiban-distributed';
+import { createDriver } from 'kaiban-distributed/shared';
 import type { KaibanAgentConfig } from 'kaiban-distributed';
 
 const agentConfig: KaibanAgentConfig = {
@@ -186,7 +203,7 @@ const agentConfig: KaibanAgentConfig = {
   llmConfig: { provider: 'openai', model: 'gpt-4o-mini', apiKey: process.env.OPENAI_API_KEY! },
 };
 
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+const driver = createDriver('guide');
 const handler = createKaibanTaskHandler(agentConfig, driver);
 const actor = new AgentActor('researcher', driver, 'kaiban-agents-researcher', handler);
 
@@ -273,7 +290,7 @@ One process runs the full KaibanJS Team; state diffs stream to the board
 
 ```typescript
 import { Agent, Task } from 'kaibanjs';
-import { KaibanTeamBridge, BullMQDriver } from 'kaiban-distributed';
+import { KaibanTeamBridge, DistributedStateMiddleware } from 'kaiban-distributed';
 
 const researcher = new Agent({
   name: 'Ava', role: 'Researcher',
@@ -303,7 +320,6 @@ const writeTask = new Task({
 // per-task token/cost tracking. Use it only for long-running multi-task teams that
 // need full Zustand state streaming to the board. The bridge takes a *state
 // middleware* (not a messaging driver).
-import { DistributedStateMiddleware } from './src/adapters/state/distributedMiddleware';
 const middleware = new DistributedStateMiddleware('redis://localhost:6379');
 
 const bridge = new KaibanTeamBridge({
@@ -471,41 +487,11 @@ export const editorConfig: KaibanAgentConfig = {
 
 ### File 2: `driver-factory.ts` — BullMQ / Kafka Factory
 
-```typescript
-// src/shared/driver-factory.ts — shortened: the real file also handles MESSAGING_DRIVER=amqp
-// (an unimplemented seam) and logs the chosen driver
-import { BullMQDriver } from '../infrastructure/messaging/bullmq-driver';
-import { KafkaDriver } from '../infrastructure/messaging/kafka-driver';
-import type { IMessagingDriver } from '../infrastructure/messaging/interfaces';
+`createDriver(groupIdSuffix)` in [`src/shared/driver-factory.ts`](../src/shared/driver-factory.ts) builds the configured driver from `MESSAGING_DRIVER`. Read that file for the real code; the points that matter:
 
-export type DriverType = 'bullmq' | 'kafka';
-
-process.env['KAFKAJS_NO_PARTITIONER_WARNING'] = '1';
-
-export function getDriverType(): DriverType {
-  return process.env['MESSAGING_DRIVER'] === 'kafka' ? 'kafka' : 'bullmq';
-}
-
-/**
- * Creates the configured messaging driver.
- * @param groupIdSuffix For Kafka: appended to consumer group to make it unique per role.
- *   'researcher' → group 'kaiban-group-researcher'
- *   For orchestrator create TWO with different suffixes (completed / failed).
- */
-export function createDriver(groupIdSuffix = ''): IMessagingDriver {
-  if (getDriverType() === 'kafka') {
-    const brokers = (process.env['KAFKA_BROKERS'] ?? 'localhost:9092').split(',');
-    const clientId = process.env['KAFKA_CLIENT_ID'] ?? 'kaiban-worker';
-    const base = process.env['KAFKA_GROUP_ID'] ?? 'kaiban-group';
-    const suffix = groupIdSuffix.startsWith('-') ? groupIdSuffix.slice(1) : groupIdSuffix;
-    const groupId = suffix ? `${base}-${suffix}` : base;
-    return new KafkaDriver({ brokers, clientId, groupId });
-  }
-
-  const url = new URL(process.env['REDIS_URL'] ?? 'redis://localhost:6379');
-  return new BullMQDriver({ connection: { host: url.hostname, port: parseInt(url.port || '6379', 10) } });
-}
-```
+- **BullMQ:** the connection comes from `redisConnectionFromUrl(process.env.REDIS_URL)` (`src/shared/redis-connection.ts`) plus `redisTlsFromEnv()`, so the user, password, database and `rediss://` of `REDIS_URL` and the `REDIS_TLS_*` files apply. A connection built from `url.hostname` and `url.port` alone drops them, and workers then never run a task while the board looks healthy.
+- **Kafka:** `new KafkaDriver({ brokers, clientId, groupId, ssl })` with `ssl` from `kafkaSslFromEnv()`; the group is `KAFKA_GROUP_ID` plus `-<groupIdSuffix>`, unique per role (`researcher` gives `kaiban-group-researcher`; an orchestrator creates two, with different suffixes for completed and failed events).
+- `MESSAGING_DRIVER=amqp` is an unimplemented seam and is refused at gateway boot.
 
 ### File 3: `build-security-deps.ts` — Optional Security Features
 
@@ -910,9 +896,9 @@ import 'dotenv/config';
 import { AgentActor } from '../src/application/actor/AgentActor';
 import { createKaibanTaskHandler } from '../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import { createAgentStatePublisher } from '../src/shared';
-import { BullMQDriver } from '../src/infrastructure/messaging/bullmq-driver';
+import { createDriver } from '../src/shared';
 
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+const driver = createDriver('guide');
 
 const handler = createKaibanTaskHandler({
   name: 'TravelPlanner',
@@ -940,7 +926,7 @@ statePublisher.publishIdle();
 ```typescript
 // orchestrators/trip-planner-orchestrator.ts
 async function planTrip(destination: string): Promise<void> {
-  const completedDriver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+  const completedDriver = createDriver('guide');
   const router = new CompletionRouter(completedDriver);
 
   // Step 1: Research
@@ -1002,11 +988,11 @@ const team = new Team({
 ```typescript
 // orchestrators/event-orchestrator.ts
 import 'dotenv/config';
-import { BullMQDriver } from '../src/infrastructure/messaging/bullmq-driver';
+import { createDriver } from '../src/shared';
 import { CompletionRouter } from './completion-router';  // see above
 
 async function planEvent(eventName: string): Promise<void> {
-  const completedDriver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+  const completedDriver = createDriver('guide');
   const router = new CompletionRouter(completedDriver);
 
   // ── Phase 1: Pick date (no deps) ──────────────────────────────────────────
@@ -1095,7 +1081,7 @@ async function planEvent(eventName: string): Promise<void> {
 ```typescript
 // orchestrators/release-orchestrator.ts
 async function runRelease(version: string): Promise<void> {
-  const completedDriver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+  const completedDriver = createDriver('guide');
   const router = new CompletionRouter(completedDriver);
 
   // Run automated tests first
@@ -1158,7 +1144,7 @@ async function runRelease(version: string): Promise<void> {
 ```typescript
 // orchestrators/data-processing-orchestrator.ts
 async function processDatasets(datasets: string[]): Promise<void> {
-  const completedDriver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+  const completedDriver = createDriver('guide');
   const router = new CompletionRouter(completedDriver);
 
   // Load raw data
@@ -1404,9 +1390,9 @@ Or set `window.GATEWAY_URL` in JavaScript before the script loads.
 `AgentActor` publishes to `kaiban-events-completed` and `kaiban-events-failed` — subscribe to these for custom monitoring:
 
 ```typescript
-import { BullMQDriver } from '../src/infrastructure/messaging/bullmq-driver';
+import { createDriver } from '../src/shared';
 
-const monitorDriver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+const monitorDriver = createDriver('guide');
 
 // Monitor all completed tasks
 await monitorDriver.subscribe('kaiban-events-completed', async (payload) => {
@@ -1471,7 +1457,7 @@ Submit N independent tasks → collect all results → synthesize.
 
 ```typescript
 async function fanOutFanIn(items: string[]): Promise<string> {
-  const completedDriver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+  const completedDriver = createDriver('guide');
   const router = new CompletionRouter(completedDriver);
 
   // Fan-out: process all items in parallel
@@ -1518,7 +1504,7 @@ interface TaskDef {
 }
 
 async function executeDag(tasks: TaskDef[]): Promise<Record<string, string>> {
-  const completedDriver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+  const completedDriver = createDriver('guide');
   const router = new CompletionRouter(completedDriver);
   const results: Record<string, string> = {};
 
@@ -1622,7 +1608,7 @@ import { Agent, Task } from 'kaibanjs';
 import { createStep, createWorkflow } from '@kaibanjs/workflow';
 import { z } from 'zod';
 import { AgentActor } from '../src/application/actor/AgentActor';
-import { BullMQDriver } from '../src/infrastructure/messaging/bullmq-driver';
+import { createDriver } from '../src/shared';
 import { createKaibanTaskHandler } from '../src/infrastructure/kaibanjs/kaiban-agent-bridge';
 import type { MessagePayload } from '../src/infrastructure/messaging/interfaces';
 
@@ -1673,7 +1659,7 @@ const workflowAgent = new Agent({
 // ── NOTE: the handler below does NOT use `workflowAgent`; it runs an LLM agent ─
 // Note: prefer createKaibanTaskHandler over direct workOnTask — Team.start() provides
 // real token counts and cost tracking via WorkflowResult.stats.llmUsageStats.
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: 6379 } });
+const driver = createDriver('guide');
 const workflowTaskHandler = createKaibanTaskHandler(
   {
     name: 'DataProcessor',
@@ -1706,7 +1692,7 @@ import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { AgentActor } from '../src/application/actor/AgentActor';
 import { createAgentStatePublisher } from '../src/shared';
-import { BullMQDriver } from '../src/infrastructure/messaging/bullmq-driver';
+import { createDriver } from '../src/shared';
 import type { MessagePayload } from '../src/infrastructure/messaging/interfaces';
 
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY! });
@@ -1780,7 +1766,7 @@ const researchAgent = new Agent({
 } as any);
 
 const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
-const driver = new BullMQDriver({ connection: { host: 'localhost', port: parseInt(new URL(REDIS_URL).port || '6379', 10) } });
+const driver = createDriver('guide');
 
 // Use createKaibanTaskHandler — Team.start() provides token/cost tracking automatically
 const researchTaskHandler = createKaibanTaskHandler(
@@ -2645,13 +2631,15 @@ TLS_REJECT_UNAUTHORIZED=true   # set false for self-signed certs in staging
 
 ## 15. Environment Reference
 
+Full list: the README Configuration Reference and [`.env.example`](../.env.example). The rows below are the ones this guide uses; the production, signing, proxy, timeout and STOP ALL variables (`ROLE`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `CONTROL_PLANE_ENABLED`, `MAX_*`, `BOARD_JWT_SECRET`, `A2A_JWT_SECRET`, `CHANNEL_SIGNING_SECRET`, `SOCKET_CORS_ORIGINS`, `TRUST_PROXY`) are only in those two places.
+
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | **Core** | | | |
-| `AGENT_IDS` | string | required | Comma-separated agent IDs this node serves |
+| `AGENT_IDS` | string | required | Comma-separated agent IDs (worker: the agents it runs; gateway: the ids A2A and MCP accept) |
 | `PORT` | number | `3000` | HTTP + WebSocket port |
 | `SERVICE_NAME` | string | `kaiban-worker` | Node name in telemetry and agent-card |
-| `REDIS_URL` | string | `redis://localhost:6379` | Redis connection URL |
+| `REDIS_URL` | string | `redis://localhost:6379` | Redis connection URL; user, password, database and `rediss://` apply to every client |
 | **LLM** | | | |
 | `OPENAI_API_KEY` | string | — | Standard OpenAI API key |
 | `OPENROUTER_API_KEY` | string | — | OpenRouter key (auto-sets base URL) |
@@ -2675,7 +2663,7 @@ TLS_REJECT_UNAUTHORIZED=true   # set false for self-signed certs in staging
 | `KAFKA_SSL_CA` | path | — | Kafka SSL CA certificate |
 | `KAFKA_SSL_CERT` | path | — | Kafka SSL client certificate |
 | `KAFKA_SSL_KEY` | path | — | Kafka SSL client key |
-| `TLS_REJECT_UNAUTHORIZED` | bool | `true` | Set `false` for self-signed certs in staging |
+| `TLS_REJECT_UNAUTHORIZED` | bool | `true` | Only `false` or `0` turns verification off (self-signed certs in staging) |
 | **Telemetry** | | | |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | URL | — | OTLP endpoint; console exporter if unset |
 | **Orchestrator** | | | |
