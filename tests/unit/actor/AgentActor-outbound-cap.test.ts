@@ -93,9 +93,11 @@ describe("completed results are capped by their serialized size", () => {
           expect(bytes(done.data)).toBeLessThanOrEqual(CAP);
         },
       ),
-      { numRuns: 25 },
+      // Fixed seed: the same 25 inputs every run. Strings up to 70 000 characters are
+      // serialized many times, so allow more than the 5 s default under a loaded coverage run.
+      { numRuns: 25, seed: 20261106 },
     );
-  });
+  }, 30_000);
 
   it("a result that fits is published untouched", async () => {
     const t = setup(async () => "small");

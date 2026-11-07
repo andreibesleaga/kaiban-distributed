@@ -114,6 +114,9 @@ function cappedAt(cap: number | undefined): number | null {
   return cap !== undefined && Number.isFinite(cap) && cap > 0 ? cap : null;
 }
 
+/** How many stopped task ids a publisher remembers to skip a second report. */
+const MAX_REMEMBERED_STOPS = 1_000;
+
 /**
  * Publishes an agent's state to the board and enforces its token caps.
  * `new AgentStatePublisher(url, info)` with no `opts` applies NO caps; a worker
@@ -130,6 +133,8 @@ export class AgentStatePublisher {
   private readonly taskTokensUsed = new Map<string, number>();
   /** Counts wrapped attempts; a late attempt (older number) must not overwrite the agent state. */
   private attemptSeq = 0;
+  /** Task ids already published as STOPPED (see publishStopped). */
+  private readonly stoppedTaskIds = new Set<string>();
 
   constructor(
     redisUrl: string,
@@ -472,6 +477,9 @@ export class AgentStatePublisher {
    * task refused before it ran changes only the task.
    */
   publishStopped(payload: MessagePayload): void {
+    // A running task is reported twice — by this publisher's handler wrapper and
+    // by the actor's onEmergencyStop — so the second report is skipped.
+    if (!this.markStopped(payload.taskId)) return;
     const { agentId, name, role } = this.agentInfo;
     const task: TaskState = {
       taskId: payload.taskId,
@@ -489,6 +497,17 @@ export class AgentStatePublisher {
       agents: [{ agentId, name, role, status: "IDLE", currentTaskId: null }],
       tasks: [task],
     });
+  }
+
+  /** Remember a task published as STOPPED; false when it already was (bounded memory). */
+  private markStopped(taskId: string): boolean {
+    if (this.stoppedTaskIds.has(taskId)) return false;
+    this.stoppedTaskIds.add(taskId);
+    if (this.stoppedTaskIds.size > MAX_REMEMBERED_STOPS) {
+      const oldest = this.stoppedTaskIds.values().next().value as string;
+      this.stoppedTaskIds.delete(oldest);
+    }
+    return true;
   }
 
   /** Report how this node handled an emergency STOP ALL (ADR-025, ES-9). */

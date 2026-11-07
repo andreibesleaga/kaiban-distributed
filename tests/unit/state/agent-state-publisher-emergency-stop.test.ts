@@ -176,6 +176,32 @@ describe("AgentStatePublisher — emergency stop", () => {
     expect(last.agents).toBeUndefined();
   });
 
+  it("publishStopped() publishes a task once, although the handler wrapper and the actor both report it", async () => {
+    const reason = new EmergencyStopError();
+    const controller = new AbortController();
+    const wrapped = publisher.wrapHandler(
+      (_p, signal) =>
+        new Promise<string>((_r, reject) =>
+          signal!.addEventListener("abort", () => reject(signal!.reason)),
+        ),
+    );
+    const running = wrapped(payload("t-6"), controller.signal);
+    controller.abort(reason);
+    await expect(running).rejects.toBe(reason); // the wrapper published STOPPED
+    publisher.publishStopped(payload("t-6")); // the actor's onEmergencyStop for the same task
+    expect(taskStatuses("t-6").filter((s) => s === "STOPPED")).toHaveLength(1);
+  });
+
+  it("publishStopped() remembers a bounded number of tasks: the oldest is forgotten first", () => {
+    publisher.publishStopped({ ...payload("old"), data: {} });
+    for (let i = 0; i < 1_000; i++) publisher.publishStopped({ ...payload(`t-${i}`), data: {} });
+    mockPublish.mockClear();
+    publisher.publishStopped({ ...payload("old"), data: {} }); // evicted: reported again
+    publisher.publishStopped({ ...payload("t-999"), data: {} }); // still remembered: skipped
+    expect(taskStatuses("old")).toEqual(["STOPPED"]);
+    expect(taskStatuses("t-999")).toEqual([]);
+  });
+
   it("publishControlAck() publishes the ack as a `control` delta (ES-9)", () => {
     const ack = {
       commandId: "c-1",
