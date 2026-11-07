@@ -98,7 +98,7 @@ case "$COMMAND" in
     echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
     echo ""
     echo -e "  \033[1;36mA) React Board\033[0m (interactive HITL, modern UI):"
-    echo -e "     \033[0;32mcd board && npm install && npm run dev\033[0m"
+    echo -e "     \033[0;32mcd board && npm ci && npm run dev\033[0m"
     echo -e "     Open: \033[4mhttp://localhost:5173\033[0m"
     echo ""
     echo -e "  \033[1;36mB) Static HTML viewer\033[0m (zero setup):"

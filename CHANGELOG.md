@@ -70,7 +70,7 @@ A correctness and security release from a full audit of the runtime, gateway, bo
 
 - global-research: the writer receives each searcher's whole answer (bounded at 20 000 characters) instead of the first 500; invented `research://` URLs and random relevance scores are gone; results are labelled by sub-topic; a searcher restarted in place keeps its id; the searcher honours `AGENT_TIMEOUT_MS` / `RETRY_ON_TIMEOUT` and drains like other nodes; `AUTO_PUBLISH` is opt-in only; running totals are published after each phase.
 - global-research and blog-team: the review card is closed on the budget-stop and failure paths too; a failed revision wait marks the revision task BLOCKED.
-- `scripts/run-example.sh` starts the orchestrator in the foreground so the human-decision prompt works.
+- `scripts/run-example.sh` runs the orchestrator as a waited child with the terminal's stdin, so the human-decision prompt works and a stop signal reaches it at once.
 
 **Packaging, compose, Helm and workflows**
 
