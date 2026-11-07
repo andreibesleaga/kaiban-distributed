@@ -310,6 +310,18 @@ describe("runGateway", () => {
     expect((await deps.startupProbe()).ready).toBe(false);
   });
 
+  it("an empty A2A_PUBLIC_URL (as compose passes it when unset) falls back to localhost", async () => {
+    process.env["MESSAGING_DRIVER"] = "bullmq";
+    process.env["A2A_PUBLIC_URL"] = "";
+    try {
+      await runGateway();
+      const baseUrl = (h.buildA2AStack.mock.calls as unknown as [{ baseUrl: string }][])[0]![0].baseUrl;
+      expect(baseUrl).toMatch(/^http:\/\/localhost:\d+$/);
+    } finally {
+      delete process.env["A2A_PUBLIC_URL"];
+    }
+  });
+
   it("waits one attempt for a task by default and all attempts with RETRY_ON_TIMEOUT", async () => {
     process.env["MESSAGING_DRIVER"] = "bullmq";
     process.env["AGENT_TIMEOUT_MS"] = "1000";

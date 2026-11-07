@@ -175,7 +175,8 @@ export async function runGateway(): Promise<void> {
     redisUrl: config.redis.url,
     name: config.serviceName,
     version: packageVersion(),
-    baseUrl: process.env["A2A_PUBLIC_URL"] ?? `http://localhost:${config.port}`,
+    // `||`: an empty value (compose passes unset variables as "") means unset.
+    baseUrl: process.env["A2A_PUBLIC_URL"] || `http://localhost:${config.port}`,
     agentIds: config.agentIds,
     // With RETRY_ON_TIMEOUT the worker may run three timed-out attempts; wait for all of them.
     timeoutMs: taskWait,
