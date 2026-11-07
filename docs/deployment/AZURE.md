@@ -2,6 +2,8 @@
 
 Deploy kaiban-distributed to Microsoft Azure using AKS (Kubernetes), Azure Container Apps, or Azure App Service.
 
+> The Helm chart in `examples/blog-team/infra/helm/` covers the blog-team demo only. It does not set the production secrets or `NODE_ENV`: for an internet-facing gateway also set `config.NODE_ENV=production`, `config.SOCKET_CORS_ORIGINS`, `config.TRUST_PROXY` and the `secrets.*` signing secrets described in [HELM.md](HELM.md), and see [SECURITY_FEATURES §10](../security/SECURITY_FEATURES.md#10-production-deployment-checklist).
+
 ---
 
 ## Option A — Azure Kubernetes Service (AKS)
@@ -69,7 +71,7 @@ az aks enable-addons \
   --resource-group $RESOURCE_GROUP
 ```
 
-Create a `SecretProviderClass` manifest that maps Key Vault secrets to a Kubernetes Secret, then reference it in your Deployment as a volume.
+The chart cannot mount a CSI volume: its Deployments read one Kubernetes Secret through `envFrom`. Either pass the key with `--set secrets.OPENAI_API_KEY=...` in Step 4, or create a Kubernetes Secret named `<release>-kaiban-blog-team-secrets` from Key Vault (External Secrets Operator) and install with `--set secrets.create=false`; see [HELM.md, Secrets Management](HELM.md#secrets-management).
 
 ### Step 4 — Deploy with Helm
 
@@ -78,8 +80,11 @@ helm install kaiban-blog-team ./examples/blog-team/infra/helm \
   --set image.repository=${REGISTRY}.azurecr.io/kaiban-distributed \
   --set image.tag=latest \
   --set gateway.service.type=LoadBalancer \
+  --set secrets.OPENAI_API_KEY="$OPENAI_API_KEY" \
   --namespace kaiban --create-namespace
 ```
+
+If you keep the key in the secret manager only, install with `--set secrets.create=false` and create a Kubernetes Secret named `kaiban-blog-team-kaiban-blog-team-secrets` (`<release>-kaiban-blog-team-secrets`) from it with the External Secrets Operator; see [HELM.md, Secrets Management](HELM.md#secrets-management).
 
 ### Step 5 — Access the Gateway
 
@@ -131,7 +136,7 @@ az containerapp create \
 
 ## Option C — Azure App Service (single-container, quick start)
 
-> Best for demos. Does not support multi-container agent deployments natively.
+> Best for demos. Does not support multi-container agent deployments natively. This deploys the gateway only: no agent runs, so no task completes. Run the workers on AKS or Container Apps (Option A or B) against the same Redis.
 
 ```bash
 az appservice plan create \
@@ -177,11 +182,11 @@ az redis create \
 az redis list-keys --resource-group $RESOURCE_GROUP --name kaiban-redis
 ```
 
-Set `REDIS_URL` to `rediss://:PASSWORD@kaiban-redis.redis.cache.windows.net:6380` (TLS port 6380).
+Set `REDIS_URL` to `rediss://:PASSWORD@kaiban-redis.redis.cache.windows.net:6380` (TLS port 6380, in-transit encryption). Since 2.1.2 the password and `rediss://` in `REDIS_URL` apply to every client, the task queues included.
 
 ---
 
-## Costs (approximate, East US, 2024)
+## Costs (illustrative only, check [Azure pricing](https://azure.microsoft.com/pricing/))
 
 | Resource                   | Spec              | $/month |
 |----------------------------|-------------------|---------|
