@@ -45,20 +45,26 @@ actor.start()
 
 processTask(payload)
   ├── Check agentId match (ignore messages for other actors)
+  ├── Sent before the last emergency STOP ALL? → publishToDlq(reason: emergency_stop)
   ├── isBlockedByGuards()
   │   ├── circuitBreaker.isOpen()? → publishToDlq(reason: circuit_breaker_open)
-  │   └── firewall.evaluate(payload)? → publishToDlq(reason: blocked_by_semantic_firewall)
+  │   ├── firewall.evaluate(payload)? → publishToDlq(reason: blocked_by_semantic_firewall)
+  │   └── admissionGate (when injected)? → refused tasks are dead-lettered (ADR-021)
   └── executeWithRetries(payload)
       ├── attempt 1..3: taskHandler(payload)
       │   ├── success → driver.publish(COMPLETED_CHANNEL, result)
       │   ├── NonRetryableError (e.g. BudgetExceededError) → driver.publish(DLQ_CHANNEL, reasonCode)
       │   │                                                   (no further attempt, no breaker failure)
+      │   ├── attempt exceeds AGENT_TIMEOUT_MS → aborted, DLQ task_timeout (retried only with RETRY_ON_TIMEOUT)
       │   └── failure → delay(100ms × attempt) → retry (after attempts 1 and 2 only)
       └── all retries failed → circuitBreaker.recordFailure()
                              → driver.publish(DLQ_CHANNEL, error)
 
-actor.stop()
+actor.stop()      (SIGTERM; a task in flight is aborted and dead-lettered as actor_stopped)
   └── driver.unsubscribe(queueName)
+
+Emergency STOP ALL (kaiban-control, ADR-025): the ControlSubscriber aborts the call in flight
+  and the task is dead-lettered as emergency_stop; later deliveries of older tasks are refused.
 ```
 
 ### Safety Mechanisms
@@ -333,7 +339,7 @@ See the E2E horizontal scaling tests:
 ```
 AgentActor receives MessagePayload
   └── TaskHandler = createKaibanTaskHandler(agentConfig, driver, tokenProvider)
-      ├── Creates a fresh Team per task (stateless execution)
+      ├── Creates a fresh Team per task (no conversation state survives between tasks; the actor itself keeps per-process state such as token tallies and the circuit breaker)
       ├── team.start(payload.data.inputs ?? {})  (the task is built from payload.data.instruction)
       ├── status BLOCKED → throw FailedAttemptError (usage attached; retried unless it reaches a token cap); ERRORED → start() rejects (not counted)
       └── returns a KaibanHandlerResult { answer, inputTokens, outputTokens, estimatedCost } (token counts from WorkflowResult.stats)
