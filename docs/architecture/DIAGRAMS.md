@@ -2,6 +2,12 @@
 
 Extra views of the system. The main container view and the task state machine are in the [README](../../README.md#architecture); the design is explained in [ACTOR_MODEL.md](ACTOR_MODEL.md), the plan and C4 sources in [PLAN.md](PLAN.md).
 
+## System overview (picture)
+
+![System architecture: external clients and the React board reach the edge gateway; the messaging layer (Redis + BullMQ by default, Kafka as an option, AMQP an unimplemented seam) and Redis Pub/Sub (state events, HITL decisions, STOP ALL control) connect it to the agent worker nodes, which call external LLMs, A2A federation and MCP servers](system-architecture.png)
+
+Source: [`docs/research/system-architecture.drawio`](../research/system-architecture.drawio) (open in diagrams.net; export as PNG at 2x to refresh the picture). Updated for 2.1.3: the gateway box names the control channel, the Pub/Sub channels are listed, and AMQP is marked as a seam.
+
 ## Detailed ASCII view (layout, 2.1)
 
 ```

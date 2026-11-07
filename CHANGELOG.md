@@ -32,7 +32,7 @@ A documentation and configuration release from a documentation, diagram and scre
 
 ### Documentation
 
-- Screenshots recaptured from the 2.1.x board (running workflow, STOP ALL dialog, stopped workflow) with a local mock model; the old animated board capture and the unreferenced `system-architecture.png` (it showed RabbitMQ and no control channel) are removed.
+- Screenshots recaptured from the 2.1.x board (running workflow, STOP ALL dialog, stopped workflow) with a local mock model; the old animated board capture is removed; `docs/architecture/system-architecture.png` is redrawn from its drawio source with the control channel, the Pub/Sub channels and AMQP marked as a seam, and is now linked from `docs/architecture/DIAGRAMS.md`.
 - New `docs/README.md` (index by reader), `docs/architecture/DIAGRAMS.md` and `docs/decisions/README.md` (ADR index).
 - README: one container diagram with the control channel, a "Use as a library" section, the two quick starts relabelled, current test counts, new configuration rows, token minting, Kafka offset rules, current troubleshooting rows.
 - Architecture decision records: each ADR whose facts changed has a dated "Update (2.1.2)" note (production secret checks, STOP ALL signing and route limits, Kafka reading from the beginning, MCP and A2A request chain, dependency policy, deprecated team bridge, and more); references to the private planning file are gone.
