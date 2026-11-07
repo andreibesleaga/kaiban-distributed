@@ -81,13 +81,29 @@ config:
   # Emergency STOP ALL (2.1.0, ADR-025): "true" on every pod turns it on (also set secrets.BOARD_JWT_SECRET).
   CONTROL_PLANE_ENABLED: "false"
   REDIS_URL: ""                    # empty = the in-cluster Redis; set it when redis.enabled=false
+  # Optional, rendered into the ConfigMap only when non-empty (empty = the code default):
+  NODE_ENV: ""                     # "production" needs the three secrets below and SOCKET_CORS_ORIGINS
+  TRUST_PROXY: ""                  # "true" behind an ingress or load balancer
+  SOCKET_CORS_ORIGINS: ""          # comma-separated board origins
+  A2A_PUBLIC_URL: ""
+  AGENT_TIMEOUT_MS: ""             # one value for the gateway and every worker
+  RETRY_ON_TIMEOUT: ""
+  LOG_LEVEL: ""
+  MCP_SERVER_ENABLED: ""
+  SEMANTIC_FIREWALL_ENABLED: ""
+  CIRCUIT_BREAKER_ENABLED: ""
+  JIT_TOKENS_ENABLED: ""
 
 secrets:                           # plain text: the chart base64-encodes them
+  create: true                     # false = render no Secret; supply <release>-kaiban-blog-team-secrets yourself
   OPENAI_API_KEY: ""               # required — pass via --set or external secret manager
   OPENROUTER_API_KEY: ""           # optional; when set it takes precedence over OPENAI_API_KEY
   BOARD_JWT_SECRET: ""             # needed for board/HTTP stop; rendered only when non-empty
   CHANNEL_SIGNING_SECRET: ""       # optional; rendered only when non-empty
+  A2A_JWT_SECRET: ""               # optional; A2A bearer-token auth; rendered only when non-empty
 ```
+
+With `config.NODE_ENV=production` every pod refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different) and `config.SOCKET_CORS_ORIGINS` is set for the gateway.
 
 ---
 
@@ -206,11 +222,27 @@ helm upgrade --install blog-team examples/blog-team/infra/helm \
 
 **Option B — External Secrets Operator**
 
-The chart always renders its own Secret, and an empty `secrets.OPENAI_API_KEY` still renders it (with an empty key), so a second Secret of the same name conflicts. Either delete the chart's Secret template for your install, or point the Deployments at a differently named Secret that the `ExternalSecret` populates.
+Install with `--set secrets.create=false`: the chart then renders no Secret. Let the `ExternalSecret` create a Secret named `<release>-kaiban-blog-team-secrets` (for release `blog-team`: `blog-team-kaiban-blog-team-secrets`) with the keys `OPENAI_API_KEY` and, as needed, `OPENROUTER_API_KEY`, `BOARD_JWT_SECRET`, `CHANNEL_SIGNING_SECRET`, `A2A_JWT_SECRET`. The pods read it by that name. Two objects of the same name conflict at install, so do not leave `secrets.create` on.
 
 **Option C — Sealed Secrets**
 
-Seal your Secret with `kubeseal` and commit the `SealedSecret`. The chart's Secret will be overridden if names match.
+Same as option B: install with `--set secrets.create=false` and commit a `SealedSecret` that unseals to the Secret name above.
+
+The chart cannot mount a CSI volume; it reads secrets only through `envFrom`.
+
+---
+
+## Global research chart
+
+`examples/global-research/infra/helm/` is the same chart layout for the global-research team (chart name `kaiban-global-research`). It runs a gateway and the `searcher` (3 replicas by default), `writer`, `reviewer` and `editor` agents, and takes the same `config` and `secrets` keys. Install and scale it like the blog-team chart:
+
+```bash
+helm install research examples/global-research/infra/helm \
+  --set secrets.OPENAI_API_KEY="$OPENAI_API_KEY" \
+  --set agents.searcher.replicas=6
+```
+
+Names follow `<release>-kaiban-global-research-<part>` (for release `research`: `research-kaiban-global-research-gateway`, `-searcher`, `-writer`, `-reviewer`, `-editor`, `-redis`, `-config`, `-secrets`).
 
 ---
 
@@ -261,7 +293,7 @@ See [KUBERNETES.md — Build and Push](KUBERNETES.md#step-1--build-and-push-the-
 kubectl logs deployment/blog-team-kaiban-blog-team-researcher
 ```
 
-Verify the Secret was rendered with a real key (not empty):
+Verify the Secret was rendered with a real key (not empty). This prints the key: do not run it on a shared screen.
 
 ```bash
 kubectl get secret blog-team-kaiban-blog-team-secrets -o jsonpath='{.data.OPENAI_API_KEY}' | base64 -d

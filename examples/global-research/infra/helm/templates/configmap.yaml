@@ -18,6 +18,7 @@ data:
   {{ $key }}: {{ . | quote }}
   {{- end }}
   {{- end }}
+{{- if ne (toString .Values.secrets.create) "false" }}
 ---
 apiVersion: v1
 kind: Secret
@@ -38,3 +39,4 @@ data:
   {{- with .Values.secrets.A2A_JWT_SECRET }}
   A2A_JWT_SECRET: {{ . | b64enc | quote }}
   {{- end }}
+{{- end }}

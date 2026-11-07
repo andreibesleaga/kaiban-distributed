@@ -51,6 +51,9 @@ config:
   JIT_TOKENS_ENABLED: ""
 
 secrets:
+  # false = the chart renders no Secret; create one named <release>-kaiban-blog-team-secrets yourself
+  # (External Secrets Operator, Sealed Secrets) with the same keys. The pods read it by that name.
+  create: true
   # Plain-text values: the chart base64-encodes them into the Secret. Pass them with --set
   # or use an external secret manager; do not commit real keys.
   OPENAI_API_KEY: ""

@@ -37,7 +37,7 @@ docker tag kaiban-distributed:latest your-registry/kaiban-distributed:latest
 docker push your-registry/kaiban-distributed:latest
 ```
 
-Update `image` in `agents.yaml` and `gateway.yaml` if using a remote registry.
+Update `image` in `agents.yaml` and `gateway.yaml` if using a remote registry. The manifests use the locally built `kaiban-distributed:latest`; the Helm chart defaults to the published image `ghcr.io/andreibesleaga/kaiban-distributed:<appVersion>`. To use the published image instead, set `image:` to `ghcr.io/andreibesleaga/kaiban-distributed:2.1.2` and skip the build.
 
 For **local clusters** (kind, minikube, k3s):
 
@@ -69,7 +69,7 @@ stringData:
 
 ## Step 3 — Apply Manifests
 
-Apply in dependency order:
+Apply in this order (the ConfigMap and Secret first, then Redis, then the services that read them):
 
 ```bash
 kubectl apply -f examples/blog-team/infra/kubernetes/configmap.yaml
@@ -78,7 +78,7 @@ kubectl apply -f examples/blog-team/infra/kubernetes/gateway.yaml
 kubectl apply -f examples/blog-team/infra/kubernetes/agents.yaml
 ```
 
-Or apply the whole directory at once (order is handled by Kubernetes dependency resolution):
+Or apply the whole directory at once. `kubectl apply -f <dir>` applies the files alphabetically (agents, configmap, gateway, redis) and Kubernetes has no dependency resolution: the pods that start before the ConfigMap, Secret and Redis exist wait in `CreateContainerConfigError` or restart until they do. The ordered commands above avoid those restarts:
 
 ```bash
 kubectl apply -f examples/blog-team/infra/kubernetes/
@@ -129,6 +129,20 @@ npx ts-node examples/blog-team/orchestrator.ts
 
 ---
 
+## Production settings and emergency STOP ALL
+
+The shipped ConfigMap has `CONTROL_PLANE_ENABLED: "false"` and the Secret holds only the two LLM keys. To turn on the emergency STOP ALL (see the README, Emergency STOP ALL):
+
+1. Set `CONTROL_PLANE_ENABLED: "true"` in the ConfigMap.
+2. Uncomment `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` in the Secret and give them values (`openssl rand -base64 32`). The gateway and the agent Deployments read that Secret with `secretRef`.
+3. Mint a board token from the same `BOARD_JWT_SECRET` ([SECURITY_FEATURES §1.1](../security/SECURITY_FEATURES.md#11-board-viewer-jwt-socketio)).
+
+Other optional settings are commented in the ConfigMap: `NODE_ENV`, `SOCKET_CORS_ORIGINS`, `TRUST_PROXY`, `A2A_PUBLIC_URL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED`, the firewall, breaker and JIT switches. With `NODE_ENV: "production"` every pod refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different), and the gateway also needs `SOCKET_CORS_ORIGINS`. Set the timeouts identically on the gateway and every worker.
+
+The gateway also serves `/ready` and `/startup`; the shipped probes use `/health`.
+
+---
+
 ## Manifest Reference
 
 ### `configmap.yaml`
@@ -174,6 +188,12 @@ Three deployments — `kaiban-researcher`, `kaiban-writer`, `kaiban-editor`:
 - Command: `node dist/examples/blog-team/<agent>-node.js`
 - Env from: `kaiban-blog-team-config` ConfigMap + `kaiban-blog-team-secrets` Secret
 - Default `replicas: 1` (scale independently)
+
+---
+
+## Global research manifests
+
+`examples/global-research/infra/kubernetes/` holds the same set for the global-research team: `configmap.yml`, `redis.yml`, `gateway.yml` and one file each for `searcher.yml` (4 replicas by default), `writer.yml`, `reviewer.yml` and `editor.yml`. Names start with `kaiban-research-` (ConfigMap `kaiban-research-config`, Secret `kaiban-research-secrets`). Apply `configmap.yml` first, then the rest. Scale the searchers with `kubectl scale deployment kaiban-research-searcher --replicas=N`.
 
 ---
 
