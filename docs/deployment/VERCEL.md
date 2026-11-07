@@ -62,11 +62,20 @@ During the first deployment, Vercel will ask:
 
 The viewer resolves the gateway address from the first of these sources (in priority order):
 
-1. **`window.GATEWAY_URL` global** — set via a `<script>` block before `board.js` loads:
+1. **`window.GATEWAY_URL` global** — set in a separate file `config.js` next to `board.js`:
+
+```js
+window.GATEWAY_URL = "https://your-gateway.railway.app";
+```
+
+and load it in `board.html` before `board.js`:
 
 ```html
-<script>window.GATEWAY_URL = "https://your-gateway.railway.app";</script>
+<script src="config.js"></script>
+<script src="board.js"></script>
 ```
+
+An inline `<script>` block does not work: the viewer's Content-Security-Policy (`script-src 'self' https://cdn.socket.io`) blocks inline scripts, so the viewer would stay on the `localhost:3000` fallback. A file served from the same site is allowed.
 
 2. **`?gateway=` query parameter** — append `?gateway=https://your-gateway.railway.app` to the URL.
 
@@ -74,7 +83,7 @@ The viewer resolves the gateway address from the first of these sources (in prio
 
 If a board token is set (`window.BOARD_TOKEN`), the viewer ignores `?gateway=` and uses option 1 or the fallback, so a link cannot send the token to another server. A token given as `#token=` in the same address is sent to the gateway named in that address.
 
-After deploying the gateway elsewhere, set the URL directly in `board.html` using option 1 above (the `window.GATEWAY_URL` global), or pass it at runtime via the `?gateway=` query parameter (option 2).
+After deploying the gateway elsewhere, set the URL in `config.js` using option 1 above (the `window.GATEWAY_URL` global), or pass it at runtime via the `?gateway=` query parameter (option 2).
 
 ### Step 4 — Custom Domain (optional)
 

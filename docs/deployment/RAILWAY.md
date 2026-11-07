@@ -48,10 +48,10 @@ In the Railway dashboard for your project:
 
 1. Click **"+ New"** → **"Database"** → **"Add Redis"**
 2. Railway provisions a managed Redis instance
-3. The `REDIS_URL` environment variable is automatically set for all services in the project
+3. The Redis service exposes a `REDIS_URL` variable. Other services do not get it by themselves: add `REDIS_URL=${{Redis.REDIS_URL}}` to each service (or to the project's shared variables), as the tables below show
    - Format: `redis://default:{password}@{host}:{port}`
 
-Verify via Railway CLI:
+Verify via Railway CLI (do not paste the output anywhere: it contains the password):
 ```bash
 railway variables | grep REDIS_URL
 ```
@@ -73,10 +73,7 @@ railway up --service gateway
    ```
    node dist/src/main/index.js
    ```
-3. In **Settings → Build Command**, set:
-   ```
-   npm ci && npm run build
-   ```
+3. Leave **Build Command** empty: the Dockerfile builder (Step 5, and the shipped `railway.toml`) builds the image and ignores build commands.
 4. Set the **Port** to `3000` in **Settings → Networking**
 
 **Environment variables for gateway service:**
@@ -86,7 +83,10 @@ MESSAGING_DRIVER=bullmq
 PORT=3000
 SERVICE_NAME=kaiban-gateway
 SOCKET_CORS_ORIGINS=https://<your-viewer-url>   # Required when NODE_ENV=production (the gateway then refuses wildcard CORS and needs the three signing secrets); without NODE_ENV=production it allows *
-# REDIS_URL is set automatically by the Redis plugin
+REDIS_URL=${{Redis.REDIS_URL}}
+TRUST_PROXY=true                                # Railway sits behind a proxy: without it every client shares one address and the 100/min limit
+# Emergency STOP ALL (optional, see the README): CONTROL_PLANE_ENABLED=true on EVERY service, BOARD_JWT_SECRET and
+# CHANNEL_SIGNING_SECRET (32+ bytes each) on the gateway; the workers need CHANNEL_SIGNING_SECRET too.
 # OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-endpoint (optional)
 ```
 
@@ -104,7 +104,7 @@ In Railway dashboard → **+ New Service** → **"GitHub Repo"** (same repo):
 |---------|-------|
 | Name | `researcher` |
 | Start Command | `node dist/examples/blog-team/researcher-node.js` |
-| Build Command | `npm ci && npm run build` |
+| Build Command | _(none: the Dockerfile builder builds the image)_ |
 | Root Directory | `/` (repo root) |
 | Public Networking | Disabled (internal only) |
 
@@ -175,7 +175,7 @@ All services share the same `REDIS_URL` and LLM key environment variables.
 
 ## Step 6 — Environment Variables Reference
 
-Set these in Railway **Project → Variables** (shared across all services) or per-service:
+Set these in Railway **Project → Variables** (shared across all services) or per-service. Production, tuning and STOP ALL variables are listed in the README, Configuration Reference:
 
 ### Shared Variables (set at project level)
 
@@ -260,12 +260,7 @@ Or host the `board.html` file on any static hosting (Netlify, Vercel, Railway st
 
 Railway makes it easy to scale workers horizontally:
 
-```bash
-# Scale to 3 writer nodes (all subscribe to the same BullMQ queue)
-railway scale writer --instances=3
-```
-
-Or in the dashboard: **Writer service → Settings → Instances → 3**.
+In the dashboard: **Writer service → Settings → Instances → 3**.
 
 All writer instances share the same `kaiban-agents-writer` BullMQ queue — BullMQ automatically distributes tasks across available workers.
 
@@ -287,22 +282,7 @@ is the single source of truth.
 
 ## Complete `railway.toml`
 
-```toml
-# railway.toml
-
-[build]
-builder = "dockerfile"
-dockerfilePath = "Dockerfile"
-
-[deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 100
-restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 10
-
-# Default start command (gateway)
-startCommand = "node dist/src/main/index.js"
-```
+The maintained file is [`examples/blog-team/infra/railway/railway.toml`](../../examples/blog-team/infra/railway/railway.toml); the short version in Step 5 shows the same settings. Do not keep a second copy.
 
 ---
 
@@ -312,10 +292,10 @@ startCommand = "node dist/src/main/index.js"
 Railway Project: kaiban-distributed
 │
 ├── 🔴 Redis Plugin (managed)
-│   └── REDIS_URL → shared across all services
+│   └── REDIS_URL → referenced by every service as ${{Redis.REDIS_URL}}
 │
 ├── 🌐 gateway (public, port 3000)
-│   ├── HTTP: /health, /.well-known/agent-card.json, /a2a/rpc
+│   ├── HTTP: /health, /ready, /startup, /.well-known/agent-card.json, /a2a/rpc
 │   ├── WebSocket: Socket.io (state:update events)
 │   └── CMD: node dist/src/main/index.js
 │
@@ -334,18 +314,9 @@ Railway Project: kaiban-distributed
 
 ---
 
-## Cost Estimate (Railway pricing, approximate)
+## Cost
 
-| Resource | Plan | Monthly cost |
-|----------|------|-------------|
-| Gateway service | Hobby ($5/mo) | ~$5 |
-| Researcher worker | Hobby ($5/mo) | ~$5 |
-| Writer worker | Hobby ($5/mo) | ~$5 |
-| Editor worker | Hobby ($5/mo) | ~$5 |
-| Redis plugin | Managed ($10/mo) | ~$10 |
-| **Total** | | **~$30/month** |
-
-For development/testing, Railway's **free tier** provides $5 credit/month which is enough to test the pipeline.
+Railway bills by usage and the plans change, so this guide gives no price. See [railway.com/pricing](https://railway.com/pricing) and estimate from the five services above (gateway, three workers, Redis).
 
 ---
 
@@ -358,7 +329,7 @@ railway logs --service researcher
 ```
 
 Common causes:
-- `REDIS_URL` not set → add Redis plugin
+- `REDIS_URL` not set → add Redis plugin and reference `${{Redis.REDIS_URL}}`
 - `OPENAI_API_KEY` missing → add to project variables
 - `AGENT_IDS` not set for gateway → add `AGENT_IDS=researcher,writer,editor` (the worker agent ids)
 
@@ -378,7 +349,7 @@ The `board.html` viewer handles this automatically.
 
 1. Verify Redis plugin is running: `railway status`
 2. Check that queue names match exactly (`kaiban-agents-researcher`, no colons)
-3. Verify `REDIS_URL` is the same for gateway and all workers (Railway injects this automatically from the Redis plugin)
+3. Verify `REDIS_URL` is the same for gateway and all workers (each service references `${{Redis.REDIS_URL}}`)
 
 ---
 
