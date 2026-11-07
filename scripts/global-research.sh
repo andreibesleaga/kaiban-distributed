@@ -7,7 +7,7 @@
 # Usage:
 #   ./scripts/global-research.sh start [--chaos] [--searchers N]
 #   ./scripts/global-research.sh stop
-#   ./scripts/global-research.sh board          # serve board only
+#   ./scripts/global-research.sh board          # serve the viewer on http://localhost:8080/board.html (needs python3)
 #
 # Options:
 #   --chaos       Enable CHAOS_MODE (20% searcher crash rate)
