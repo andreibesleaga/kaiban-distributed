@@ -421,8 +421,8 @@ comparisons are framed cautiously—the agent-framework landscape moves fast.
   (Kafka/Redis) + true actor-model process isolation + multi-agent orchestration + Kanban
   visualization + A2A/MCP federation—with default-off governance and economics layered on top.** Each
   ingredient exists elsewhere; the project's own positioning is that combining *all* of them in a
-  single JS-ecosystem runtime is rare ("one of the first open-source projects to combine…", README/
-  master-plan §B1.1). The runtime is honest that it is *"one of the first,"* not *"the very first in the
+  single JS-ecosystem runtime is rare ("one of the first open-source projects to combine…", README and
+  the v2.0 planning notes, private). The runtime is honest that it is *"one of the first,"* not *"the very first in the
   world."*
 - **[differentiated] Agents are stateful, individually-deployed actors—not scripts or graph nodes.**
   Most JS agent frameworks (and many Python ones) model an agent as a function or a node in a

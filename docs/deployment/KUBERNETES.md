@@ -137,7 +137,7 @@ The shipped ConfigMap has `CONTROL_PLANE_ENABLED: "false"` and the Secret holds 
 2. Uncomment `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` in the Secret and give them values (`openssl rand -base64 32`). The gateway and the agent Deployments read that Secret with `secretRef`.
 3. Mint a board token from the same `BOARD_JWT_SECRET` ([SECURITY_FEATURES §1.1](../security/SECURITY_FEATURES.md#11-board-viewer-jwt-socketio)).
 
-Other optional settings are commented in the ConfigMap: `NODE_ENV`, `SOCKET_CORS_ORIGINS`, `TRUST_PROXY`, `A2A_PUBLIC_URL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED`, the firewall, breaker and JIT switches. With `NODE_ENV: "production"` every pod refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different), and the gateway also needs `SOCKET_CORS_ORIGINS`. Set the timeouts identically on the gateway and every worker.
+Other optional settings are commented in the ConfigMap: `NODE_ENV`, `SOCKET_CORS_ORIGINS`, `TRUST_PROXY`, `A2A_PUBLIC_URL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED`, the firewall, breaker and JIT switches. With `NODE_ENV: "production"` the gateway refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different) and `SOCKET_CORS_ORIGINS` is set; the agent pods refuse to start without `CHANNEL_SIGNING_SECRET` when `CONTROL_PLANE_ENABLED` is true. Set the timeouts identically on the gateway and every worker.
 
 The gateway also serves `/ready` and `/startup`; the shipped probes use `/health`.
 

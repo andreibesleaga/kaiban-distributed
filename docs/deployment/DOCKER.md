@@ -223,7 +223,7 @@ The Gateway and Worker tables below describe the root `docker-compose.yml` (`kai
 | `A2A_JWT_SECRET` | yes | root stack only | |
 | `NODE_ENV` | yes | root stack only | Only the gateway and a `ROLE=worker` process check the production rules (three secrets of 32+ bytes, all different; on the gateway also `SOCKET_CORS_ORIGINS`) |
 | `TRUST_PROXY`, `MCP_SERVER_ENABLED`, `MCP_DISPATCH_CONSENT` | yes | no | |
-| `SOCKET_CORS_ORIGINS`, `A2A_PUBLIC_URL`, `MCP_SERVER_PATH`, `MCP_ALLOWED_TOOLS`, `MCP_ALLOWED_RESOURCES`, `MCP_ALLOWED_PROMPTS`, `OTEL_EXPORTER_OTLP_ENDPOINT` | yes, only when set | no | An empty value would break these, so they are passed only when you set them |
+| `SOCKET_CORS_ORIGINS`, `A2A_PUBLIC_URL`, `MCP_SERVER_PATH`, `MCP_ALLOWED_TOOLS`, `MCP_ALLOWED_RESOURCES`, `MCP_ALLOWED_PROMPTS`, `OTEL_EXPORTER_OTLP_ENDPOINT` | yes, only when set | no | Passed only when the variable exists in `.env` or the shell. A blank line (`MCP_ALLOWED_TOOLS=`) counts as set: for the allow-lists it means none, so delete the line instead; a blank `SOCKET_CORS_ORIGINS` or `MCP_SERVER_PATH` is treated as unset |
 | `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `LOG_LEVEL` | yes | yes | Set the timeouts identically on the gateway and every worker |
 | `SEMANTIC_FIREWALL_ENABLED`, `CIRCUIT_BREAKER_*`, `JIT_TOKENS_ENABLED` | no | yes | |
 | `VALID_HITL_DECISIONS` | yes | no | |

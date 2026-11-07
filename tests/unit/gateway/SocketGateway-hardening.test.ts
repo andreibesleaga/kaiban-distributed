@@ -69,4 +69,19 @@ describe("SocketGateway — hardening options", () => {
     // When SOCKET_CORS_ORIGINS is not set (non-production), origin is the wildcard
     expect(cors["origin"]).toBe("*");
   });
+
+  it("treats a blank SOCKET_CORS_ORIGINS (an empty .env line) as unset", () => {
+    // Compose passes `SOCKET_CORS_ORIGINS=` through as "", which must not become the allow-list [""].
+    process.env["SOCKET_CORS_ORIGINS"] = "  ";
+    try {
+      capturedOptions = null;
+      const httpServer = createServer();
+      const sg = new SocketGateway(httpServer, redisClient, redisClient);
+      sg.initialize();
+      const cors = capturedOptions!["cors"] as Record<string, unknown>;
+      expect(cors["origin"]).toBe("*");
+    } finally {
+      delete process.env["SOCKET_CORS_ORIGINS"];
+    }
+  });
 });

@@ -103,7 +103,7 @@ secrets:                           # plain text: the chart base64-encodes them
   A2A_JWT_SECRET: ""               # optional; A2A bearer-token auth; rendered only when non-empty
 ```
 
-With `config.NODE_ENV=production` every pod refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different) and `config.SOCKET_CORS_ORIGINS` is set for the gateway.
+With `config.NODE_ENV=production` the gateway refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different) and `config.SOCKET_CORS_ORIGINS` is set; the agent pods refuse to start without `CHANNEL_SIGNING_SECRET` when `CONTROL_PLANE_ENABLED` is true (they do not run the three-secret check).
 
 ---
 

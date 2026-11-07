@@ -10,8 +10,7 @@ signing secrets, tokens carry a `role` claim, `RETRY_ON_TIMEOUT` is new (default
 
 > v2.0 is a **major** release with breaking changes. This guide covers every breaking change.
 > **Status:** `v2.0.0` was released on 2026-06-22. This guide was written during development on
-> `feat/v2.0`, one entry per §B8 phase; changes after 2.0.0 are in `CHANGELOG.md`.
->
+> `feat/v2.0`, one entry per development phase; changes after 2.0.0 are in `CHANGELOG.md`.
 
 ## Licensing (Phase 0)
 - The **published npm library** is now **Apache-2.0** (was GPL-3.0). The full application / board /
@@ -119,12 +118,13 @@ signing secrets, tokens carry a `role` claim, `RETRY_ON_TIMEOUT` is new (default
 
 ## 2.1.2 → 2.1.3 (documentation and configuration)
 
-No action needed. The library API is unchanged.
+No code change; the library API is unchanged. Check your `.env` first (item 1).
 
 1. **Docker Compose passes more settings.** `NODE_ENV`, `A2A_JWT_SECRET`, `TRUST_PROXY`, `LOG_LEVEL`, `AGENT_TIMEOUT_MS`,
    `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED` and `MCP_DISPATCH_CONSENT` in your `.env` now reach the containers. Check your
-   `.env` before you restart: a `NODE_ENV=production` line that had no effect before now makes the services refuse to start
-   without the three secrets (see 2.1.1 → 2.1.2, item 1).
+   `.env` before you restart: a `NODE_ENV=production` line that had no effect before now makes the gateway (and the root
+   stack's worker) refuse to start without the three secrets (see 2.1.1 → 2.1.2, item 1). A blank line such as
+   `SOCKET_CORS_ORIGINS=` counts as set for the variables passed only when set; delete the line instead.
 2. **Helm charts have optional settings.** `config.*` keys (empty = the code default), `secrets.A2A_JWT_SECRET`, and
    `secrets.create=false` to use a Secret you create yourself. With the default values the charts render the same objects
    as 2.1.2, except that the global-research gateway now reads the chart Secret.

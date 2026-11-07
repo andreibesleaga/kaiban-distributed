@@ -8,7 +8,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.1.3] — 2026-11-07
 
-A documentation and configuration release from a documentation, diagram and screenshot audit (110 findings in 3 areas, plus 7 image findings), with three small runtime fixes found while recapturing the screenshots. No new dependency. Nothing to change on upgrade; the new Compose and Helm settings apply only when you set them (see [MIGRATION.md](MIGRATION.md#212--213-documentation-and-configuration)).
+A documentation and configuration release from a documentation, diagram and screenshot audit (110 findings in 3 areas, plus 7 image findings), with three small runtime fixes found while recapturing the screenshots. No new dependency. No code change on upgrade; check your `.env` once, since the new Compose and Helm settings apply when you set them (see [MIGRATION.md](MIGRATION.md#212--213-documentation-and-configuration)).
 
 ### Fixed
 

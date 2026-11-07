@@ -15,7 +15,7 @@ data:
   CONTROL_PLANE_ENABLED: {{ .Values.config.CONTROL_PLANE_ENABLED | default "false" | quote }}
   {{- range $key := list "NODE_ENV" "TRUST_PROXY" "SOCKET_CORS_ORIGINS" "A2A_PUBLIC_URL" "AGENT_TIMEOUT_MS" "RETRY_ON_TIMEOUT" "LOG_LEVEL" "MCP_SERVER_ENABLED" "SEMANTIC_FIREWALL_ENABLED" "CIRCUIT_BREAKER_ENABLED" "JIT_TOKENS_ENABLED" }}
   {{- with index $.Values.config $key }}
-  {{ $key }}: {{ . | quote }}
+  {{ $key }}: {{ (kindIs "float64" .) | ternary (int64 . | toString) (toString .) | quote }}
   {{- end }}
   {{- end }}
 {{- if ne (toString .Values.secrets.create) "false" }}

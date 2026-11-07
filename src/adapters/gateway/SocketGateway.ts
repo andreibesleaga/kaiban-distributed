@@ -377,7 +377,8 @@ export class SocketGateway {
   // ─── Initialisation ───────────────────────────────────────────────────────
 
   public initialize(): void {
-    const rawOrigins = process.env["SOCKET_CORS_ORIGINS"];
+    // A blank value (an empty `.env` line passed through Compose) counts as unset.
+    const rawOrigins = process.env["SOCKET_CORS_ORIGINS"]?.trim() || undefined;
     if (!rawOrigins && process.env["NODE_ENV"] === "production") {
       throw new Error(
         "SOCKET_CORS_ORIGINS must be set in production — refusing wildcard CORS",

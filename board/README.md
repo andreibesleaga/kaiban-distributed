@@ -12,7 +12,7 @@ visualisation via Socket.io (React 19 + Vite + Zustand).
 | `npm run preview`            | Preview the production build                                                                      |
 | `npm run typecheck`          | Type-check only (`tsc --noEmit`)                                                                  |
 | `npm test`                   | Run the vitest test suite                                                                         |
-| `npm run test:visual`        | Playwright tests. `board-visual` and `board-control` need the dev server on :5173 and a gateway; `board-contrast` and `viewers-control` start their own stub gateway and need nothing running (see `playwright.config.ts`) |
+| `npm run test:visual`        | Playwright tests. `board-visual` and `board-control` need the dev server on :5173 and a gateway; `board-contrast`, `board-dialogs`, `viewers-control` and `viewers-visual` start their own stub gateway (and Vite server where needed) and need nothing running (see `playwright.config.ts`). Not run in CI |
 | `npm run test:visual:update` | Regenerate the committed screenshot baseline                                                      |
 
 ## Settings
