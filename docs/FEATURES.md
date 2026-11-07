@@ -1,6 +1,6 @@
 # kaiban-distributed — Features & Real-World Value
 
-> **Version 2.0.x (written for 2.0.0, June 2026)** · dual-licensed **Apache-2.0** (published library core)
+> **Maintained for 2.1.x; sections 3 and 4 describe the 2.0.0 release (June 2026)** · dual-licensed **Apache-2.0** (published library core)
 > / **GPL-3.0** (full application, board, examples). This document summarizes what the runtime does
 > and—more importantly—**why each capability matters in practice**. Every feature listed below exists
 > in the repository today; anything not yet built is explicitly labelled **roadmap**.
@@ -407,7 +407,7 @@ custom A2A connector, an MCP *client*, env-gated security controls, and a full C
 > The published v2.0 surface was verified locally at **108 test files / 1155 unit tests / 100% coverage
 > of `src/**`** (see [`docs/VERIFICATION.md`](VERIFICATION.md)); the e2e (real-broker), mutation and
 > supply-chain gates run in CI (the Playwright visual tests run by hand). `v2.0.0` was tagged and
-> published on 2026-06-22; on 6 Nov 2026 the unit suite is 151 files / 1778 tests.
+> published on 2026-06-22; the unit suite has 151 files; the test count of the last recorded run is in [VERIFICATION.md](VERIFICATION.md).
 
 ---
 
@@ -447,7 +447,7 @@ comparisons are framed cautiously—the agent-framework landscape moves fast.
   no-op when disabled (a hard invariant with backing tests).
 - **[differentiated] Transport-agnostic by contract: swap Redis ↔ Kafka with zero worker code
   changes**, with state/HITL channels deliberately pinned to Redis Pub/Sub regardless of driver. The
-  MAL + five-channel contract is a stronger separation than many agent frameworks, which couple
+  MAL + six-channel contract (the sixth, `kaiban-control`, exists only with the control plane) is a stronger separation than many agent frameworks, which couple
   orchestration to one transport.
 
 **What is *not* claimed:** this is not a durable-execution engine in the Temporal sense (the
@@ -478,7 +478,7 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 11. DLQ (`kaiban-events-failed`) with a typed taxonomy and safe replay (skips non-retryable poison).
 
 **Federation**
-12. A2A v0.3 server stack (`buildA2AStack`: executor + `RedisTaskStore` + `AgentStatusTracker`), JSON-RPC + REST + gRPC interfaces advertised, SSE streaming, input caps (`A2A_INPUT_CAPS`, 64 KB).
+12. A2A v0.3 server stack (`buildA2AStack`: executor + `RedisTaskStore` + `AgentStatusTracker`), JSON-RPC interface (`/a2a/rpc`) advertised, SSE streaming, input caps (`A2A_INPUT_CAPS`, 64 KB).
 13. MCP server (`buildMcpServer`/`createMcpHttpHandler`): Streamable HTTP, stateful sessions, least-privilege `MCP_ALLOWED_*`, elicitation consent, curated tools/resources/prompts.
 14. `MCPFederationClient` outbound stdio client for external MCP tools.
 
@@ -515,9 +515,9 @@ A fuller enumeration of remaining capabilities, all present in the repository:
 34. Clean/hexagonal 4-layer architecture; `Result<T,E>` monad + typed `DomainError`s.
 35. Apache-2.0 CORE-ONLY publish; `.` + `./shared` exports; two-entry api-extractor with committed `etc/*.api.md`; staging-dir pack; `smoke-consumer.sh`.
 36. Strict TypeScript, ESLint zero-warnings (complexity ≤ 10, no `any`), madge no-cycles gate.
-37. **Test/quality posture:** 100% `src/**` coverage (151 files / 1778 unit tests on 6 Nov 2026), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
+37. **Test/quality posture:** 100% `src/**` coverage (151 unit-test files; count in [VERIFICATION.md](VERIFICATION.md)), `fast-check` property tests, `supertest` gateway tests, Stryker mutation testing on the domain layer (~96.6% score), micro-benchmarks, board Vitest + `vitest-axe` a11y + Playwright visual baselines.
 38. **Supply chain / SLSA:** CycloneDX SBOM, SLSA provenance, cosign keyless signing, Trivy image scan, gitleaks, OSV-Scanner, CodeQL, OpenSSF Scorecard; `npm audit` blocking on HIGH+.
-39. 21 ADRs (`docs/decisions/ADR-001..021`) recording every significant decision; a `MIGRATION.md`, `COMPLIANCE.md`, `VERIFICATION.md`, and a `docs/roadmap/V2.1-ROADMAP.md`.
+39. 22 ADRs (`docs/decisions/`: ADR-001 to ADR-021 and ADR-025; 022 to 024 are roadmap names) recording every significant decision; a `MIGRATION.md`, `COMPLIANCE.md`, `VERIFICATION.md`, and a `docs/roadmap/V2.1-ROADMAP.md`.
 
 ---
 
@@ -545,4 +545,4 @@ and additive:
 
 ---
 
-*Grounded in the kaiban-distributed repository at version 2.0.x (written for 2.0.0, June 2026) and the author's *Agentic AI Architectures* book.*
+*Grounded in the kaiban-distributed repository, maintained for 2.1.x (sections 3 and 4 written for 2.0.0, June 2026), and the author's *Agentic AI Architectures* book.*

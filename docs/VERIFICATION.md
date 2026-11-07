@@ -1,3 +1,5 @@
+Current record: 2.1.2 (section "2.1.2 verification record", line 275). Earlier sections are history.
+
 # v2.0 Verification Record (Phase Z — local)
 
 > **Historical record** of the June 2026 v2.0 verification, kept as written; its numbers and
