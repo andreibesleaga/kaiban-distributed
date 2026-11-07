@@ -60,12 +60,22 @@ Open `examples/global-research/viewer/board.html` in your browser to watch the s
 | `REVIEW_WAIT_MS` | `180000` | Timeout for governance review (ms) |
 | `EDIT_WAIT_MS` | `300000` | Timeout for editorial review (ms) |
 | `MESSAGING_DRIVER` | `bullmq` | `bullmq` or `kafka` |
+| `CONTROL_PLANE_ENABLED` | off | `true` on every process turns on the emergency STOP ALL (see below) |
+| `BOARD_JWT_SECRET` | unset | Secret for board tokens; the board and HTTP stop commands need a token |
+| `CHANNEL_SIGNING_SECRET` | unset | Signs the Redis channels, including the STOP ALL control channel; required in production |
+| `AGENT_TIMEOUT_MS` | `300000` | Longest time one agent attempt may run |
+| `RETRY_ON_TIMEOUT` | `false` | Retry an attempt that timed out |
+| `WORKFLOW_ID` | random per run | Names the Redis checkpoint; set it to the previous run's id to resume after a restart |
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `OPENROUTER_API_KEY` | — | OpenRouter API key (alternative) |
 | `LLM_MODEL` | `gpt-4o-mini` | LLM model identifier |
 | `CHAOS_MODE` | `false` | Enable 20% crash rate on searchers |
 | `AUTO_PUBLISH` | unset | Set to `1` or `true` to skip the human decision and publish automatically (CI / unattended runs). Never implied by a missing terminal: without it the decision comes from the terminal or the board |
 | `SEARCHER_ID` | auto: `searcher-<n>` | Identity of a searcher node. Unset, each replica claims the next free index from Redis (`searcher-0`, `searcher-1`, …) and keeps it across an in-place restart; set it to pin one (single-process dev). With a long-lived Redis, delete the keys `kaiban:searcher:reg` and `kaiban:searcher:hosts` when you recreate the searchers |
+
+## Emergency stop
+
+With `CONTROL_PLANE_ENABLED=true` on every process, the viewer's STOP ALL button, `POST /control/stop-all` and `npm run stop-all` end the run: tasks are killed, the workflow is published as `STOPPED`, and the orchestrator exits with code 2. See [EXAMPLES.md](../../EXAMPLES.md), section 1H.
 
 ## NODE_TYPE — Single Entry Point
 
@@ -109,7 +119,7 @@ CHAOS_MODE=true SEARCHER_ID=searcher-1 npx ts-node examples/global-research/sear
 CHAOS_MODE=true docker compose -f examples/global-research/docker-compose.yml up
 ```
 
-When a searcher crashes (simulated via `process.exit(1)`), BullMQ automatically reassigns the job to another available searcher worker.
+When a searcher crashes (simulated via `process.exit(1)`), BullMQ reassigns the job to another searcher after its stalled-job check, which can take about 30 seconds (the `stalledInterval` default). On Kafka the consumer group rebalances instead. (Not re-measured for this guide.)
 
 ## Kafka Variant
 
@@ -122,7 +132,8 @@ Then set `MESSAGING_DRIVER=kafka KAFKA_BROKERS=localhost:9092` when running the 
 ## Kubernetes
 
 ```bash
-# Apply all manifests
+# Apply all manifests (the pods fail until the secret kaiban-research-secrets,
+# defined in configmap.yml, holds a real OPENAI_API_KEY)
 kubectl apply -f examples/global-research/infra/kubernetes/
 
 # Scale searcher fleet
@@ -207,9 +218,10 @@ interface ResearchContext {
 # Unit tests
 npm test
 
-# E2E test for this example (requires Redis running)
+# E2E test for this example (needs Docker; the setup starts its own Redis from the root
+# docker-compose.yml on port 6379, so stop any example stack first)
 npm run test:e2e -- --reporter=verbose global-research
 
-# All E2E tests (requires running services)
+# All E2E tests (same Docker requirement)
 npm run test:e2e
 ```

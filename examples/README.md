@@ -7,11 +7,11 @@ commands are in [EXAMPLES.md](../EXAMPLES.md).
 
 | Example | What it shows | Start |
 |---|---|---|
-| [blog-team](blog-team/) | A sequential pipeline: researcher, writer and editor agents, then a human decision (publish, revise or reject) on the board | `./scripts/blog-team.sh start` |
+| [blog-team](blog-team/README.md) | A sequential pipeline: researcher, writer and editor agents, then a human decision (publish, revise or reject) on the board | `./scripts/blog-team.sh start` |
 | [global-research](global-research/README.md) | Fan-out / fan-in: N competing searcher agents, then a writer, a governance reviewer, an editor and a human decision; `--searchers N` and `--chaos` flags | `./scripts/global-research.sh start` |
 
 Any example can also be started with the generic runner:
-`./scripts/run-example.sh start examples/<name>`.
+`./scripts/run-example.sh start examples/<name>`. It needs an LLM key (in `.env` or the environment), starts the React board on :5173, and stops the stack and the board when the orchestrator ends.
 
 ## More examples
 
