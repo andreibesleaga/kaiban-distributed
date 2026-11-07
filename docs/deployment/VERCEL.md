@@ -116,7 +116,7 @@ SOCKET_CORS_ORIGINS=https://kaiban-blog-team-viewer.vercel.app
 
 ## Emergency STOP ALL (optional)
 
-The viewer only shows the stop. Turn it on for the Railway services: `CONTROL_PLANE_ENABLED=true` on every service, and `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` as service variables. See [Emergency STOP ALL](../../README.md#emergency-stop-all-210) in the README and [RAILWAY.md](RAILWAY.md).
+The deployed viewer can issue STOP ALL itself: open it as `https://<your-viewer>/board.html#token=<board token>` (the fragment is removed from the address bar at once; the token goes to the gateway of that link only: `config.js`, or a `?gateway=` in the same address). On the Railway side set `CONTROL_PLANE_ENABLED=true` on every service, and `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` as service variables. Minting the token and the rest: [Emergency STOP ALL](../../README.md#emergency-stop-all-210) in the README and [RAILWAY.md](RAILWAY.md).
 
 ## Vercel Limitations to Keep in Mind
 

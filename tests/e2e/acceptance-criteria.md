@@ -57,7 +57,7 @@ Tests: `tests/e2e/emergency-stop.test.ts` (A1, A2 + A3), `tests/e2e/emergency-st
 
 **Scenario: A worker process is killed mid-task.** Not covered by an automated test.
 
-- In 2.x a task whose node stops is dead-lettered as `actor_stopped` and can be replayed from the failure queue (DLQ replay, `src/resilience/dlq-replay.ts`). It is not resumed by another node.
+- A graceful stop (SIGTERM drain, `AgentActor.stop()`) dead-letters the running task as `actor_stopped`, replayable from the failure queue (DLQ replay, `src/resilience/dlq-replay.ts`). A killed process publishes nothing: the broker decides. BullMQ marks the job stalled when its lock expires (30 s) and hands it once more to any worker of that queue (library defaults); Kafka re-delivers the uncommitted message to the partition's next consumer after the rebalance. Neither resumes the task's progress.
 
 ## Feature: UI Synchronization
 

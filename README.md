@@ -906,7 +906,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 1788 unit tests (no external deps)
+npm run test           # 1789 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -921,7 +921,7 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 1788 tests, 151 files | None (all mocked) |
+| Unit | `npm test` | 1789 tests, 151 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 73 tests, 12 files | Docker Redis (auto-managed by globalSetup) |
 | Security E2E | `npm run test:e2e:security` | 41 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 4 tests, 3 files | Docker Kafka + Zookeeper |
@@ -1014,7 +1014,7 @@ kaiban-distributed/
 │       ├── runtime.ts  # Messaging driver + telemetry setup shared by both roles
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 1788 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 1789 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)

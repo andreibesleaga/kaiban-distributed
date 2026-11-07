@@ -84,7 +84,7 @@ helm install kaiban-blog-team ./examples/blog-team/infra/helm \
   --namespace kaiban --create-namespace
 ```
 
-If you keep the key in the secret manager only, install with `--set secrets.create=false` and create a Kubernetes Secret named `kaiban-blog-team-kaiban-blog-team-secrets` (`<release>-kaiban-blog-team-secrets`) from it with the External Secrets Operator; see [HELM.md, Secrets Management](HELM.md#secrets-management).
+If you keep the key in the secret manager only, install with `--set secrets.create=false` and create a Kubernetes Secret named `kaiban-blog-team-secrets` (the release name above already contains the chart name; the rule is in HELM.md) from it with the External Secrets Operator; see [HELM.md, Secrets Management](HELM.md#secrets-management).
 
 ### Step 5 — Access the Gateway
 

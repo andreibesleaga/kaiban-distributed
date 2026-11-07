@@ -13,7 +13,7 @@ A documentation and configuration release from a documentation, diagram and scre
 ### Fixed
 
 - Board: the STOP ALL dialog and the task detail dialog open in the centre of the window. Tailwind 4's reset sets `margin: 0`, which removed the native centring of `<dialog>`, so both opened in the top-left corner. A Playwright test (`board/e2e/board-dialogs.spec.ts`) checks the position in a real browser.
-- A task stopped by STOP ALL is reported as STOPPED once. The handler wrapper and the actor both published it, so the board and the log showed it twice.
+- A task stopped by STOP ALL is reported as STOPPED once. The handler wrapper and the actor both published it, so the board and the log showed it twice. A task sent again with the same id (DLQ replay) reports its own stop.
 - An empty `A2A_PUBLIC_URL` (for example `A2A_PUBLIC_URL=` in `.env`) is treated as unset: the agent card URL falls back to `http://localhost:<port>` instead of an empty base URL.
 - Docker Compose now passes the production and tuning settings the documentation tells you to put in `.env` to the containers: `NODE_ENV`, `A2A_JWT_SECRET`, `TRUST_PROXY`, `LOG_LEVEL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED`, `MCP_DISPATCH_CONSENT` (and `SOCKET_CORS_ORIGINS`, `A2A_PUBLIC_URL`, `MCP_SERVER_PATH`, `MCP_ALLOWED_*`, `OTEL_EXPORTER_OTLP_ENDPOINT` when set). The root stack also passes the firewall, circuit breaker, JIT token and `VALID_HITL_DECISIONS` settings, and its worker gets the board and A2A secrets. Unset keeps the previous behaviour.
 - The global-research Kafka stack now passes the firewall, circuit breaker and JIT token settings to its workers, like the other stacks.

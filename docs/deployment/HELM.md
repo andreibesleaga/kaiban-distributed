@@ -222,7 +222,7 @@ helm upgrade --install blog-team examples/blog-team/infra/helm \
 
 **Option B — External Secrets Operator**
 
-Install with `--set secrets.create=false`: the chart then renders no Secret. Let the `ExternalSecret` create a Secret named `<release>-kaiban-blog-team-secrets` (for release `blog-team`: `blog-team-kaiban-blog-team-secrets`) with the keys `OPENAI_API_KEY` and, as needed, `OPENROUTER_API_KEY`, `BOARD_JWT_SECRET`, `CHANNEL_SIGNING_SECRET`, `A2A_JWT_SECRET`. The pods read it by that name. Two objects of the same name conflict at install, so do not leave `secrets.create` on.
+Install with `--set secrets.create=false`: the chart then renders no Secret. Let the `ExternalSecret` create a Secret named `<fullname>-secrets`, where the fullname is the release name when it already contains the chart name, else `<release>-kaiban-blog-team` (release `kaiban-blog-team`: `kaiban-blog-team-secrets`; release `blog-team`: `blog-team-kaiban-blog-team-secrets`; `fullnameOverride` wins). Check with `helm template <release> … | grep -A1 secretRef`. The Secret holds the keys `OPENAI_API_KEY` and, as needed, `OPENROUTER_API_KEY`, `BOARD_JWT_SECRET`, `CHANNEL_SIGNING_SECRET`, `A2A_JWT_SECRET`. The pods read it by that name. Two objects of the same name conflict at install, so do not leave `secrets.create` on.
 
 **Option C — Sealed Secrets**
 

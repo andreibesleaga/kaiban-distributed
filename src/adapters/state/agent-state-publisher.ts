@@ -329,7 +329,9 @@ export class AgentStatePublisher {
         // non-retryable, so the actor dead-letters it after this one attempt.
         this.assertCapsNotMet(payload.taskId);
 
-        // → EXECUTING (task queued / starting)
+        // → EXECUTING (task queued / starting). A new send of a known id (DLQ
+        // replay keeps the id) may report its own stop later.
+        this.stoppedTaskIds.delete(payload.taskId);
         this.currentStatus = "EXECUTING";
         this.currentTaskId = payload.taskId;
         pub({

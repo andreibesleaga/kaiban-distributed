@@ -79,6 +79,16 @@ describe("AgentStatePublisher — emergency stop", () => {
     expect(lastAgentStatus()).toBe("IDLE");
   });
 
+  it("a replayed task (same id, new send) reports its own stop", async () => {
+    // DLQ replay keeps the task id: a task that starts again on this worker must not inherit
+    // the earlier stop's "already reported" mark.
+    const stop = new EmergencyStopError();
+    const wrapped = publisher.wrapHandler(vi.fn().mockRejectedValue(stop));
+    await expect(wrapped(payload("t-replay"))).rejects.toBe(stop);
+    await expect(wrapped(payload("t-replay"))).rejects.toBe(stop);
+    expect(taskStatuses("t-replay")).toEqual(["DOING", "STOPPED", "DOING", "STOPPED"]);
+  });
+
   it("a late result after an emergency abort never shows as DONE (ES-12)", async () => {
     const controller = new AbortController();
     const handler = vi.fn(async () => {

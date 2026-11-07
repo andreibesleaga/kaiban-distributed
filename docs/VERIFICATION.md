@@ -278,14 +278,16 @@ Scope: the fixes of the documentation, diagram and screenshot audit (110 finding
 plus 7 image findings), the Compose, Helm and Kubernetes forwarding of the documented settings, three
 small runtime fixes found on the way (dialog centring, STOPPED reported once, blank
 `A2A_PUBLIC_URL`/`SOCKET_CORS_ORIGINS`/`MCP_SERVER_PATH` treated as unset), then a read-only
-whole-diff review (no blocker, 2 medium and 7 low items, all applied). Every line below is from a
+whole-diff review (no blocker, 2 medium and 7 low items, all applied) and one Copilot review round (5 items,
+all applied: a replayed task reports its own stop, Helm Secret naming in the cloud guides, viewer token on Vercel,
+board proxy wording, kill-versus-stop wording). Every line below is from a
 command run on the final tree of branch `release/2.1.3`.
 
 ## Gate
 
 | Check | Result |
 | --- | --- |
-| `npm run test:coverage` | 151 files, 1,788 tests; 100 % statements (2,944), branches (1,763), functions (686), lines (2,707) |
+| `npm run test:coverage` | 151 files, 1,789 tests; 100 % statements (2,945), branches (1,763), functions (686), lines (2,708) |
 | `npm run typecheck` · `npm run lint` · `npm run lint:arch` · `npm run api:check` · `npm run build` | clean · 0 warnings · no cycle · reports current · ok |
 | `cd board && npx tsc --noEmit && npx vitest run && npm run build` | 18 files, 207 tests · built |
 | `cd board && npx playwright test board-contrast board-dialogs viewers-control viewers-visual` (with `EXAMPLES_VIEWER_DIR`) | 62 passed (one teardown timed out while the e2e suites loaded the machine; the spec alone passed again). `board-visual` and `board-control` need a live gateway and were run for the 2.1.2 record |

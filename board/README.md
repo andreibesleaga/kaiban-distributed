@@ -19,7 +19,7 @@ visualisation via Socket.io (React 19 + Vite + Zustand).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `VITE_GATEWAY_URL` | `http://localhost:3000` | Gateway the board connects to. In `npm run dev` the Vite proxy forwards `/socket.io` to it. |
+| `VITE_GATEWAY_URL` | `http://localhost:3000` | Gateway the board connects to: the client opens the socket to this URL directly (`?gateway=` can override it, see below). The Vite dev server also proxies `/socket.io` to the `VITE_GATEWAY_URL` of the shell, which only matters when a page connects to its own origin. |
 | `VITE_BOARD_TOKEN` | none | Board token for a gateway with `BOARD_JWT_SECRET`; also needed for the STOP ALL button. **Local development only:** it is compiled into the bundle, so anyone who can load a production build can read it, and it can stop every task. In production, put the board behind your own access control and do not build with a real token. |
 
 ## What you see
