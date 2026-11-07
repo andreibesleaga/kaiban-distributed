@@ -49,7 +49,7 @@ This installs the chart with release name `blog-team` using default values (Bull
 image:
   repository: ghcr.io/andreibesleaga/kaiban-distributed
   pullPolicy: IfNotPresent
-  # Empty tag → uses Chart.AppVersion, the release image tag (for example 2.1.2).
+  # Empty tag → uses Chart.AppVersion, the release image tag (for example 2.1.3).
   # For a local image built as in KUBERNETES.md, install with
   # `--set image.repository=kaiban-distributed --set image.tag=latest`.
   tag: ""

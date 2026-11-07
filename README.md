@@ -569,7 +569,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "name": "kaiban-gateway",
   "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
   "url": "http://localhost:3000/a2a/rpc",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
     { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }

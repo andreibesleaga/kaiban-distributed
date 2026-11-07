@@ -148,6 +148,10 @@ gcloud compute firewall-rules create allow-kaiban \
 
 ---
 
+## Emergency STOP ALL (optional)
+
+Set `CONTROL_PLANE_ENABLED=true` on every service (gateway, workers and orchestrator), and put `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` in the Secret next to the model keys. See [Emergency STOP ALL](../../README.md#emergency-stop-all-210) in the README and [HELM.md](HELM.md).
+
 ## Redis on GCP
 
 Use **Memorystore for Redis** (Basic tier for dev, Standard for production):

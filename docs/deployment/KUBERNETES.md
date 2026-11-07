@@ -37,7 +37,7 @@ docker tag kaiban-distributed:latest your-registry/kaiban-distributed:latest
 docker push your-registry/kaiban-distributed:latest
 ```
 
-Update `image` in `agents.yaml` and `gateway.yaml` if using a remote registry. The manifests use the locally built `kaiban-distributed:latest`; the Helm chart defaults to the published image `ghcr.io/andreibesleaga/kaiban-distributed:<appVersion>`. To use the published image instead, set `image:` to `ghcr.io/andreibesleaga/kaiban-distributed:2.1.2` and skip the build.
+Update `image` in `agents.yaml` and `gateway.yaml` if using a remote registry. The manifests use the locally built `kaiban-distributed:latest`; the Helm chart defaults to the published image `ghcr.io/andreibesleaga/kaiban-distributed:<appVersion>`. To use the published image instead, set `image:` to `ghcr.io/andreibesleaga/kaiban-distributed:2.1.3` and skip the build.
 
 For **local clusters** (kind, minikube, k3s):
 

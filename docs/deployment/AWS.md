@@ -156,6 +156,10 @@ eb setenv OPENAI_API_KEY=sk-... REDIS_URL=redis://... AGENT_IDS=researcher,write
 
 ---
 
+## Emergency STOP ALL (optional)
+
+Set `CONTROL_PLANE_ENABLED=true` on every service (gateway, workers and orchestrator), and put `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` in the Secret next to the model keys. See [Emergency STOP ALL](../../README.md#emergency-stop-all-210) in the README and [HELM.md](HELM.md).
+
 ## Redis on AWS
 
 Use **Amazon ElastiCache for Redis** (cluster mode disabled, single node for dev):

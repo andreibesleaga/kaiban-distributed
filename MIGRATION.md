@@ -1,6 +1,6 @@
 # Migration guide
 
-Where to start: upgrading from 2.1.1, read [2.1.1 → 2.1.2](#211--212-audit-fixes); from 2.0.x, read
+Where to start: upgrading from 2.1.2, read [2.1.2 → 2.1.3](#212--213-documentation-and-configuration) (no action needed); from 2.1.1, read [2.1.1 → 2.1.2](#211--212-audit-fixes) first; from 2.0.x, read
 [2.0.x → 2.1.0](#20x--210-emergency-stop-all-additive), then 2.1.0 → 2.1.1, then 2.1.1 → 2.1.2; from 1.x, read the v2.0
 section below (v1.x → v2.0), then the 2.1 sections. The 2.1 sections run newest first. For
 2.0.1 and 2.0.2 operator changes see [CHANGELOG.md](CHANGELOG.md): production boot refuses missing, short or repeated
@@ -116,6 +116,18 @@ signing secrets, tokens carry a `role` claim, `RETRY_ON_TIMEOUT` is new (default
       new exports `IAdmissionGate`/`AdmissionVerdict` + `buildAdmissionGate`/`buildWorkerAdmissionGate`.
       Cost-reservation enforcement is added when a fleet `CostLimiterPort` is injected. See
       `docs/decisions/ADR-021`.
+
+## 2.1.2 → 2.1.3 (documentation and configuration)
+
+No action needed. The library API is unchanged.
+
+1. **Docker Compose passes more settings.** `NODE_ENV`, `A2A_JWT_SECRET`, `TRUST_PROXY`, `LOG_LEVEL`, `AGENT_TIMEOUT_MS`,
+   `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED` and `MCP_DISPATCH_CONSENT` in your `.env` now reach the containers. Check your
+   `.env` before you restart: a `NODE_ENV=production` line that had no effect before now makes the services refuse to start
+   without the three secrets (see 2.1.1 → 2.1.2, item 1).
+2. **Helm charts have optional settings.** `config.*` keys (empty = the code default), `secrets.A2A_JWT_SECRET`, and
+   `secrets.create=false` to use a Secret you create yourself. With the default values the charts render the same objects
+   as 2.1.2, except that the global-research gateway now reads the chart Secret.
 
 ## 2.1.1 → 2.1.2 (audit fixes)
 

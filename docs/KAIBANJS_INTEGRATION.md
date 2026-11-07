@@ -2340,7 +2340,7 @@ console.log('Task created:', task.id, task.status.state);
 
 ### 12.5 Rate Limiting
 
-The gateway applies a sliding-window rate limit: **100 requests per 60 seconds per IP**. On breach, responds with HTTP 429.
+The gateway applies a sliding-window rate limit: **100 requests per 60 seconds per IP**. On breach, responds with HTTP 429. The routes it covers are listed in [SPEC section 5](api/SPEC.md#5-http-api-edge-gateway).
 
 ---
 
