@@ -21,7 +21,7 @@ interface DistributedAgentState {
 }
 ```
 
-> **Note on `THINKING`:** `AgentStatePublisher.wrapHandler()` emits the full per-task status sequence directly — `EXECUTING` (task starting) → `THINKING` (LLM call in progress) → `IDLE` (done) or `ERROR` (`src/adapters/state/agent-state-publisher.ts`). The deprecated `DistributedStateMiddleware` (Zustand state interception) is an alternative bridge for the in-process `KaibanTeamBridge` path; on the distributed worker path `THINKING` comes from `wrapHandler()`, not the middleware.
+> **Note on `THINKING`:** `AgentStatePublisher.wrapHandler()` emits the full per-task status sequence directly — `EXECUTING` (task starting) → `THINKING` (LLM call in progress) → `IDLE` (done) or `ERROR` (`src/adapters/state/agent-state-publisher.ts`). The `KaibanTeamBridge` (deprecated, in-process) streams a team through `DistributedStateMiddleware` (Zustand state subscription); on the distributed worker path `THINKING` comes from `wrapHandler()`, not the middleware.
 
 ### Task Workflow Schema
 
@@ -298,7 +298,7 @@ board's read-only view runs without one. The control channel itself is `kaiban-c
 Pub/Sub, `wrapSigned` envelope) carrying `{ commandId, command: 'STOP_ALL', issuedBy, issuedAt, reason? }`;
 the latest command is also saved under the Redis key `kaiban-control:stopped-at`.
 
-> **Source of deltas:** `AgentStatePublisher.wrapHandler()` emits `EXECUTING → THINKING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. The deprecated `DistributedStateMiddleware` forwards KaibanJS internal state for the in-process `KaibanTeamBridge` path.
+> **Source of deltas:** `AgentStatePublisher.wrapHandler()` emits `EXECUTING → THINKING → IDLE/ERROR` agent transitions with matching task `DOING → DONE/BLOCKED` updates. The orchestrator emits `teamWorkflowStatus` changes and `AWAITING_VALIDATION` task states. The `KaibanTeamBridge` (deprecated, in-process) forwards KaibanJS internal state through `DistributedStateMiddleware`.
 
 PII keys (`email`, `name`, `phone`, `ip`, `password`, `token`, `secret`, `ssn`, `dob`) are stripped from the **top level** of a delta before publishing (see `DistributedStateMiddleware.sanitizeDelta`). Keys nested inside `agents[]` or `tasks[]` entries are not inspected (agent `name` is a display field the board needs).
 

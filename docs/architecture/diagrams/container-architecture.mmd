@@ -1,16 +1,21 @@
 C4Container
     title Container Diagram for Distributed KaibanJS
-    Person(user, "Human Operator", "Monitors board via browser.")
-    
-    Container(ui, "Kaiban Board UI", "React", "Visualizes tasks and logs.")
-    Container(gateway, "Edge Gateway APIs", "Node.js (Express)", "Routes API calls and maintains WebSocket connections.")
-    Container(broker, "Messaging Abstraction Layer (MAL)", "Redis/BullMQ or Kafka", "Message broker handling queueing and Pub/Sub state sync.")
-    Container(orchestrator, "Team Orchestrator Nodes", "Node.js + KaibanJS", "Evaluates workflows and assigns tasks.")
-    Container(worker, "Agent Worker Nodes", "Node.js + KaibanJS", "Lightweight Actor wrappers that process AI tasks sequentially.")
+    Person(user, "Human Operator", "Monitors the board in a browser; can issue STOP ALL.")
+
+    Container(ui, "Kaiban Board UI", "React or static HTML", "Visualizes tasks and logs; sends HITL decisions and STOP ALL.")
+    Container(gateway, "Edge Gateway", "Node.js (Express, Socket.io)", "HTTP: health, ready, startup, agent card, a2a/rpc, mcp, control/stop-all. Publishes tasks, reads completed and failed events, relays state to the board.")
+    Container(pubsub, "Redis Pub/Sub", "Redis 7", "Channels kaiban-state-events, kaiban-hitl-decisions and kaiban-control (STOP ALL, control plane only).")
+    Container(broker, "Durable broker", "BullMQ (Redis) or Kafka", "Agent mailboxes kaiban-agents-*, kaiban-events-completed, kaiban-events-failed.")
+    Container(orchestrator, "Team Orchestrator", "Node.js", "Publishes tasks, reads completions, owns the workflow state, receives HITL decisions and STOP ALL.")
+    Container(worker, "Agent Worker Nodes", "Node.js + KaibanJS", "Actors that process AI tasks; publish state; receive STOP ALL.")
+    Container(cli, "stop-all CLI", "npm run stop-all", "Publishes the emergency stop straight to Redis.")
 
     Rel(user, ui, "Interacts with", "HTTPS")
-    Rel(ui, gateway, "Listens to state via", "Socket.io")
-    Rel(gateway, broker, "Subscribes to Event Stream", "Redis Pub/Sub")
-    Rel(orchestrator, broker, "Publishes new tasks to", "BullMQ or Kafka")
-    Rel(worker, broker, "Consumes tasks from", "BullMQ or Kafka")
-    Rel(worker, broker, "Publishes status updates to", "Redis Pub/Sub")
+    Rel(ui, gateway, "State, HITL decision, STOP ALL", "Socket.io / HTTP")
+    Rel(gateway, broker, "Publishes tasks; reads completed and failed", "BullMQ or Kafka")
+    Rel(gateway, pubsub, "Subscribes to state; publishes HITL and STOP ALL", "Redis Pub/Sub")
+    Rel(orchestrator, broker, "Publishes tasks; reads completed and failed", "BullMQ or Kafka")
+    Rel(orchestrator, pubsub, "Publishes state; reads HITL and STOP ALL", "Redis Pub/Sub")
+    Rel(worker, broker, "Consumes tasks; publishes completed and failed", "BullMQ or Kafka")
+    Rel(worker, pubsub, "Publishes state; reads STOP ALL", "Redis Pub/Sub")
+    Rel(cli, pubsub, "Publishes STOP ALL", "Redis Pub/Sub")
