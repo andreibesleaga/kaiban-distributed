@@ -122,7 +122,7 @@ The package has two entry points: `kaiban-distributed` (actor, drivers, bridges,
 
 ## Running example - blog-team
 (Blog team of: researcher, writer, editor - nodes distributed locally over docker services with Redis/Kafka messaging between them and their processes tasks status and results)
-![(the React board after STOP ALL: the banner with the node acknowledgements and the Stopped badges)](docs/images/board-stopped.png)
+![(running example gif)](docs/images/blogTeam.gif)
 
 ---
 
