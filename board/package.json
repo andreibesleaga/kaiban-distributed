@@ -20,7 +20,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "socket.io-client": "^4.8.4",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.16"
   },
   "overrides": {
     "nanoid": ">=3.3.18 <4",
@@ -29,20 +29,20 @@
     "source-map-js": ">=1.2.2 <2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
-    "@tailwindcss/postcss": "^4.3.3",
+    "@playwright/test": "^1.65.0",
+    "@tailwindcss/postcss": "^4.3.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@types/jest": "^30.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "happy-dom": "^21.0.4",
     "jsdom": "^29.1.1",
-    "postcss": "^8.5.31",
+    "postcss": "^8.5.32",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vitest": "^4.1.12",
     "vitest-axe": "^0.1.0"
   }
