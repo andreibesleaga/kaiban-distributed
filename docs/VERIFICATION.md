@@ -1,4 +1,4 @@
-Current record: 2.1.3 (section "2.1.3 verification record", line 275); 2.1.2 is at line 307. Earlier sections are history.
+Current record: 2.1.4 (section "2.1.4 verification record", line 275); 2.1.3 is at line 306; 2.1.2 is at line 340. Earlier sections are history.
 
 # v2.0 Verification Record (Phase Z — local)
 
@@ -271,6 +271,37 @@ The spec was written first and failed for the right reason (no button) before th
 | blog-team, control plane off | viewer connected (LIVE) | no STOP ALL button; `POST /control/stop-all` → 404; a normal run published, exit 0 |
 
 ---
+
+# 2.1.4 verification record — approval retention, worker-kill test, measurements (2026-11-18)
+
+Scope: `HITL_DECISION_TTL_SECONDS`, the pending approval card published again when the global-research
+orchestrator resumes, the worker-kill chaos test, the measurement harness in `bench/distributed/`, the
+"Delivery guarantees and limits" passage and the related docs, then a read-only whole-diff review (no
+blocker; 9 should-fix and 11 minor items, all applied). Every line below is from a command run on the
+final tree.
+
+## Gate
+
+| Check | Result |
+| --- | --- |
+| `npm run test:coverage` | 152 files, 1,804 tests; 100 % statements (2,956), branches (1,766), functions (688), lines (2,717) |
+| `npm run typecheck` · `npm run lint` · `npm run lint:arch` · `npm run api:check` · `npm run build` | clean · 0 warnings · no cycle · reports current (no API change) · ok |
+| `cd board && npx tsc --noEmit && npx vitest run` | 18 files, 207 tests |
+| `npm run test:e2e` · `test:e2e:security` · `test:e2e:chaos` · `test:e2e:kafka` | 73 · 41 · 3 · 4 tests, all passing; the chaos suite was run three more times, all passing |
+| `scripts/check-deploy-manifests.sh` | `docker compose config` for the 5 stacks (the four example stacks now pass `HITL_DECISION_TTL_SECONDS` to the gateway and the orchestrator); `helm lint` + `helm template` for both charts |
+| `npm run lockfile:check` · `scripts/smoke-consumer.sh` | ok · passed (both entry points import from the packed tarball) |
+| `node scripts/audit-gate.js` (root and board lockfiles) | 0 high/critical outside the two dated exceptions (`zod` 3.x, and `picomatch` 4.0.7 in the development tooling, added 2026-11-18) |
+| Examples repository (`kaiban-distributed-examples`, a clean copy with the packed 2.1.4 tarball installed) | typecheck, build and 26 tests pass |
+
+One run of the security suite failed in the circuit-breaker window test while the test machine's clock was
+being corrected by its time-sync service; three further runs passed. The breaker measures its window with
+the wall clock, so a clock step during the 1.6 s wait can keep it open.
+
+## Measurements
+
+The recorded run of the harness is `bench/distributed/RESULTS.md`, with the raw data in
+`bench/distributed/results/`. The recovery times quoted in [FEATURES.md](FEATURES.md#delivery-guarantees-and-limits)
+come from its crash-recovery tables.
 
 # 2.1.3 verification record — documentation and configuration (2026-11-07)
 

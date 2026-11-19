@@ -163,7 +163,7 @@ if (!parsed) {
 
 **Security properties:**
 - **Integrity:** HMAC-SHA256 covers `"<ts>.<JSON.stringify(payload)>"` — any field change invalidates the signature.
-- **Replay protection:** Messages older than 30 seconds are rejected (`MAX_CLOCK_SKEW_MS = 30_000`).
+- **Replay protection:** Messages older than 30 seconds are rejected (`MAX_CLOCK_SKEW_MS = 30_000`). One path has a longer window: a human decision read from its per-task Redis list is accepted for `HITL_DECISION_TTL_SECONDS` (300 s by default, at most 7 days), because it may wait there for an orchestrator that restarts. A longer retention therefore also lengthens the time in which a captured signed decision for the same task id can be replayed; keep it as short as the outage you plan for.
 - **Timing safety:** Comparison uses `crypto.timingSafeEqual()` — no timing oracle.
 
 **Gate:** Plain-JSON pass-through when `CHANNEL_SIGNING_SECRET` is unset. Existing deployments continue working unchanged.

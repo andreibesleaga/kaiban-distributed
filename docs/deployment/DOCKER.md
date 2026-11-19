@@ -227,6 +227,7 @@ The Gateway and Worker tables below describe the root `docker-compose.yml` (`kai
 | `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `LOG_LEVEL` | yes | yes | Set the timeouts identically on the gateway and every worker |
 | `SEMANTIC_FIREWALL_ENABLED`, `CIRCUIT_BREAKER_*`, `JIT_TOKENS_ENABLED` | no | yes | |
 | `VALID_HITL_DECISIONS` | yes | no | |
+| `HITL_DECISION_TTL_SECONDS` | yes | no | The example stacks pass the same value to their orchestrator, which reads it too. Unset or blank means 300 |
 | `MAX_TOKEN_BUDGET`, `MAX_TASK_TOKEN_BUDGET`, model and key variables | no | yes | |
 
 Unset or empty keeps the code default. Any variable not in this table (`ECONOMICS_*`, `GOVERNANCE_*`, `LOG_PRETTY`, the TLS paths and so on) must be added under `environment:` of the service, or give the service `env_file: .env`. The Kubernetes and Helm files have their own settings: see [KUBERNETES.md](KUBERNETES.md) and [HELM.md](HELM.md).

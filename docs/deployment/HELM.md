@@ -49,7 +49,7 @@ This installs the chart with release name `blog-team` using default values (Bull
 image:
   repository: ghcr.io/andreibesleaga/kaiban-distributed
   pullPolicy: IfNotPresent
-  # Empty tag → uses Chart.AppVersion, the release image tag (for example 2.1.3).
+  # Empty tag → uses Chart.AppVersion, the release image tag (for example 2.1.4).
   # For a local image built as in KUBERNETES.md, install with
   # `--set image.repository=kaiban-distributed --set image.tag=latest`.
   tag: ""
@@ -102,6 +102,8 @@ secrets:                           # plain text: the chart base64-encodes them
   CHANNEL_SIGNING_SECRET: ""       # optional; rendered only when non-empty
   A2A_JWT_SECRET: ""               # optional; A2A bearer-token auth; rendered only when non-empty
 ```
+
+The charts do not set `HITL_DECISION_TTL_SECONDS`; the default of 300 seconds applies.
 
 With `config.NODE_ENV=production` the gateway refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different) and `config.SOCKET_CORS_ORIGINS` is set; the agent pods refuse to start without `CHANNEL_SIGNING_SECRET` when `CONTROL_PLANE_ENABLED` is true (they do not run the three-secret check).
 

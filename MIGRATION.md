@@ -1,6 +1,6 @@
 # Migration guide
 
-Where to start: upgrading from 2.1.2, read [2.1.2 → 2.1.3](#212--213-documentation-and-configuration) (no action needed); from 2.1.1, read [2.1.1 → 2.1.2](#211--212-audit-fixes) first; from 2.0.x, read
+Where to start: upgrading from 2.1.3, read [2.1.3 → 2.1.4](#213--214-approval-retention-additive) (no action needed); from 2.1.2, read [2.1.2 → 2.1.3](#212--213-documentation-and-configuration) (no action needed); from 2.1.1, read [2.1.1 → 2.1.2](#211--212-audit-fixes) first; from 2.0.x, read
 [2.0.x → 2.1.0](#20x--210-emergency-stop-all-additive), then 2.1.0 → 2.1.1, then 2.1.1 → 2.1.2; from 1.x, read the v2.0
 section below (v1.x → v2.0), then the 2.1 sections. The 2.1 sections run newest first. For
 2.0.1 and 2.0.2 operator changes see [CHANGELOG.md](CHANGELOG.md): production boot refuses missing, short or repeated
@@ -115,6 +115,17 @@ signing secrets, tokens carry a `role` claim, `RETRY_ON_TIMEOUT` is new (default
       new exports `IAdmissionGate`/`AdmissionVerdict` + `buildAdmissionGate`/`buildWorkerAdmissionGate`.
       Cost-reservation enforcement is added when a fleet `CostLimiterPort` is injected. See
       `docs/decisions/ADR-021`.
+
+## 2.1.3 → 2.1.4 (approval retention, additive)
+
+No action needed; the library API and the defaults are unchanged.
+
+1. **Optional: keep human decisions longer.** `HITL_DECISION_TTL_SECONDS` (1 to 604800, default 300) sets how long a
+   decision waits in the Redis list for an orchestrator that is down or restarting. Set the same value on the gateway
+   and on the orchestrator; with a longer value on the gateway only, the orchestrator still refuses a signed decision
+   older than its own limit.
+2. **Read "Delivery guarantees and limits"** in [docs/FEATURES.md](docs/FEATURES.md#delivery-guarantees-and-limits) if
+   your tools have external side effects: delivery is at-least-once, and a task interrupted by a hard kill runs again.
 
 ## 2.1.2 → 2.1.3 (documentation and configuration)
 

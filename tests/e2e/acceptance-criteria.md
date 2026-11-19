@@ -55,7 +55,7 @@ Test: `tests/e2e/chaos/broker-resilience.test.ts`.
 
 Tests: `tests/e2e/emergency-stop.test.ts` (A1, A2 + A3), `tests/e2e/emergency-stop-kafka.test.ts`, `tests/e2e/chaos/emergency-stop-storm.test.ts`.
 
-**Scenario: A worker process is killed mid-task.** Not covered by an automated test.
+**Scenario: A worker process is killed mid-task.** Covered on the BullMQ driver by `tests/e2e/chaos/worker-kill-redelivery.test.ts` (redelivery to another worker, one completion per task for the caller). Not covered on Kafka.
 
 - A graceful stop (SIGTERM drain, `AgentActor.stop()`) dead-letters the running task as `actor_stopped`, replayable from the failure queue (DLQ replay, `src/resilience/dlq-replay.ts`). A killed process publishes nothing: the broker decides. BullMQ marks the job stalled when its lock expires (30 s) and hands it once more to any worker of that queue (library defaults); Kafka re-delivers the uncommitted message to the partition's next consumer after the rebalance. Neither resumes the task's progress.
 

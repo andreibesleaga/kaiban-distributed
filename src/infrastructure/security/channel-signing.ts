@@ -64,7 +64,7 @@ export interface UnwrapOptions {
  *
  * `maxSkewMs` (in the options) is the freshness window (default 30 s). Durable list entries that
  * legitimately wait longer than a pub/sub message (the HITL decision list lives
- * 300 s) pass their own, longer window; the HMAC is still always checked.
+ * for `HITL_DECISION_TTL_SECONDS`, 300 s by default) pass their own, longer window; the HMAC is still always checked.
  */
 export function unwrapVerified(
   raw: string,

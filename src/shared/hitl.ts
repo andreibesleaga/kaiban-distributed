@@ -25,6 +25,7 @@
 import { createRedisClient } from "./redis-connection";
 import readline from "readline";
 import { unwrapVerified } from "../infrastructure/security/channel-signing";
+import { hitlDecisionTtlSeconds } from "./hitl-retention";
 
 export type HitlDecision = "PUBLISH" | "REVISE" | "REJECT";
 
@@ -52,10 +53,11 @@ export interface HitlOptions {
 
 /**
  * Freshness window for a signed decision read from the durable list. The gateway
- * keeps the list key for 300 s, so a decision pushed while the orchestrator was
- * not yet waiting must still verify for that long (pub/sub keeps the 30 s default).
+ * keeps the list key for `HITL_DECISION_TTL_SECONDS` (default 300 s), so a decision
+ * pushed while the orchestrator was not yet waiting must still verify for that long
+ * (pub/sub keeps the 30 s default).
  */
-const HITL_LIST_MAX_AGE_MS = 300_000;
+const hitlListMaxAgeMs = (): number => hitlDecisionTtlSeconds() * 1000;
 
 const BOARD_DECISION_MAP: Record<string, HitlDecision> = {
   PUBLISH: "PUBLISH",
@@ -142,7 +144,7 @@ export function waitForHITLDecision(opts: HitlOptions): Promise<HitlDecision> {
           const item = await poller.brpop(listKey, 1);
           if (item && !resolved) {
             console.log(`[HITL] ✓ Received via list-poll path`);
-            handleBoardMessage(item[1], taskId, finish, HITL_LIST_MAX_AGE_MS);
+            handleBoardMessage(item[1], taskId, finish, hitlListMaxAgeMs());
           }
         } catch (err) {
           /* v8 ignore next — FALSE branch: error fires after resolution (loop exits) */

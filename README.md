@@ -569,7 +569,7 @@ curl http://localhost:3000/.well-known/agent-card.json
   "name": "kaiban-gateway",
   "description": "Kaiban distributed A2A gateway — bridges A2A tasks onto the actor messaging layer.",
   "url": "http://localhost:3000/a2a/rpc",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "preferredTransport": "JSONRPC",
   "additionalInterfaces": [
     { "transport": "JSONRPC", "url": "http://localhost:3000/a2a/rpc" }
@@ -798,6 +798,7 @@ The gateway's own routes (`/health`, `/ready`, `/startup`, `/a2a/agents/:agentId
 | `TRUST_PROXY` | `false` | No | `true` behind one reverse proxy: rate limits then use the client address from `X-Forwarded-For` instead of the proxy's |
 | `A2A_PUBLIC_URL` | `http://localhost:<PORT>` | No | Public base URL advertised in the agent card |
 | `VALID_HITL_DECISIONS` | `PUBLISH,REVISE,REJECT` | No | Decisions the gateway accepts from a board |
+| `HITL_DECISION_TTL_SECONDS` | `300` | No | Seconds the gateway keeps a human decision in its Redis list; set the same value on the gateway and the orchestrator (1 to 604800). See [Delivery guarantees and limits](docs/FEATURES.md#delivery-guarantees-and-limits) |
 | `LOG_LEVEL` | `info` | No | pino log level (`LOG_PRETTY=true` for readable output in development) |
 | `MCP_SERVER_ENABLED` | `false` | No | `true` mounts the MCP server; see [docs/federation/MCP.md](docs/federation/MCP.md) for `MCP_*` |
 | `ALLOW_INSECURE_PRODUCTION` | — | No | With `NODE_ENV=production`, boot refuses unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set, 32+ bytes and distinct; `true` lets a missing one through with a warning on every start (a weak or repeated secret is never allowed) |
@@ -906,7 +907,7 @@ Authentication and signing features are **env-var gated**: when the relevant sec
 ```bash
 npm run build          # tsc → dist/src/ and dist/examples/
 npm run dev            # node dist/src/main/index.js (build first)
-npm run test           # 1789 unit tests (no external deps)
+npm run test           # 1804 unit tests (no external deps)
 npm run test:coverage  # 100% coverage — all metrics
 npm run test:e2e       # BullMQ E2E (Docker Redis auto-started)
 npm run test:e2e:kafka # Kafka E2E (Docker Kafka + Zookeeper required)
@@ -921,15 +922,15 @@ npm run lint:arch      # madge --circular src/ — no circular imports
 
 | Suite | Command | Count | Infrastructure |
 |-------|---------|-------|----------------|
-| Unit | `npm test` | 1789 tests, 151 files | None (all mocked) |
+| Unit | `npm test` | 1804 tests, 152 files | None (all mocked) |
 | BullMQ E2E | `npm run test:e2e` | 73 tests, 12 files | Docker Redis (auto-managed by globalSetup) |
 | Security E2E | `npm run test:e2e:security` | 41 tests, 1 file | Docker Redis (auto-managed by securitySetup) |
 | Kafka E2E | `npm run test:e2e:kafka` | 4 tests, 3 files | Docker Kafka + Zookeeper |
-| Chaos E2E | `npm run test:e2e:chaos` | 2 tests, 2 files (Redis paused mid-flight, zero tasks dropped; a storm of stops over 60 tasks) | Docker Redis |
+| Chaos E2E | `npm run test:e2e:chaos` | 3 tests, 3 files (Redis paused mid-flight, zero tasks dropped; a storm of stops over 60 tasks; a worker killed in mid-task, its task redelivered and completed once for the caller) | Docker Redis |
 | Board | `cd board && npm test` | 207 tests, 18 files: React component + Zustand store + a11y tests | happy-dom |
 | Visual (Playwright) | `cd board && npm run test:visual` | board screenshot baseline + structural checks of the two example viewers | board dev server + gateway + chromium |
 
-Counts as of 7 Nov 2026 (release 2.1.3); the recorded run is in [docs/VERIFICATION.md](docs/VERIFICATION.md), the single home for these numbers. CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
+Counts as of 18 Nov 2026 (release 2.1.4); the recorded run is in [docs/VERIFICATION.md](docs/VERIFICATION.md), the single home for these numbers. CI runs the unit suite with coverage and the board tests on every push and pull request to `main` and `develop`; the BullMQ, security, Kafka and chaos suites run nightly (see [CONTRIBUTING.md](CONTRIBUTING.md#ci-workflows)). No workflow runs the Playwright visual tests.
 
 ### Coverage
 
@@ -1014,7 +1015,7 @@ kaiban-distributed/
 │       ├── runtime.ts  # Messaging driver + telemetry setup shared by both roles
 │       └── config.ts   # loadConfig(); TLS config; security feature flags
 ├── tests/
-│   ├── unit/           # 1789 unit tests — mirrors src/ structure, 100% coverage
+│   ├── unit/           # 1804 unit tests — mirrors src/ structure, 100% coverage
 │   └── e2e/
 │       ├── distributed-execution.test.ts      # BullMQ: execution, fault tolerance, state sync
 │       ├── fan-out-fan-in.test.ts             # Parallel fan-out/fan-in workflow (7 scenarios)
@@ -1025,6 +1026,7 @@ kaiban-distributed/
 │       ├── …                                  # blog-team / global-research flows, board HITL, event isolation,
 │       │                                      #   completion routing, security (security-*.test.ts), live LLM run
 │       ├── chaos/broker-resilience.test.ts    # Redis paused mid-flight, no task dropped (npm run test:e2e:chaos)
+│       ├── chaos/worker-kill-redelivery.test.ts  # a worker killed in mid-task, the task redelivered
 │       └── setup/
 │           ├── globalSetup.ts             # Docker Redis auto-start; resilient to existing Redis
 │           ├── kafkaSetup.ts              # Docker Kafka + Zookeeper + Redis auto-start

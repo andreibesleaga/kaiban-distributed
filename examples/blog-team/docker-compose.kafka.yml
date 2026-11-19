@@ -127,6 +127,8 @@ services:
       # The agent ids the workers run: one A2A skill each on the agent card.
       AGENT_IDS: researcher,writer,editor
       VALID_HITL_DECISIONS: ${VALID_HITL_DECISIONS:-PUBLISH,REVISE,REJECT}
+      # Seconds a human decision waits for the orchestrator (default 300); the orchestrator below gets the same value.
+      HITL_DECISION_TTL_SECONDS: ${HITL_DECISION_TTL_SECONDS:-}
     restart: on-failure
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
@@ -306,6 +308,8 @@ services:
       # Emergency STOP ALL (ADR-025): set true on every service to enable it.
       CONTROL_PLANE_ENABLED: ${CONTROL_PLANE_ENABLED:-}
       CHANNEL_SIGNING_SECRET: ${CHANNEL_SIGNING_SECRET:-}
+      # Same value as on the gateway: how old a signed decision from the list may be.
+      HITL_DECISION_TTL_SECONDS: ${HITL_DECISION_TTL_SECONDS:-}
       MESSAGING_DRIVER: kafka
       KAFKA_BROKERS: kafka:29092
       KAFKA_CLIENT_ID: kaiban-orchestrator
