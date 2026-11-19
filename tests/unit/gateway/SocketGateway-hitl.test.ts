@@ -92,8 +92,16 @@ describe("SocketGateway — HITL edge cases", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await sg.shutdown();
   });
+
+  /** The gateway reads the retention once, when it is built: build it again after stubbing. */
+  async function rebuildGateway(): Promise<void> {
+    await sg.shutdown();
+    sg = new SocketGateway(httpServer, redisPublisher, redisSubscriber);
+    sg.initialize();
+  }
 
   function getHitlHandler(
     socket: MockSocket,
@@ -180,6 +188,32 @@ describe("SocketGateway — HITL edge cases", () => {
     expect(mockPublish).toHaveBeenCalledWith(
       "kaiban-hitl-decisions",
       JSON.stringify({ taskId: "abc-123", decision: "PUBLISH" }),
+    );
+  });
+
+  it("keeps the decision list for 300 s when HITL_DECISION_TTL_SECONDS is unset", async () => {
+    vi.stubEnv("HITL_DECISION_TTL_SECONDS", "");
+    await rebuildGateway();
+    const { hitl } = connectSocket();
+    const ack = vi.fn();
+    hitl({ taskId: "ttl-default", decision: "PUBLISH" }, ack);
+    await vi.waitFor(() => expect(ack).toHaveBeenCalledWith({ ok: true }));
+    expect(mockExpire).toHaveBeenCalledWith(
+      "kaiban-hitl-decisions:ttl-default",
+      300,
+    );
+  });
+
+  it("keeps the decision list for HITL_DECISION_TTL_SECONDS when set", async () => {
+    vi.stubEnv("HITL_DECISION_TTL_SECONDS", "3600");
+    await rebuildGateway();
+    const { hitl } = connectSocket();
+    const ack = vi.fn();
+    hitl({ taskId: "ttl-long", decision: "PUBLISH" }, ack);
+    await vi.waitFor(() => expect(ack).toHaveBeenCalledWith({ ok: true }));
+    expect(mockExpire).toHaveBeenCalledWith(
+      "kaiban-hitl-decisions:ttl-long",
+      3600,
     );
   });
 

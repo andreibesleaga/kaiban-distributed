@@ -137,7 +137,7 @@ And the design stance that distinguishes it from most JS agent frameworks:
 - **Dual decision channels, durable-first delivery.** A decision can arrive from the React board or
   the terminal, raced fairly ("first to respond wins"); the gateway writes the durable per-task list
   entry **before** the pub/sub publish, and the board is ACK'd only after both succeed. **Value:** a
-  missed pub/sub message stays recoverable via the list fallback, so an approval is not lost (a signed list entry stays valid for its 300 s lifetime; a decision rejected for a bad signature or age is logged).
+  missed pub/sub message stays recoverable via the list fallback, so an approval is not lost (a signed list entry stays valid for its lifetime, 300 s by default, or `HITL_DECISION_TTL_SECONDS`; a decision rejected for a bad signature or age is logged).
 - **Emergency STOP ALL (2.1.0, opt-in).** With `CONTROL_PLANE_ENABLED=true`, one press of the
   board's STOP ALL button, one `POST /control/stop-all`, or `npm run stop-all` kills every running
   model call, task and workflow sent up to that moment: model requests on the OpenAI-compatible provider are cancelled mid-call (other providers stop at the next agent-loop step),
@@ -270,10 +270,41 @@ And the design stance that distinguishes it from most JS agent frameworks:
   and billing.
 - **Chaos / fault-injection mode.** `--chaos` crashes ~20% of searchers mid-flight; the broker's
   job-lock TTL reassigns the task. The `test:e2e:chaos` suite pauses the Redis broker mid-flight and
-  asserts every buffered publish flushes on recovery with **zero dropped agent messages**. **Value:**
+  asserts every buffered publish flushes on recovery with **zero dropped agent messages**; since 2.1.4 it also kills a worker process in mid-task and asserts that the task is redelivered and completes once for the caller. **Value:**
   fault tolerance is demonstrated, not just claimed—you can watch the swarm recover.
 - **Single-image role split.** One container runs as `ROLE=gateway|worker`. **Value:** one artifact to
   build, sign, and scan; the deployment chooses the role.
+
+#### Delivery guarantees and limits
+
+- Delivery is at-least-once, on both the BullMQ and the Kafka driver. Workers do not remove duplicates.
+- The caller that waits for a task (the gateway, the A2A route, an orchestrator) receives one result
+  for a task id. It ignores a second result for the same id.
+- After a hard kill (SIGKILL, a power loss, an out-of-memory kill) before the worker acknowledges the
+  task, the broker delivers the task again once the job lock or the consumer session expires. With the
+  default settings, measured on one machine over 30 kills per driver, another worker picked the task up
+  between one and two minutes after the kill on BullMQ (median 90 seconds; the 30 s job lock must expire and a
+  stalled-job check, which runs every 30 s, must then find the job) and after about 31 seconds
+  on Kafka (30 s consumer session timeout). The model call and any tool call then run again.
+  A tool with an external side effect (a payment, an e-mail, a write to another system) must be
+  idempotent, or it must check the task id itself.
+- A graceful stop (SIGTERM) aborts the running tasks and sends them to the failed queue
+  (`kaiban-events-failed`, reason `actor_stopped`). They are not delivered again. An operator replays
+  them with the DLQ replay tool.
+- Approvals: the gateway writes each human decision to the Redis list `kaiban-hitl-decisions:<taskId>`
+  and keeps it for 300 seconds. A decision sent while the orchestrator is down is still there if the
+  orchestrator waits on the same task id within that time. After that the decision is lost and the
+  gate waits for a new one. Set `HITL_DECISION_TTL_SECONDS` (whole seconds, 1 to 604800, default 300)
+  on the gateway and on the orchestrator to keep it longer. Both must use the same value. A signed
+  decision is also refused when it is older than this time, so a longer retention is also a longer
+  replay window for a captured signed decision on the same task id.
+- When an orchestrator restarts from its checkpoint while a decision is pending, the global-research
+  example publishes the `AWAITING_VALIDATION` card again, with the same task id, so a board that
+  connected during the outage shows it. A revision that was in progress is not checkpointed: after a
+  crash the gate waits for a new decision, unless an unread decision for that task id is still in the
+  list (a second click, for example), which the resumed gate then takes.
+- No test in this repository kills a worker process on the Kafka driver. For BullMQ,
+  `tests/e2e/chaos/worker-kill-redelivery.test.ts` kills one with SIGKILL and checks the redelivery.
 
 ### 2.8 Security
 
@@ -407,7 +438,7 @@ custom A2A connector, an MCP *client*, env-gated security controls, and a full C
 > The published v2.0 surface was verified locally at **108 test files / 1155 unit tests / 100% coverage
 > of `src/**`** (see [`docs/VERIFICATION.md`](VERIFICATION.md)); the e2e (real-broker), mutation and
 > supply-chain gates run in CI (the Playwright visual tests run by hand). `v2.0.0` was tagged and
-> published on 2026-06-22; the unit suite has 151 files; the test count of the last recorded run is in [VERIFICATION.md](VERIFICATION.md).
+> published on 2026-06-22; the unit suite has 152 files; the test count of the last recorded run is in [VERIFICATION.md](VERIFICATION.md).
 
 ---
 

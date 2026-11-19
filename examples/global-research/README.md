@@ -119,7 +119,7 @@ CHAOS_MODE=true SEARCHER_ID=searcher-1 npx ts-node examples/global-research/sear
 CHAOS_MODE=true docker compose -f examples/global-research/docker-compose.yml up
 ```
 
-When a searcher crashes (simulated via `process.exit(1)`), BullMQ reassigns the job to another searcher after its stalled-job check, which can take about 30 seconds (the `stalledInterval` default). On Kafka the consumer group rebalances instead. (Not re-measured for this guide.)
+When a searcher crashes (simulated via `process.exit(1)`), BullMQ hands the job to another searcher after the job lock expires and the stalled-job check runs, one to two minutes with the default settings. On Kafka the task is delivered again after the consumer session times out, about half a minute. The measurements are in `bench/distributed/`. What is and is not guaranteed after a crash is in [Delivery guarantees and limits](../../docs/FEATURES.md#delivery-guarantees-and-limits).
 
 ## Kafka Variant
 

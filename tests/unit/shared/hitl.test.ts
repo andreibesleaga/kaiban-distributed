@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { waitForHITLDecision } from "../../../src/shared";
 import type { HitlOptions } from "../../../src/shared";
 
@@ -610,6 +610,7 @@ describe("waitForHITLDecision — board path", () => {
 // ── BRPOP path ────────────────────────────────────────────────────────────────
 
 describe("waitForHITLDecision — BRPOP path", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     resetHoistedMocks();
   });
@@ -640,6 +641,22 @@ describe("waitForHITLDecision — BRPOP path", () => {
     expect(mockUnwrapVerified).toHaveBeenCalledWith(
       boardMsg(taskId, "PUBLISH"),
       { maxSkewMs: 300_000 },
+    );
+  });
+
+  it("uses HITL_DECISION_TTL_SECONDS as the list freshness window", async () => {
+    vi.stubEnv("HITL_DECISION_TTL_SECONDS", "3600");
+    const taskId = "brpop-long-window-task";
+    const listKey = `kaiban-hitl-decisions:${taskId}`;
+    mockBrpop.mockResolvedValueOnce([listKey, boardMsg(taskId, "PUBLISH")]);
+    await waitForHITLDecision({
+      taskId,
+      rl: null,
+      redisUrl: "redis://localhost:6379",
+    });
+    expect(mockUnwrapVerified).toHaveBeenCalledWith(
+      boardMsg(taskId, "PUBLISH"),
+      { maxSkewMs: 3_600_000 },
     );
   });
 

@@ -18,6 +18,7 @@ import {
   wrapSigned,
 } from "../../infrastructure/security/channel-signing";
 import { createStructuredLogger } from "../../shared/structured-logger";
+import { hitlDecisionTtlSeconds } from "../../shared/hitl-retention";
 
 const log = createStructuredLogger({ component: "SocketGateway" });
 
@@ -128,6 +129,8 @@ export class SocketGateway {
   /** Dedicated publisher for HITL decisions — separate from the Socket.IO adapter's pubClient */
   private hitlPublisher: Redis;
   private validDecisions: string[];
+  /** Seconds a decision is kept in its Redis list (`HITL_DECISION_TTL_SECONDS`), read once at start. */
+  private readonly hitlDecisionTtl: number = hitlDecisionTtlSeconds();
   /** Emergency STOP ALL ingress; set only with CONTROL_PLANE_ENABLED (ADR-025). */
   private control?: EmergencyStopIngress;
   /** Behind one trusted proxy: key rate limits by `X-Forwarded-For` (as Express does). */
@@ -359,7 +362,7 @@ export class SocketGateway {
     const listKey = `${HITL_CHANNEL}:${taskId}`;
     this.hitlPublisher
       .lpush(listKey, msg)
-      .then(() => this.hitlPublisher.expire(listKey, 300))
+      .then(() => this.hitlPublisher.expire(listKey, this.hitlDecisionTtl))
       .then(() => this.hitlPublisher.publish(HITL_CHANNEL, msg))
       .then(() => {
         log.info(

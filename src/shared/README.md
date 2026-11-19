@@ -229,3 +229,4 @@ Each file's header comment has the details.
 | `process-drain.ts` | One drain per worker process: the first SIGTERM or SIGINT drains every agent node, flushes telemetry, then exits once | no (internal) |
 | `redis-connection.ts` | the helper behind every Redis client (URL with user, password, database and `rediss://`; `REDIS_TLS_*`) | no (internal) |
 | `timeout-env.ts` | parses the timeout environment variables | no (internal) |
+| `hitl-retention.ts` | `HITL_DECISION_TTL_SECONDS`: how long a human decision is kept in its Redis list and accepted from it (1 to 604800 s, default 300) | no (internal) |

@@ -58,8 +58,8 @@ impact, and any suggested mitigation.
 ## Supply-chain posture
 
 CI enforces a dependency audit that **fails on HIGH or CRITICAL** advisories
-(`scripts/audit-gate.js` on the root lockfile — `npm audit` with the dated exceptions of
-`.trivyignore`; `npm audit --audit-level=high` on the board), plus OSV-Scanner, gitleaks secret scanning,
+(`scripts/audit-gate.js` on the root and the board lockfiles — `npm audit` with the dated exceptions of
+`.trivyignore`), plus OSV-Scanner, gitleaks secret scanning,
 CodeQL, a CycloneDX 1.6 SBOM, and OpenSSF Scorecard. Releases carry SLSA build
 provenance and a Sigstore (cosign keyless) signature.
 
@@ -91,13 +91,15 @@ what the dependents declare. `js-yaml` is deliberately capped below `5` because
 (`body-parser` >=2.4.0, board `undici` >=7.30.1 and `happy-dom` 21) and pull request #167
 (`@opentelemetry/auto-instrumentations-node` 0.79), `npm audit` reports
 **0 critical** and one **high** advisory (reported as 9 package entries, below) with no fix in the version line that uses it (accepted
-until 2026-12-31, below); the board lockfile has none. Accepted HIGH advisories are listed, with an
+until 2026-12-31, below); the board lockfile has none. **Added 2026-11-18:** a second high advisory, in the development
+tool `picomatch`, appears in the root and the board lockfiles (row below). Accepted HIGH advisories are listed, with an
 `exp:` date, in `.trivyignore`, which both the Trivy image scan and `scripts/audit-gate.js` read; an
 expired entry fails CI again.
 
 | Severity | Count | Packages | Why it stays |
 | -------- | ----- | -------- | ------------ |
 | High | 9 | `zod` 3.25.76 (GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404: memory exhaustion validating oversized constrained collections), reached only through `kaibanjs` 0.24.2 (the latest release) via `@kaibanjs/workflow`, `@langchain/openai` 0.5, `openai` 4–5 and `@browserbasehq/stagehand`; npm lists each of those packages as a separate entry | No patched zod 3.x exists and these packages declare zod ^3, so the fix needs a `kaibanjs` release on zod 4. Kaiban's own code uses zod 4.6.7 (patched). Exception expires 2026-12-31; re-checked on every `kaibanjs` release. |
+| High | 1 | `picomatch` 4.0.7 (GHSA-fc5q-39xc-vjpf: regular-expression denial of service on single-branch repeated extglob patterns), a development dependency of `vitest`, `vite` and `tinyglobby` in the root and the board lockfiles | Development tooling only: it is not in the published package or the container image, and it matches patterns from this repository's own test and build configuration, never user input. No patched version exists (4.0.7 is the latest). Exception expires 2026-12-31; removed as soon as a fixed version is released. |
 
 The root lockfile also has one **low** entry:
 
@@ -112,7 +114,7 @@ moderate `@hono/node-server` 2.0.12 entry (GHSA-rmxm-3fg6-px4f) by 2.1.5.
 Policy: open advisories are addressed on a **dependency branch** (the Dependabot
 pull requests or a consolidated `deps/*` branch), merged after CI and review —
 never mixed into feature or documentation changes. CI fails the build on HIGH+
-(`scripts/audit-gate.js` on the root, `npm audit --audit-level=high` on the board) and
+(`scripts/audit-gate.js` on the root and on the board) and
 intentionally does not block on moderates,
 since moderate findings fluctuate as the npm advisory database is updated against
 existing dependency versions and are predominantly **dev/build tooling and

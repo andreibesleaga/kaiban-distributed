@@ -37,7 +37,7 @@ docker tag kaiban-distributed:latest your-registry/kaiban-distributed:latest
 docker push your-registry/kaiban-distributed:latest
 ```
 
-Update `image` in `agents.yaml` and `gateway.yaml` if using a remote registry. The manifests use the locally built `kaiban-distributed:latest`; the Helm chart defaults to the published image `ghcr.io/andreibesleaga/kaiban-distributed:<appVersion>`. To use the published image instead, set `image:` to `ghcr.io/andreibesleaga/kaiban-distributed:2.1.3` and skip the build.
+Update `image` in `agents.yaml` and `gateway.yaml` if using a remote registry. The manifests use the locally built `kaiban-distributed:latest`; the Helm chart defaults to the published image `ghcr.io/andreibesleaga/kaiban-distributed:<appVersion>`. To use the published image instead, set `image:` to `ghcr.io/andreibesleaga/kaiban-distributed:2.1.4` and skip the build.
 
 For **local clusters** (kind, minikube, k3s):
 
@@ -137,7 +137,7 @@ The shipped ConfigMap has `CONTROL_PLANE_ENABLED: "false"` and the Secret holds 
 2. Uncomment `BOARD_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` in the Secret and give them values (`openssl rand -base64 32`). The gateway and the agent Deployments read that Secret with `secretRef`.
 3. Mint a board token from the same `BOARD_JWT_SECRET` ([SECURITY_FEATURES §1.1](../security/SECURITY_FEATURES.md#11-board-viewer-jwt-socketio)).
 
-Other optional settings are commented in the ConfigMap: `NODE_ENV`, `SOCKET_CORS_ORIGINS`, `TRUST_PROXY`, `A2A_PUBLIC_URL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED`, the firewall, breaker and JIT switches. With `NODE_ENV: "production"` the gateway refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different) and `SOCKET_CORS_ORIGINS` is set; the agent pods refuse to start without `CHANNEL_SIGNING_SECRET` when `CONTROL_PLANE_ENABLED` is true. Set the timeouts identically on the gateway and every worker.
+The manifests do not set `HITL_DECISION_TTL_SECONDS`; the default of 300 seconds applies. Other optional settings are commented in the ConfigMap: `NODE_ENV`, `SOCKET_CORS_ORIGINS`, `TRUST_PROXY`, `A2A_PUBLIC_URL`, `AGENT_TIMEOUT_MS`, `RETRY_ON_TIMEOUT`, `MCP_SERVER_ENABLED`, the firewall, breaker and JIT switches. With `NODE_ENV: "production"` the gateway refuses to start unless `BOARD_JWT_SECRET`, `A2A_JWT_SECRET` and `CHANNEL_SIGNING_SECRET` are set (32+ bytes, all different) and `SOCKET_CORS_ORIGINS` is set; the agent pods refuse to start without `CHANNEL_SIGNING_SECRET` when `CONTROL_PLANE_ENABLED` is true. Set the timeouts identically on the gateway and every worker.
 
 The gateway also serves `/ready` and `/startup`; the shipped probes use `/health`.
 

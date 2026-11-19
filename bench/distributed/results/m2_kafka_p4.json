@@ -1,0 +1,350 @@
+{
+  "measurement": "m2_kafka_p4",
+  "machine": {
+    "date_utc": "2026-11-19T12:33:38.812Z",
+    "cpu_model": "AMD Ryzen 7 5800H with Radeon Graphics",
+    "cpu_logical_cores": 16,
+    "ram_gib": 31.3,
+    "os": "Linux 6.6.114.1-microsoft-standard-WSL2 x64",
+    "wsl": true,
+    "node": "v24.18.0",
+    "docker": "29.8.1",
+    "redis": "Redis server v=7.4.12 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=97c9b7ac751c8f00",
+    "kafka_image": "confluentinc/cp-kafka:7.6.0 (Apache Kafka 3.6.x), zookeeper cp-zookeeper:7.6.0",
+    "kafka_version_check": "7.6.0-ccs",
+    "library_version": "2.1.4",
+    "library_commit": "05366d896b228c5a55639ccbd702b32f26aa5b0a",
+    "library_dirty": true,
+    "bullmq": "5.81.5",
+    "kafkajs": "2.2.4",
+    "ioredis": "5.11.1"
+  },
+  "params": {
+    "kind": "kafka",
+    "Ns": [
+      8
+    ],
+    "lats": [
+      0,
+      500
+    ],
+    "reps": 5,
+    "rep_list": null,
+    "tasks": 200,
+    "partitions": 4,
+    "seed_base": 1000
+  },
+  "runs": [
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 167.33330800011754,
+      "enqueue_ms": 124.23319800011814,
+      "throughput_tps": 1195.2193044546727,
+      "lat_p50_ms": 130.7294600000605,
+      "lat_p95_ms": 157.1369869997725,
+      "lat_min_ms": 103.67510099988431,
+      "lat_max_ms": 164.79039000021294,
+      "lat_mean_ms": 133.6393523749849,
+      "tasks_per_worker": {
+        "w3": 50,
+        "w0": 50,
+        "w1": 50,
+        "w2": 50
+      },
+      "rep": 0,
+      "loadavg_after": [
+        2.13,
+        1.72,
+        1.43
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 169.6465690000914,
+      "enqueue_ms": 130.26260200003162,
+      "throughput_tps": 1178.9215731200095,
+      "lat_p50_ms": 129.17894200002775,
+      "lat_p95_ms": 157.7333660000004,
+      "lat_min_ms": 105.91743000037968,
+      "lat_max_ms": 166.4596680002287,
+      "lat_mean_ms": 132.2447144699958,
+      "tasks_per_worker": {
+        "w0": 50,
+        "w1": 50,
+        "w2": 50,
+        "w3": 50
+      },
+      "rep": 1,
+      "loadavg_after": [
+        2.22,
+        1.79,
+        1.46
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 176.47370699979365,
+      "enqueue_ms": 140.41566800000146,
+      "throughput_tps": 1133.3133042886318,
+      "lat_p50_ms": 117.80003800010309,
+      "lat_p95_ms": 170.72599799977615,
+      "lat_min_ms": 66.35855500027537,
+      "lat_max_ms": 174.9914460000582,
+      "lat_mean_ms": 120.21996062502032,
+      "tasks_per_worker": {
+        "w2": 50,
+        "w3": 50,
+        "w0": 50,
+        "w1": 50
+      },
+      "rep": 2,
+      "loadavg_after": [
+        2.41,
+        1.86,
+        1.49
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 168.26783199980855,
+      "enqueue_ms": 127.36918500019237,
+      "throughput_tps": 1188.5813088756474,
+      "lat_p50_ms": 104.41929699992761,
+      "lat_p95_ms": 160.17607299983501,
+      "lat_min_ms": 58.90105600003153,
+      "lat_max_ms": 166.71251700026914,
+      "lat_mean_ms": 106.95951463501201,
+      "tasks_per_worker": {
+        "w1": 50,
+        "w2": 50,
+        "w3": 50,
+        "w0": 50
+      },
+      "rep": 3,
+      "loadavg_after": [
+        2.09,
+        1.82,
+        1.48
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 157.04829900013283,
+      "enqueue_ms": 115.92454299982637,
+      "throughput_tps": 1273.4935766469578,
+      "lat_p50_ms": 97.77566500008106,
+      "lat_p95_ms": 151.80455500027165,
+      "lat_min_ms": 63.56498700007796,
+      "lat_max_ms": 155.86040599970147,
+      "lat_mean_ms": 104.95726680499968,
+      "tasks_per_worker": {
+        "w1": 50,
+        "w2": 50,
+        "w3": 50,
+        "w0": 50
+      },
+      "rep": 4,
+      "loadavg_after": [
+        1.84,
+        1.77,
+        1.47
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25178.23028300004,
+      "enqueue_ms": 102.49395600007847,
+      "throughput_tps": 7.943370036417411,
+      "lat_p50_ms": 12597.18605899997,
+      "lat_p95_ms": 24167.14186500013,
+      "lat_min_ms": 509.3581539997831,
+      "lat_max_ms": 25177.038743999787,
+      "lat_mean_ms": 12845.919115559978,
+      "tasks_per_worker": {
+        "w1": 50,
+        "w2": 50,
+        "w3": 50,
+        "w0": 50
+      },
+      "rep": 0,
+      "loadavg_after": [
+        1.58,
+        1.73,
+        1.47
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25178.984414000064,
+      "enqueue_ms": 115.65253600012511,
+      "throughput_tps": 7.943132126043799,
+      "lat_p50_ms": 12605.985398000106,
+      "lat_p95_ms": 24169.339244000148,
+      "lat_min_ms": 512.8273049998097,
+      "lat_max_ms": 25175.555563999806,
+      "lat_mean_ms": 12852.001768124983,
+      "tasks_per_worker": {
+        "w1": 50,
+        "w2": 50,
+        "w3": 50,
+        "w0": 50
+      },
+      "rep": 1,
+      "loadavg_after": [
+        1.63,
+        1.75,
+        1.49
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25181.167104000226,
+      "enqueue_ms": 113.38863700022921,
+      "throughput_tps": 7.942443619629863,
+      "lat_p50_ms": 12597.364891000092,
+      "lat_p95_ms": 24169.25695499964,
+      "lat_min_ms": 510.6978239999153,
+      "lat_max_ms": 25179.54029900022,
+      "lat_mean_ms": 12846.872617684989,
+      "tasks_per_worker": {
+        "w0": 50,
+        "w1": 50,
+        "w2": 50,
+        "w3": 50
+      },
+      "rep": 2,
+      "loadavg_after": [
+        2.33,
+        2.02,
+        1.6
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25180.135985999834,
+      "enqueue_ms": 116.88737099990249,
+      "throughput_tps": 7.9427688599934525,
+      "lat_p50_ms": 12600.68224200001,
+      "lat_p95_ms": 24169.136456000153,
+      "lat_min_ms": 511.2178299999796,
+      "lat_max_ms": 25177.909021999687,
+      "lat_mean_ms": 12849.065647310003,
+      "tasks_per_worker": {
+        "w0": 50,
+        "w1": 50,
+        "w2": 50,
+        "w3": 50
+      },
+      "rep": 3,
+      "loadavg_after": [
+        2.29,
+        2.08,
+        1.64
+      ]
+    },
+    {
+      "kind": "kafka",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": 4,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25185.920543999877,
+      "enqueue_ms": 116.97154699964449,
+      "throughput_tps": 7.940944610327004,
+      "lat_p50_ms": 12605.096565000247,
+      "lat_p95_ms": 24174.324887000024,
+      "lat_min_ms": 511.96629999997094,
+      "lat_max_ms": 25184.18928100029,
+      "lat_mean_ms": 12852.695471319996,
+      "tasks_per_worker": {
+        "w3": 50,
+        "w0": 50,
+        "w1": 50,
+        "w2": 50
+      },
+      "rep": 4,
+      "loadavg_after": [
+        1.71,
+        1.99,
+        1.63
+      ]
+    }
+  ],
+  "finished_utc": "2026-11-19T12:38:22.762Z"
+}

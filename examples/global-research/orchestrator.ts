@@ -164,7 +164,9 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   // STEP 4 — Editorial (checkpoints its verdict AND the ctx delta)
   log.separator('='); log.info('STEP 4 — Morgan (Editor) preparing HITL review...'); log.separator('=');
 
+  let editorialReplayed = true;
   const editStep = await orch.memoize('editorial', async () => {
+    editorialReplayed = false;
     const result = await runEditorialPhase(ctx, QUERY, gov, EDIT_WAIT_MS, router, pub, driver, runLog, signal);
     return { edit: result, snap: snapshot(ctx) };
   });
@@ -183,7 +185,7 @@ async function runPipeline(deps: PipelineDeps): Promise<void> {
   await handleDecision({
     ctx, query: QUERY, redisUrl: REDIS_URL, gov, edit,
     writeWaitMs: WRITE_WAIT_MS, autoPub: AUTO_PUBLISH,
-    router, pub, driver, rl, runLog, ...(signal ? { signal } : {}),
+    router, pub, driver, rl, runLog, reannounce: editorialReplayed, ...(signal ? { signal } : {}),
   });
 
   // Terminal state reached — wipe the checkpoint so a re-run starts fresh.

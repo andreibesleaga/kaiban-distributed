@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.4] — 2026-11-19
+
+Additive release: a setting for how long human decisions are kept, a chaos test that kills a worker, a measurement harness, and documentation of the delivery guarantee. Defaults and the library API are unchanged; no action is needed to upgrade ([MIGRATION.md](MIGRATION.md#213--214-approval-retention-additive)).
+
+### Added
+
+- `HITL_DECISION_TTL_SECONDS` (whole seconds, 1 to 604800, default 300): how long the gateway keeps a human decision in the Redis list `kaiban-hitl-decisions:<taskId>`, and how old a signed list entry may be when the orchestrator reads it. Unset gives 300, the previous fixed value. An invalid value logs a warning and uses 300. Set the same value on the gateway and the orchestrator; the four example Compose stacks and the root stack pass it. The gateway reads it once at start. A longer value also lengthens the replay window of a signed decision for the same task id.
+- global-research orchestrator: when it resumes from a checkpoint at the human gate, it publishes the `AWAITING_VALIDATION` card again (same task id and state) before it waits, so a board that connected during the outage shows it. Nothing changes on a first run or with `AUTO_PUBLISH`.
+- Measurement harness `bench/distributed/` (plain Node scripts, a stub model, Redis and Kafka in Docker): throughput and latency for 1, 2, 4 and 8 worker processes, the cost of the broker per task against a direct call, and recovery after a hard kill of a worker. The recorded run is in `bench/distributed/RESULTS.md` with the raw data in `results/`. Not part of the npm package.
+- Chaos e2e test `tests/e2e/chaos/worker-kill-redelivery.test.ts`: two worker processes on the Redis driver, one is killed with SIGKILL during a task, the task is redelivered to the other, and each task completes once for the caller. It prints the kill-to-completion time.
+
+### Documentation
+
+- New "Delivery guarantees and limits" passage in `docs/FEATURES.md`: at-least-once delivery, what a hard kill and a graceful stop do (with the measured recovery times: one to two minutes on BullMQ (median 90 s) and about 31 s on Kafka with default settings), and how long an approval is kept.
+- Roadmap: status after 2.1.4 (§7.11) and a plan for a decision engine (§8): where typed, confidence-scored decisions would help the runtime (prompt-injection screening, the Action Gate, approval triage, model routing), where they must not go, and how they would be wired. Not built.
+- `MIGRATION.md`: section 2.1.3 → 2.1.4 (no action needed).
+
+### Security
+
+- Accepted until 2026-12-31: the high advisory GHSA-fc5q-39xc-vjpf in `picomatch` 4.0.7, a development dependency of `vitest`, `vite` and `tinyglobby`. No fixed version exists; the package is not in the published library or the container image. The entry is in `.trivyignore` with the reason in `SECURITY.md`. The board CI job now uses the same audit gate and exception list as the root job.
+
 ## [2.1.3] — 2026-11-07
 
 A documentation and configuration release from a documentation, diagram and screenshot audit (110 findings in 3 areas, plus 7 image findings), with three small runtime fixes found while recapturing the screenshots. No new dependency. No code change on upgrade; check your `.env` once, since the new Compose and Helm settings apply when you set them (see [MIGRATION.md](MIGRATION.md#212--213-documentation-and-configuration)).

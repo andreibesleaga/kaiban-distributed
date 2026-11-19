@@ -322,10 +322,18 @@ export interface DecisionDeps {
   runLog: RunLogger;
   /** Emergency STOP ALL signal (CONTROL_PLANE_ENABLED); ends the waits. */
   signal?: AbortSignal;
+  /**
+   * True when the editorial phase came from a checkpoint (the orchestrator
+   * restarted), so the card was not published in this process. The pending
+   * card is then published again, same task id and state, before waiting.
+   */
+  reannounce?: boolean;
 }
 
 export async function handleDecision(deps: DecisionDeps): Promise<void> {
-  const { ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog, signal } = deps;
+  const { ctx, query, redisUrl, gov, edit, writeWaitMs, autoPub, router, pub, driver, rl, runLog, signal, reannounce } = deps;
+
+  if (reannounce && !autoPub) pub.awaitingHITL(edit.taskId, edit.recommendation, edit.score);
 
   const decision = autoPub ? 'PUBLISH' : await waitForHITLDecision({
     taskId: edit.taskId, rl, redisUrl, ...(signal ? { signal } : {}),

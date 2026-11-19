@@ -1,0 +1,1273 @@
+{
+  "measurement": "m1_redis",
+  "machine": {
+    "date_utc": "2026-11-19T11:51:20.681Z",
+    "cpu_model": "AMD Ryzen 7 5800H with Radeon Graphics",
+    "cpu_logical_cores": 16,
+    "ram_gib": 31.3,
+    "os": "Linux 6.6.114.1-microsoft-standard-WSL2 x64",
+    "wsl": true,
+    "node": "v24.18.0",
+    "docker": "29.8.1",
+    "redis": "Redis server v=7.4.12 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=97c9b7ac751c8f00",
+    "kafka_image": "confluentinc/cp-kafka:7.6.0 (Apache Kafka 3.6.x), zookeeper cp-zookeeper:7.6.0",
+    "kafka_version_check": "7.6.0-ccs",
+    "library_version": "2.1.4",
+    "library_commit": "05366d896b228c5a55639ccbd702b32f26aa5b0a",
+    "library_dirty": true,
+    "bullmq": "5.81.5",
+    "kafkajs": "2.2.4",
+    "ioredis": "5.11.1"
+  },
+  "params": {
+    "kind": "redis",
+    "Ns": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "lats": [
+      0,
+      500
+    ],
+    "reps": 5,
+    "rep_list": null,
+    "tasks": 200,
+    "partitions": 8,
+    "seed_base": 1000
+  },
+  "runs": [
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 558.9418160000059,
+      "enqueue_ms": 56.99403000000166,
+      "throughput_tps": 357.81899703134377,
+      "lat_p50_ms": 285.39096200000495,
+      "lat_p95_ms": 529.7690500000026,
+      "lat_min_ms": 58.097638000006555,
+      "lat_max_ms": 556.0123569999996,
+      "lat_mean_ms": 290.9416437,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 0,
+      "loadavg_after": [
+        2.34,
+        1.37,
+        0.56
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 554.6015630000038,
+      "enqueue_ms": 50.91476899999543,
+      "throughput_tps": 360.61925054473494,
+      "lat_p50_ms": 286.7460940000019,
+      "lat_p95_ms": 525.8170039999823,
+      "lat_min_ms": 51.815984999993816,
+      "lat_max_ms": 549.0877000000037,
+      "lat_mean_ms": 288.9951593550006,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 1,
+      "loadavg_after": [
+        2.34,
+        1.37,
+        0.56
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 559.0488820000028,
+      "enqueue_ms": 37.91213099999004,
+      "throughput_tps": 357.7504694839887,
+      "lat_p50_ms": 287.616589000012,
+      "lat_p95_ms": 530.3777319999936,
+      "lat_min_ms": 38.81637399998726,
+      "lat_max_ms": 556.2827549999929,
+      "lat_mean_ms": 289.61987664499844,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 2,
+      "loadavg_after": [
+        2.48,
+        1.41,
+        0.57
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 525.9923950000084,
+      "enqueue_ms": 44.79318500001682,
+      "throughput_tps": 380.2336343665136,
+      "lat_p50_ms": 269.6671539999952,
+      "lat_p95_ms": 498.03219599998556,
+      "lat_min_ms": 45.43058300000848,
+      "lat_max_ms": 523.24018600001,
+      "lat_mean_ms": 272.29651838000166,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 3,
+      "loadavg_after": [
+        2.6,
+        1.46,
+        0.59
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 606.7373680000019,
+      "enqueue_ms": 35.454131999984384,
+      "throughput_tps": 329.6319141497139,
+      "lat_p50_ms": 325.5875309999974,
+      "lat_p95_ms": 576.8694060000125,
+      "lat_min_ms": 36.34548899999936,
+      "lat_max_ms": 605.4193160000141,
+      "lat_mean_ms": 321.7492618249994,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 4,
+      "loadavg_after": [
+        2.6,
+        1.46,
+        0.59
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 300.2614820000017,
+      "enqueue_ms": 35.76037999999244,
+      "throughput_tps": 666.0861015799518,
+      "lat_p50_ms": 161.8962220000103,
+      "lat_p95_ms": 283.8174219999928,
+      "lat_min_ms": 36.90044100000523,
+      "lat_max_ms": 297.7677950000216,
+      "lat_mean_ms": 163.87421740999997,
+      "tasks_per_worker": {
+        "w1": 99,
+        "w0": 101
+      },
+      "rep": 0,
+      "loadavg_after": [
+        2.55,
+        1.47,
+        0.6
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 307.99367999998503,
+      "enqueue_ms": 38.97895799999242,
+      "throughput_tps": 649.3639739620946,
+      "lat_p50_ms": 168.7084240000113,
+      "lat_p95_ms": 290.28809500002535,
+      "lat_min_ms": 40.220896000013454,
+      "lat_max_ms": 304.6341299999913,
+      "lat_mean_ms": 170.44385479499994,
+      "tasks_per_worker": {
+        "w0": 99,
+        "w1": 101
+      },
+      "rep": 1,
+      "loadavg_after": [
+        2.55,
+        1.47,
+        0.6
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 341.9160479999846,
+      "enqueue_ms": 53.24597200000426,
+      "throughput_tps": 584.9389087464214,
+      "lat_p50_ms": 189.49947800001246,
+      "lat_p95_ms": 324.91022799999337,
+      "lat_min_ms": 54.202900999982376,
+      "lat_max_ms": 340.50522999998066,
+      "lat_mean_ms": 193.31041787500087,
+      "tasks_per_worker": {
+        "w0": 98,
+        "w1": 102
+      },
+      "rep": 2,
+      "loadavg_after": [
+        2.67,
+        1.51,
+        0.62
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 321.35975800000597,
+      "enqueue_ms": 36.308259999990696,
+      "throughput_tps": 622.355459951511,
+      "lat_p50_ms": 167.77186199999414,
+      "lat_p95_ms": 305.2081860000035,
+      "lat_min_ms": 36.475075000023935,
+      "lat_max_ms": 319.9356980000157,
+      "lat_mean_ms": 172.51651784000103,
+      "tasks_per_worker": {
+        "w0": 101,
+        "w1": 99
+      },
+      "rep": 3,
+      "loadavg_after": [
+        2.45,
+        1.48,
+        0.62
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 364.37013300001854,
+      "enqueue_ms": 44.577177000028314,
+      "throughput_tps": 548.8924088078038,
+      "lat_p50_ms": 201.61496900001657,
+      "lat_p95_ms": 345.7141259999771,
+      "lat_min_ms": 45.77363100001821,
+      "lat_max_ms": 362.1449100000027,
+      "lat_mean_ms": 203.72962636000068,
+      "tasks_per_worker": {
+        "w1": 99,
+        "w0": 101
+      },
+      "rep": 4,
+      "loadavg_after": [
+        2.45,
+        1.48,
+        0.62
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 329.764342999988,
+      "enqueue_ms": 38.896380999998655,
+      "throughput_tps": 606.4937105707855,
+      "lat_p50_ms": 204.8682839999965,
+      "lat_p95_ms": 315.0782869999821,
+      "lat_min_ms": 39.99562400000286,
+      "lat_max_ms": 326.432673000003,
+      "lat_mean_ms": 197.08951541000016,
+      "tasks_per_worker": {
+        "w0": 49,
+        "w2": 52,
+        "w1": 50,
+        "w3": 49
+      },
+      "rep": 0,
+      "loadavg_after": [
+        3.06,
+        1.62,
+        0.67
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 345.8721329999971,
+      "enqueue_ms": 45.95864199998323,
+      "throughput_tps": 578.2483782814664,
+      "lat_p50_ms": 230.46490600000834,
+      "lat_p95_ms": 332.58242700001574,
+      "lat_min_ms": 47.07334199998877,
+      "lat_max_ms": 344.3874749999959,
+      "lat_mean_ms": 213.0370914049985,
+      "tasks_per_worker": {
+        "w0": 50,
+        "w3": 50,
+        "w1": 50,
+        "w2": 50
+      },
+      "rep": 1,
+      "loadavg_after": [
+        2.81,
+        1.6,
+        0.66
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 363.70188400000916,
+      "enqueue_ms": 38.73154599999543,
+      "throughput_tps": 549.9009183026255,
+      "lat_p50_ms": 249.61717099999078,
+      "lat_p95_ms": 351.4439399999974,
+      "lat_min_ms": 40.157468999997946,
+      "lat_max_ms": 361.9008380000014,
+      "lat_mean_ms": 231.4185972750008,
+      "tasks_per_worker": {
+        "w0": 52,
+        "w2": 51,
+        "w1": 49,
+        "w3": 48
+      },
+      "rep": 2,
+      "loadavg_after": [
+        2.81,
+        1.6,
+        0.66
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 328.05185200000415,
+      "enqueue_ms": 41.406563000025926,
+      "throughput_tps": 609.6597192811992,
+      "lat_p50_ms": 196.1928219999827,
+      "lat_p95_ms": 296.6848330000066,
+      "lat_min_ms": 41.70112299997709,
+      "lat_max_ms": 326.46882700000424,
+      "lat_mean_ms": 186.78801221999848,
+      "tasks_per_worker": {
+        "w3": 51,
+        "w0": 49,
+        "w1": 49,
+        "w2": 51
+      },
+      "rep": 3,
+      "loadavg_after": [
+        2.91,
+        1.64,
+        0.68
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 316.7966249999881,
+      "enqueue_ms": 37.751368999975966,
+      "throughput_tps": 631.3198570218591,
+      "lat_p50_ms": 197.52152899999055,
+      "lat_p95_ms": 304.0404409999901,
+      "lat_min_ms": 37.95655599999009,
+      "lat_max_ms": 315.3633709999849,
+      "lat_mean_ms": 188.42145154999963,
+      "tasks_per_worker": {
+        "w3": 51,
+        "w0": 50,
+        "w2": 50,
+        "w1": 49
+      },
+      "rep": 4,
+      "loadavg_after": [
+        2.91,
+        1.64,
+        0.68
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 317.46443200000795,
+      "enqueue_ms": 37.970071999996435,
+      "throughput_tps": 629.9918348018117,
+      "lat_p50_ms": 213.32047199999215,
+      "lat_p95_ms": 305.8331959999923,
+      "lat_min_ms": 39.70667799998773,
+      "lat_max_ms": 316.14643900000374,
+      "lat_mean_ms": 203.8395343649984,
+      "tasks_per_worker": {
+        "w3": 25,
+        "w7": 26,
+        "w0": 26,
+        "w6": 25,
+        "w2": 25,
+        "w1": 25,
+        "w4": 24,
+        "w5": 24
+      },
+      "rep": 0,
+      "loadavg_after": [
+        3.56,
+        1.79,
+        0.74
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 337.8863620000193,
+      "enqueue_ms": 54.03523999999743,
+      "throughput_tps": 591.9149823513403,
+      "lat_p50_ms": 219.74006999999983,
+      "lat_p95_ms": 323.10354499999085,
+      "lat_min_ms": 55.119467999989865,
+      "lat_max_ms": 333.9924110000138,
+      "lat_mean_ms": 214.33922056999944,
+      "tasks_per_worker": {
+        "w4": 24,
+        "w3": 26,
+        "w7": 24,
+        "w6": 26,
+        "w5": 25,
+        "w2": 26,
+        "w1": 24,
+        "w0": 25
+      },
+      "rep": 1,
+      "loadavg_after": [
+        4.23,
+        1.96,
+        0.8
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 346.13769299999694,
+      "enqueue_ms": 55.05197699999553,
+      "throughput_tps": 577.8047408434127,
+      "lat_p50_ms": 228.73637900000904,
+      "lat_p95_ms": 331.22477999998955,
+      "lat_min_ms": 55.99176599999191,
+      "lat_max_ms": 342.86652999999933,
+      "lat_mean_ms": 221.97362940499966,
+      "tasks_per_worker": {
+        "w3": 26,
+        "w7": 26,
+        "w5": 24,
+        "w6": 25,
+        "w0": 26,
+        "w1": 23,
+        "w2": 24,
+        "w4": 26
+      },
+      "rep": 2,
+      "loadavg_after": [
+        4.69,
+        2.1,
+        0.85
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 326.93505100000766,
+      "enqueue_ms": 40.279123000014806,
+      "throughput_tps": 611.7422998490159,
+      "lat_p50_ms": 215.96249000000535,
+      "lat_p95_ms": 313.99877399997786,
+      "lat_min_ms": 39.86771599997883,
+      "lat_max_ms": 325.1462119999924,
+      "lat_mean_ms": 206.4782312849979,
+      "tasks_per_worker": {
+        "w0": 25,
+        "w2": 26,
+        "w5": 25,
+        "w3": 25,
+        "w1": 25,
+        "w4": 24,
+        "w7": 25,
+        "w6": 25
+      },
+      "rep": 3,
+      "loadavg_after": [
+        4.32,
+        2.06,
+        0.84
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 0,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 355.63032600001316,
+      "enqueue_ms": 40.20163700002013,
+      "throughput_tps": 562.3817356903152,
+      "lat_p50_ms": 232.04761800001143,
+      "lat_p95_ms": 342.5738390000188,
+      "lat_min_ms": 39.45960699999705,
+      "lat_max_ms": 353.6782219999877,
+      "lat_mean_ms": 222.782178824999,
+      "tasks_per_worker": {
+        "w6": 24,
+        "w1": 26,
+        "w0": 25,
+        "w2": 26,
+        "w7": 24,
+        "w4": 25,
+        "w5": 25,
+        "w3": 25
+      },
+      "rep": 4,
+      "loadavg_after": [
+        4.32,
+        2.06,
+        0.84
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 101281.94950299998,
+      "enqueue_ms": 37.522555000003194,
+      "throughput_tps": 1.9746855286792835,
+      "lat_p50_ms": 50669.119558999984,
+      "lat_p95_ms": 96226.53802799998,
+      "lat_min_ms": 534.2311470000132,
+      "lat_max_ms": 101278.68239999999,
+      "lat_mean_ms": 50957.816728095,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 0,
+      "loadavg_after": [
+        1.07,
+        1.62,
+        0.81
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 101235.27239499998,
+      "enqueue_ms": 30.010392000025604,
+      "throughput_tps": 1.975596007877962,
+      "lat_p50_ms": 50531.380348999985,
+      "lat_p95_ms": 96168.22326399997,
+      "lat_min_ms": 510.5244550000061,
+      "lat_max_ms": 101233.833492,
+      "lat_mean_ms": 50829.905488644996,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 1,
+      "loadavg_after": [
+        0.98,
+        1.49,
+        0.86
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 101190.85724000004,
+      "enqueue_ms": 53.939343000005465,
+      "throughput_tps": 1.9764631455354584,
+      "lat_p50_ms": 50574.22488700005,
+      "lat_p95_ms": 96134.87123300001,
+      "lat_min_ms": 508.6937569999718,
+      "lat_max_ms": 101188.33330700005,
+      "lat_mean_ms": 50841.97889752001,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 2,
+      "loadavg_after": [
+        0.84,
+        1.33,
+        0.87
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 101683.58964699996,
+      "enqueue_ms": 41.356408999999985,
+      "throughput_tps": 1.966885715721787,
+      "lat_p50_ms": 50633.14185300004,
+      "lat_p95_ms": 96555.62891099998,
+      "lat_min_ms": 513.5347760000732,
+      "lat_max_ms": 101680.71740999992,
+      "lat_mean_ms": 50971.94527426997,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 3,
+      "loadavg_after": [
+        1.3,
+        1.34,
+        0.92
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 1,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 101234.87680900004,
+      "enqueue_ms": 44.44029399997089,
+      "throughput_tps": 1.9756037277285399,
+      "lat_p50_ms": 50602.842519000056,
+      "lat_p95_ms": 96156.96719999996,
+      "lat_min_ms": 510.31423899997026,
+      "lat_max_ms": 101232.05804400006,
+      "lat_mean_ms": 50860.07600854001,
+      "tasks_per_worker": {
+        "w0": 200
+      },
+      "rep": 4,
+      "loadavg_after": [
+        0.47,
+        1.06,
+        0.87
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 50935.443243999965,
+      "enqueue_ms": 31.964391999994405,
+      "throughput_tps": 3.926538914011696,
+      "lat_p50_ms": 25537.275574999978,
+      "lat_p95_ms": 48355.373385999934,
+      "lat_min_ms": 512.0575109999627,
+      "lat_max_ms": 50932.519146000035,
+      "lat_mean_ms": 25732.736711454996,
+      "tasks_per_worker": {
+        "w1": 100,
+        "w0": 100
+      },
+      "rep": 0,
+      "loadavg_after": [
+        0.83,
+        1.08,
+        0.89
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 50669.68441899994,
+      "enqueue_ms": 39.652839999995194,
+      "throughput_tps": 3.947133326234112,
+      "lat_p50_ms": 25382.396391000017,
+      "lat_p95_ms": 48145.06981200003,
+      "lat_min_ms": 514.6483580000931,
+      "lat_max_ms": 50667.33046899992,
+      "lat_mean_ms": 25606.21449250001,
+      "tasks_per_worker": {
+        "w1": 100,
+        "w0": 100
+      },
+      "rep": 1,
+      "loadavg_after": [
+        0.57,
+        0.98,
+        0.87
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 50937.809615999926,
+      "enqueue_ms": 32.23765999998432,
+      "throughput_tps": 3.9263565023255063,
+      "lat_p50_ms": 25498.805811000057,
+      "lat_p95_ms": 48383.51197400002,
+      "lat_min_ms": 508.7005369999679,
+      "lat_max_ms": 50935.99619199999,
+      "lat_mean_ms": 25664.219324964997,
+      "tasks_per_worker": {
+        "w1": 100,
+        "w0": 100
+      },
+      "rep": 2,
+      "loadavg_after": [
+        1.39,
+        1.13,
+        0.93
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 50607.50429700001,
+      "enqueue_ms": 32.82358900003601,
+      "throughput_tps": 3.951983066113298,
+      "lat_p50_ms": 25321.926199999987,
+      "lat_p95_ms": 48063.98178100004,
+      "lat_min_ms": 509.7483850000426,
+      "lat_max_ms": 50605.60005799995,
+      "lat_mean_ms": 25558.0399008,
+      "tasks_per_worker": {
+        "w0": 100,
+        "w1": 100
+      },
+      "rep": 3,
+      "loadavg_after": [
+        1.15,
+        1.13,
+        0.94
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 2,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 50606.94659600011,
+      "enqueue_ms": 32.838861000025645,
+      "throughput_tps": 3.952026617938804,
+      "lat_p50_ms": 25347.4947429999,
+      "lat_p95_ms": 48076.76355999999,
+      "lat_min_ms": 509.43777999992017,
+      "lat_max_ms": 50603.82833200006,
+      "lat_mean_ms": 25574.75937319998,
+      "tasks_per_worker": {
+        "w0": 100,
+        "w1": 100
+      },
+      "rep": 4,
+      "loadavg_after": [
+        0.71,
+        1.02,
+        0.91
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25330.133074000012,
+      "enqueue_ms": 37.408991000032984,
+      "throughput_tps": 7.895734278841551,
+      "lat_p50_ms": 12651.469581999932,
+      "lat_p95_ms": 24292.315371999983,
+      "lat_min_ms": 510.3621930000372,
+      "lat_max_ms": 25327.37523799995,
+      "lat_mean_ms": 12908.101206619998,
+      "tasks_per_worker": {
+        "w3": 50,
+        "w2": 50,
+        "w0": 50,
+        "w1": 50
+      },
+      "rep": 0,
+      "loadavg_after": [
+        0.71,
+        1,
+        0.91
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25337.846397999907,
+      "enqueue_ms": 30.087776999920607,
+      "throughput_tps": 7.89333066664211,
+      "lat_p50_ms": 12684.290807999903,
+      "lat_p95_ms": 24285.456466999836,
+      "lat_min_ms": 511.0628339999821,
+      "lat_max_ms": 25335.181596999988,
+      "lat_mean_ms": 12915.91912803501,
+      "tasks_per_worker": {
+        "w3": 50,
+        "w2": 50,
+        "w0": 50,
+        "w1": 50
+      },
+      "rep": 1,
+      "loadavg_after": [
+        0.86,
+        1.01,
+        0.91
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25462.16324699996,
+      "enqueue_ms": 31.649392999941483,
+      "throughput_tps": 7.8547921502138935,
+      "lat_p50_ms": 12744.053517000051,
+      "lat_p95_ms": 24298.98724399996,
+      "lat_min_ms": 511.1249190000817,
+      "lat_max_ms": 25460.73828099994,
+      "lat_mean_ms": 12946.030084835,
+      "tasks_per_worker": {
+        "w1": 50,
+        "w3": 50,
+        "w0": 50,
+        "w2": 50
+      },
+      "rep": 2,
+      "loadavg_after": [
+        1.19,
+        1.09,
+        0.94
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25379.74193299981,
+      "enqueue_ms": 32.230366999981925,
+      "throughput_tps": 7.880300774057579,
+      "lat_p50_ms": 12713.559489000123,
+      "lat_p95_ms": 24280.058748999843,
+      "lat_min_ms": 513.6493950001895,
+      "lat_max_ms": 25377.203009999823,
+      "lat_mean_ms": 12925.926790085005,
+      "tasks_per_worker": {
+        "w1": 50,
+        "w0": 50,
+        "w3": 50,
+        "w2": 50
+      },
+      "rep": 3,
+      "loadavg_after": [
+        1.47,
+        1.19,
+        0.98
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 4,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 25348.046449000016,
+      "enqueue_ms": 31.856469999998808,
+      "throughput_tps": 7.8901543912820955,
+      "lat_p50_ms": 12664.329391000094,
+      "lat_p95_ms": 24276.938341999892,
+      "lat_min_ms": 517.2709139999934,
+      "lat_max_ms": 25345.88207400008,
+      "lat_mean_ms": 12913.235521154995,
+      "tasks_per_worker": {
+        "w3": 50,
+        "w2": 50,
+        "w0": 50,
+        "w1": 50
+      },
+      "rep": 4,
+      "loadavg_after": [
+        1.3,
+        1.17,
+        0.98
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1000,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 12697.589054999873,
+      "enqueue_ms": 38.19851399981417,
+      "throughput_tps": 15.751021641486096,
+      "lat_p50_ms": 6596.984560000012,
+      "lat_p95_ms": 12176.916839999845,
+      "lat_min_ms": 510.7395629999228,
+      "lat_max_ms": 12694.807617000071,
+      "lat_mean_ms": 6595.575830479994,
+      "tasks_per_worker": {
+        "w7": 25,
+        "w0": 25,
+        "w4": 25,
+        "w6": 25,
+        "w3": 25,
+        "w2": 25,
+        "w1": 25,
+        "w5": 25
+      },
+      "rep": 0,
+      "loadavg_after": [
+        1.79,
+        1.29,
+        1.03
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1001,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 12754.422016000142,
+      "enqueue_ms": 28.683335000183433,
+      "throughput_tps": 15.680836007237678,
+      "lat_p50_ms": 6596.041601999896,
+      "lat_p95_ms": 12153.445362000028,
+      "lat_min_ms": 511.6238659999799,
+      "lat_max_ms": 12751.89337299997,
+      "lat_mean_ms": 6603.495738764995,
+      "tasks_per_worker": {
+        "w7": 25,
+        "w2": 25,
+        "w5": 25,
+        "w1": 25,
+        "w0": 25,
+        "w3": 25,
+        "w4": 25,
+        "w6": 25
+      },
+      "rep": 1,
+      "loadavg_after": [
+        1.92,
+        1.37,
+        1.06
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1002,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 12680.271809999831,
+      "enqueue_ms": 35.82689299993217,
+      "throughput_tps": 15.772532560562098,
+      "lat_p50_ms": 6595.354090999812,
+      "lat_p95_ms": 12154.035784000065,
+      "lat_min_ms": 511.499020999996,
+      "lat_max_ms": 12677.773698000005,
+      "lat_mean_ms": 6595.281483310008,
+      "tasks_per_worker": {
+        "w3": 25,
+        "w1": 25,
+        "w6": 25,
+        "w2": 25,
+        "w7": 25,
+        "w0": 25,
+        "w5": 25,
+        "w4": 25
+      },
+      "rep": 2,
+      "loadavg_after": [
+        2.05,
+        1.41,
+        1.08
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1003,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 12668.001510999864,
+      "enqueue_ms": 32.214589999988675,
+      "throughput_tps": 15.78780992616209,
+      "lat_p50_ms": 6583.784767000005,
+      "lat_p95_ms": 12142.362825999968,
+      "lat_min_ms": 510.0326880000066,
+      "lat_max_ms": 12666.318946999963,
+      "lat_mean_ms": 6583.906290469998,
+      "tasks_per_worker": {
+        "w6": 25,
+        "w3": 25,
+        "w5": 25,
+        "w2": 25,
+        "w0": 25,
+        "w7": 25,
+        "w4": 25,
+        "w1": 25
+      },
+      "rep": 3,
+      "loadavg_after": [
+        1.81,
+        1.39,
+        1.08
+      ]
+    },
+    {
+      "kind": "redis",
+      "workers": 8,
+      "latencyMs": 500,
+      "tasks": 200,
+      "seed": 1004,
+      "mode": "burst",
+      "partitions": null,
+      "completed": 200,
+      "duplicates": 0,
+      "wall_ms": 12677.026621999918,
+      "enqueue_ms": 30.614314999897033,
+      "throughput_tps": 15.776570166139491,
+      "lat_p50_ms": 6593.226609000005,
+      "lat_p95_ms": 12166.263731999788,
+      "lat_min_ms": 513.0870990001131,
+      "lat_max_ms": 12674.535988999996,
+      "lat_mean_ms": 6596.721588109998,
+      "tasks_per_worker": {
+        "w1": 25,
+        "w3": 25,
+        "w5": 25,
+        "w6": 25,
+        "w7": 25,
+        "w4": 25,
+        "w0": 25,
+        "w2": 25
+      },
+      "rep": 4,
+      "loadavg_after": [
+        1.96,
+        1.45,
+        1.1
+      ]
+    }
+  ],
+  "finished_utc": "2026-11-19T12:08:15.255Z"
+}

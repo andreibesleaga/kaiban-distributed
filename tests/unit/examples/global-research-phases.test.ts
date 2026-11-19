@@ -870,6 +870,33 @@ describe("handleDecision()", () => {
     expect(mockRunLog.finish).toHaveBeenCalledWith("PUBLISHED");
   });
 
+  it("reannounce=true publishes the pending approval card again, before the wait", async () => {
+    const { deps, mockPub } = makeDecisionDeps({ reannounce: true });
+    const order: string[] = [];
+    mockPub.awaitingHITL.mockImplementation(() => void order.push("card"));
+    mockWaitForHITL.mockImplementation(() => {
+      order.push("wait");
+      return Promise.resolve("PUBLISH");
+    });
+    await handleDecision(deps as never);
+    expect(mockPub.awaitingHITL).toHaveBeenCalledTimes(1);
+    expect(mockPub.awaitingHITL).toHaveBeenCalledWith("edit-1", "PUBLISH", "8/10");
+    expect(order).toEqual(["card", "wait"]);
+  });
+
+  it("without reannounce (first run) the card is not published again", async () => {
+    const { deps, mockPub } = makeDecisionDeps();
+    mockWaitForHITL.mockResolvedValue("PUBLISH");
+    await handleDecision(deps as never);
+    expect(mockPub.awaitingHITL).not.toHaveBeenCalled();
+  });
+
+  it("reannounce=true with autoPub publishes no card (nothing waits for a human)", async () => {
+    const { deps, mockPub } = makeDecisionDeps({ reannounce: true, autoPub: true });
+    await handleDecision(deps as never);
+    expect(mockPub.awaitingHITL).not.toHaveBeenCalled();
+  });
+
   it("autoPub=false with PUBLISH decision calls workflowFinished", async () => {
     const { deps, mockPub, mockRunLog } = makeDecisionDeps({ autoPub: false });
     mockWaitForHITL.mockResolvedValue("PUBLISH");

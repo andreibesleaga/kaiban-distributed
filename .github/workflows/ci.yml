@@ -68,8 +68,9 @@ jobs:
       - run: npm ci
       # Gate the board on HIGH+ advisories too (root has this; the board
       # previously had no audit step, which let an esbuild HIGH go uncaught).
-      - name: Dependency audit (fail on HIGH+)
-        run: npm audit --audit-level=high
+      # Same gate and the same dated exceptions as the root job (.trivyignore, explained in SECURITY.md).
+      - name: Dependency audit (fail on HIGH+ except the dated exceptions)
+        run: cp ../.trivyignore .trivyignore && node ../scripts/audit-gate.js
       # `build` is `tsc --noEmit && vite build` — typechecks then bundles.
       - run: npm run build
       - run: npm test
