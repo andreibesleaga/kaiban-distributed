@@ -104,6 +104,17 @@ loadTable('m2_kafka_L0_rerun.json', 'M2c. Kafka driver, 0 ms stub, repeated (uns
 loadTable('m2_kafka_p4.json', 'M2b. Kafka driver, N=8 with 4 partitions (the repository compose default)');
 m3('m3.json', '## M3. Broker overhead (one process, direct calls, versus one worker behind the broker)');
 m4();
+// What the result files say about the completed-events topic (Kafka runs only).
+function completedTopicNote() {
+  const base = 'The completed-events topic (`kaiban-events-completed`, fixed in the library) is shared by all Kafka runs. The task topic has 8 partitions (4 in M2b); with the repository compose default of 4 partitions, at most 4 Kafka workers of one role consume at a time.';
+  const counts = new Set(); let unrecorded = 0;
+  for (const f of ['m2_kafka.json', 'm2_kafka_p4.json', 'm2_kafka_L0_rerun.json']) {
+    const d = load(f); if (!d) continue;
+    for (const r of d.runs) { if (r.completed_partitions == null) unrecorded++; else counts.add(r.completed_partitions); }
+  }
+  if (unrecorded > 0) return base + ' These result files were recorded before the harness stored that topic\'s partition count. The harness version that produced them asked for one partition and deleted and re-created the topic before every run; on a fresh broker the first Kafka run had 1 partition, and from the second run on the broker re-created the topic with its default of 8 (checked afterwards with the same code and compose file). The harness now creates the topic once with 8 partitions and records the count in every run.';
+  return base + ' Its partition count is recorded in every run: ' + [...counts].sort().join(', ') + '.';
+}
 w('## What these numbers do and do not show'); w();
 for (const s of [
   'Single machine, loopback network, one broker instance for each driver. Network latency, broker replication and multi-node effects are absent; real deployments add at least a network round trip per hop.',
@@ -116,7 +127,7 @@ for (const s of [
   'The 5 s overhead share in M3 is computed from the measured overhead; only the 500 ms share has a measured check.',
   'M4 kills only a worker process, with a fixed 300 ms delay into the task; it does not cover broker failure, network partitions or simultaneous crashes. Recovery time is dominated by the broker-side detection settings recorded with the results, not by the library code. The Kafka session timeout is not configurable through the driver, so no shorter Kafka setting was run.',
   'M4 counts executions of the stub handler. A task re-run after a crash is a repeated side effect in a real agent (at-least-once delivery); the library does not make it exactly-once.',
-  'The completed-events topic (`kaiban-events-completed`, fixed in the library) uses the broker default partition count, 8 in `docker-compose.bench.yml`; the harness does not control it. The task topic has 8 partitions (4 in M2b). With the repository compose default of 4 partitions, at most 4 Kafka workers of one role consume at a time.',
+  completedTopicNote(),
   'The M3 "measured check" at 500 ms includes the timer overshoot of the stub sleep and both broker hops with one task in flight; the computed share uses the 0 ms overhead only, so the two can differ.',
   'The harness measures stub completion events at the client; it does not use the library CompletionRouter. It uses the library AgentActor, BullMQDriver, KafkaDriver and COMPLETED_CHANNEL unmodified.',
   'M4 Redis: with the library defaults a lock must expire (30 s) and a stalled-job check (every 30 s) must then find the job, so the pick-up time is a whole number of check periods and can differ by 30 s from one kill to the next. Redis key expiry follows the wall clock: if the machine clock is corrected during the run (NTP, a virtual machine time sync), a lock can outlive a check and detection slips to the next one; with the shortened setting (lockDuration 2000 ms, stalledInterval 1000 ms, passed through the driver options to BullMQ) it is much shorter. The shortened setting is not exposed as a typed option of the driver (it is passed through untyped), and a short lock raises the risk of false stall detection for a task that blocks the event loop.',

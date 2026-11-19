@@ -88,12 +88,25 @@ async function recreateTopic(admin, topic, partitions) {
   }
   throw new Error('could not create topic ' + topic);
 }
+// The completed-events topic is shared by every run and is never deleted: a delete races with the broker's
+// auto-creation while a client is still connected. It is created once, with the bench broker's default count.
+const COMPLETED_PARTITIONS = 8;
+async function ensureTopic(admin, topic, partitions) {
+  if (!(await admin.listTopics()).includes(topic)) {
+    try { await admin.createTopics({ topics: [{ topic, numPartitions: partitions, replicationFactor: 1 }], waitForLeaders: true, timeout: 30000 }); }
+    catch (e) { /* created meanwhile by the broker: the count is read below */ }
+  }
+  const meta = await admin.fetchTopicMetadata({ topics: [topic] });
+  return meta.topics[0].partitions.length;
+}
+/** Prepares the brokers for one run. Returns the partition count of the completed-events topic (null on Redis). */
 async function prepareInfra(kind, mailbox, partitions) {
-  if (kind === 'redis') { await resetRedis(); return; }
+  if (kind === 'redis') { await resetRedis(); return null; }
   const admin = await kafkaAdmin();
-  await recreateTopic(admin, COMPLETED_CHANNEL, 1);
+  const completedPartitions = await ensureTopic(admin, COMPLETED_CHANNEL, COMPLETED_PARTITIONS);
   await recreateTopic(admin, mailbox, partitions);
   await admin.disconnect();
+  return completedPartitions;
 }
 async function dropMailbox(kind, mailbox) {
   if (kind !== 'kafka') return;

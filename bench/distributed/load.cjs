@@ -13,7 +13,7 @@ async function runLoad({ kind, workers, latencyMs, tasks, seed, mode = 'burst', 
   const runTag = `${tag}-${Date.now().toString(36)}`;
   const queue = `bench-mailbox-${runTag}`;
   const groupId = `bench-workers-${runTag}`;
-  await lib.prepareInfra(kind, queue, partitions);
+  const completedPartitions = await lib.prepareInfra(kind, queue, partitions);
   const client = await lib.makeClient(kind, runTag);
   if (kind === 'kafka') await lib.waitGroupStable(`bench-client-${runTag}`, 1);
   const ws = Array.from({ length: workers }, (_, i) =>
@@ -60,7 +60,7 @@ async function runLoad({ kind, workers, latencyMs, tasks, seed, mode = 'burst', 
     const wall = last - tStart;
     const perWorker = {}; ids.forEach((id) => { const w = starts.get(id); if (w) perWorker[w] = (perWorker[w] || 0) + 1; });
     return {
-      kind, workers, latencyMs, tasks, seed, mode, partitions: kind === 'kafka' ? partitions : null,
+      kind, workers, latencyMs, tasks, seed, mode, partitions: kind === 'kafka' ? partitions : null, completed_partitions: completedPartitions,
       completed, duplicates, wall_ms: wall, enqueue_ms: enqueueMs,
       throughput_tps: completed / (wall / 1000),
       lat_p50_ms: lib.percentile(lat, 50), lat_p95_ms: lib.percentile(lat, 95), lat_min_ms: Math.min(...lat), lat_max_ms: Math.max(...lat), lat_mean_ms: lat.reduce((a, b) => a + b, 0) / lat.length,

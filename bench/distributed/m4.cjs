@@ -19,7 +19,7 @@ const kafkaDefaults = { sessionTimeout_ms: 30000, heartbeatInterval_ms: 3000, re
 (async () => {
   const runTag = `m4-${kind}-${profile}-${Date.now().toString(36)}`;
   const queue = `bench-mailbox-${runTag}`, groupId = `bench-workers-${runTag}`;
-  await lib.prepareInfra(kind, queue, 2);
+  const completedPartitions = await lib.prepareInfra(kind, queue, 2);
   const client = await lib.makeClient(kind, runTag);
   if (kind === 'kafka') await lib.waitGroupStable(`bench-client-${runTag}`, 1);
   const events = []; // start/end events from all workers
@@ -30,7 +30,7 @@ const kafkaDefaults = { sessionTimeout_ms: 30000, heartbeatInterval_ms: 3000, re
     live.push(w); return w;
   };
   const rng = lib.mulberry32(4242);
-  const out = { measurement: name, machine: lib.machineInfo(), params: { kind, profile, crashes, latencyMs, killAfterMs, tasksPerTrial, trialDeadlineMs, seed: 4242, workers: 2 },
+  const out = { measurement: name, machine: lib.machineInfo(), params: { kind, profile, crashes, latencyMs, killAfterMs, tasksPerTrial, trialDeadlineMs, seed: 4242, workers: 2, completed_partitions: completedPartitions },
     settings_in_force: kind === 'redis' ? { ...bullmqDefaults, ...(bullmq || {}), profile } : { ...kafkaDefaults, profile: 'default (no shorter setting exposed)', broker_group_initial_rebalance_delay_ms: 0 },
     trials: [] };
   const startWorkers = async () => { while (live.length < 2) spawn(); await Promise.all(live.map((w) => w.ready)); if (kind === 'kafka') await lib.waitGroupStable(groupId, 2); };
