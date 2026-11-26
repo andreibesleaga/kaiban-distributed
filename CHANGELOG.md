@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- README: names the book that describes this runtime, *Agentic AI Architectures: Multi-Agent System Patterns with TypeScript* by Andrei N. Besleaga (Wiley; publication planned for 2026), and says that the book's companion repository bundles version 1.4.0 while this repository is the current version. The protocol name is written "Agent2Agent".
+
+### Maintenance
+
+- CI actions (CodeQL 4.39.4, OSV-Scanner 2.7.1, Scorecard 2.6.0) and development-only dependencies updated; Dependabot now groups GitHub Actions updates into one pull request. No runtime dependency changed.
+
 ## [2.1.4] — 2026-11-19
 
 Additive release: a setting for how long human decisions are kept, a chaos test that kills a worker, a measurement harness, and documentation of the delivery guarantee. Defaults and the library API are unchanged; no action is needed to upgrade ([MIGRATION.md](MIGRATION.md#213--214-approval-retention-additive)).
