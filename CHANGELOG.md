@@ -13,6 +13,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Maintenance
 
 - CI actions (CodeQL 4.39.4, OSV-Scanner 2.7.1, Scorecard 2.6.0) and development-only dependencies updated; Dependabot now groups GitHub Actions updates into one pull request. No runtime dependency changed.
+- Accepted advisories (`.trivyignore`, SECURITY.md): the `picomatch` exception is removed, because GitHub withdrew advisory GHSA-fc5q-39xc-vjpf and `npm audit` no longer reports it; the `zod` 3.x exception (GHSA-mrhx-c7xc-m3w5, reached only through `kaibanjs` 0.24.2) is renewed to 2027-12-31, because no patched zod 3.x and no newer `kaibanjs` exist.
 
 ## [2.1.4] — 2026-11-19
 

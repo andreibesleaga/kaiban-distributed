@@ -91,15 +91,15 @@ what the dependents declare. `js-yaml` is deliberately capped below `5` because
 (`body-parser` >=2.4.0, board `undici` >=7.30.1 and `happy-dom` 21) and pull request #167
 (`@opentelemetry/auto-instrumentations-node` 0.79), `npm audit` reports
 **0 critical** and one **high** advisory (reported as 9 package entries, below) with no fix in the version line that uses it (accepted
-until 2026-12-31, below); the board lockfile has none. **Added 2026-11-18:** a second high advisory, in the development
-tool `picomatch`, appears in the root and the board lockfiles (row below). Accepted HIGH advisories are listed, with an
+until 2027-12-31, below); the board lockfile has none. **Added 2026-11-18:** a second high advisory, in the development
+tool `picomatch`, appears in the root and the board lockfiles (row below). **2026-11-27:** GitHub withdrew that advisory, `npm audit` no longer reports it, and its
+exception was removed; the `zod` exception was renewed for one year (no patched zod 3.x, no newer `kaibanjs`). Accepted HIGH advisories are listed, with an
 `exp:` date, in `.trivyignore`, which both the Trivy image scan and `scripts/audit-gate.js` read; an
 expired entry fails CI again.
 
 | Severity | Count | Packages | Why it stays |
 | -------- | ----- | -------- | ------------ |
-| High | 9 | `zod` 3.25.76 (GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404: memory exhaustion validating oversized constrained collections), reached only through `kaibanjs` 0.24.2 (the latest release) via `@kaibanjs/workflow`, `@langchain/openai` 0.5, `openai` 4–5 and `@browserbasehq/stagehand`; npm lists each of those packages as a separate entry | No patched zod 3.x exists and these packages declare zod ^3, so the fix needs a `kaibanjs` release on zod 4. Kaiban's own code uses zod 4.6.7 (patched). Exception expires 2026-12-31; re-checked on every `kaibanjs` release. |
-| High | 1 | `picomatch` 4.0.7 (GHSA-fc5q-39xc-vjpf: regular-expression denial of service on single-branch repeated extglob patterns), a development dependency of `vitest`, `vite` and `tinyglobby` in the root and the board lockfiles | Development tooling only: it is not in the published package or the container image, and it matches patterns from this repository's own test and build configuration, never user input. No patched version exists (4.0.7 is the latest). Exception expires 2026-12-31; removed as soon as a fixed version is released. |
+| High | 9 | `zod` 3.25.76 (GHSA-mrhx-c7xc-m3w5 / CVE-2023-54404: memory exhaustion validating oversized constrained collections), reached only through `kaibanjs` 0.24.2 (the latest release) via `@kaibanjs/workflow`, `@langchain/openai` 0.5, `openai` 4–5 and `@browserbasehq/stagehand`; npm lists each of those packages as a separate entry | No patched zod 3.x exists and these packages declare zod ^3, so the fix needs a `kaibanjs` release on zod 4. Kaiban's own code uses zod 4.6.7 (patched). Exception expires 2027-12-31 (renewed 2026-11-27); re-checked on every `kaibanjs` release. |
 
 The root lockfile also has one **low** entry:
 

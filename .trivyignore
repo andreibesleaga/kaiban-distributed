@@ -5,13 +5,7 @@
 # zod 3.x (Zod memory exhaustion on oversized constrained collections). Pulled in only by kaibanjs
 # 0.24.2 (latest) through @kaibanjs/workflow, @langchain/openai 0.5, openai 4–5 and stagehand; no
 # patched 3.x exists and those packages declare zod ^3 (dependency or peer). Kaiban's own code uses
-# zod 4.6.7 (patched). Re-check on every kaibanjs release.
-GHSA-mrhx-c7xc-m3w5 exp:2026-12-31
-CVE-2023-54404 exp:2026-12-31
-
-# picomatch <= 4.0.7 (ReDoS on single-branch repeated extglob patterns). Development tooling only:
-# vitest, vite and tinyglobby, in the root and the board lockfiles. Not in the published package and
-# not in the container image (`npm ci --omit=dev`); the patterns it matches come from the test and
-# build configuration of this repository, not from user input. No patched version exists yet
-# (4.0.7 is the latest). Re-check weekly; remove this entry when a fixed version is released.
-GHSA-fc5q-39xc-vjpf exp:2026-12-31
+# zod 4.6.7 (patched). Re-check on every kaibanjs release. Renewed 2026-11-27 for one year:
+# kaibanjs 0.24.2 (May 2026) is still the latest release and zod 3.25.76 is still the latest 3.x.
+GHSA-mrhx-c7xc-m3w5 exp:2027-12-31
+CVE-2023-54404 exp:2027-12-31
