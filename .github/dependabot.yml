@@ -45,6 +45,11 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # One pull request for all actions, so the CodeQL init/analyze/upload-sarif
+    # actions always move together to the same version.
+    groups:
+      github-actions:
+        patterns: ["*"]
     labels:
       - dependencies
       - github-actions

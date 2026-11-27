@@ -20,6 +20,8 @@ Examples dedicated repository: [kaiban-distributed-examples](https://github.com/
 
 Website: [andreibesleaga.github.io/kaiban-distributed](https://andreibesleaga.github.io/kaiban-distributed/)
 
+This project is the runtime described in the book's part on the distributed actor model: *Agentic AI Architectures: Multi-Agent System Patterns with TypeScript* by Andrei N. Besleaga (Wiley; publication planned for 2026): https://agenticaiarchitectures.com. The book's [companion repository](https://github.com/andreibesleaga/agentic-ai-architectures) bundles an earlier version (1.4.0); this repository is the current, maintained version.
+
 Read next: users, [Quick start (full demo)](#quick-start-full-demo); developers, [Use as a library](#use-as-a-library); operators, [docs/deployment](docs/deployment/); security, [SECURITY_FEATURES](docs/security/SECURITY_FEATURES.md). The full index by reader is [docs/README.md](docs/README.md).
 
 - While most frameworks treat agents as scripts, Kaiban Distributed treats them as Stateful Actors. By using async Node.js, each agent operates in its own space, communicating via a pluggable Messaging Abstraction Layer (Kafka or BullMQ/Redis), horizontally scaling AI workforce. "Stateful" is meant in the actor-model sense: each agent has its own process, identity and mailbox, and per-process state (token tallies, circuit breaker). The task itself runs in a fresh `Team`, so no conversation state survives between tasks.
@@ -551,7 +553,7 @@ const result = await bridge.start({ topic: 'AI agents 2025' });
 
 ---
 
-## A2A Protocol (Agent-to-Agent)
+## A2A Protocol (Agent2Agent)
 
 The Edge Gateway exposes a **wire-conformant A2A v0.3** JSON-RPC surface (served by the official [`@a2a-js/sdk`](https://a2a-protocol.org/) v0.3.x, ADR-015) for interoperability with other AI systems. It serves a v0.3 AgentCard at the spec path (`/.well-known/agent-card.json`) and implements the real v0.3 methods `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`. A real `@a2a-js/sdk` client interoperates with it (proven by `tests/e2e/a2a-protocol.test.ts`).
 

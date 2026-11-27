@@ -290,7 +290,7 @@ final tree.
 | `npm run test:e2e` · `test:e2e:security` · `test:e2e:chaos` · `test:e2e:kafka` | 73 · 41 · 3 · 4 tests, all passing; the chaos suite was run three more times, all passing |
 | `scripts/check-deploy-manifests.sh` | `docker compose config` for the 5 stacks (the four example stacks now pass `HITL_DECISION_TTL_SECONDS` to the gateway and the orchestrator); `helm lint` + `helm template` for both charts |
 | `npm run lockfile:check` · `scripts/smoke-consumer.sh` | ok · passed (both entry points import from the packed tarball) |
-| `node scripts/audit-gate.js` (root and board lockfiles) | 0 high/critical outside the two dated exceptions (`zod` 3.x, and `picomatch` 4.0.7 in the development tooling, added 2026-11-18) |
+| `node scripts/audit-gate.js` (root and board lockfiles) | 0 high/critical outside the dated exception (`zod` 3.x, renewed 2026-11-27 to 2027-12-31; the `picomatch` advisory of 2026-11-18 was withdrawn and its exception removed) |
 | Examples repository (`kaiban-distributed-examples`, a clean copy with the packed 2.1.4 tarball installed) | typecheck, build and 26 tests pass |
 
 One run of the security suite failed in the circuit-breaker window test while the test machine's clock was
